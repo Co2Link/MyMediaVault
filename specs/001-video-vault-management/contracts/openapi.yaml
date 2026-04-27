@@ -1,0 +1,444 @@
+openapi: 3.1.0
+info:
+  title: MyMediaVault API
+  version: 0.1.0
+  description: Contract for the initial video collection management slice.
+servers:
+  - url: http://localhost:8000
+    description: Local development
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /me:
+    get:
+      summary: Current user profile
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /videos:
+    get:
+      summary: Search the current user's video collection
+      operationId: searchVideos
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search text matching title, description, torrent name, tag, or info hash.
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: rating
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/TorrentMetadataStatus"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Search results scoped to the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoListResponse"
+    post:
+      summary: Add a video to the current user's collection
+      operationId: createVideo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoCreate"
+      responses:
+        "202":
+          description: Video accepted and metadata processing queued or reused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Current user already has a video for this torrent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /videos/{videoId}:
+    get:
+      summary: Get one video from the current user's collection
+      operationId: getVideo
+      parameters:
+        - $ref: "#/components/parameters/VideoId"
+      responses:
+        "200":
+          description: Video detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update user-specific video details
+      operationId: updateVideo
+      parameters:
+        - $ref: "#/components/parameters/VideoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoUpdate"
+      responses:
+        "200":
+          description: Updated video detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin/tags:
+    get:
+      summary: List shared tags
+      operationId: listTags
+      responses:
+        "200":
+          description: Tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tag"
+    post:
+      summary: Create a shared tag
+      operationId: createTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagCreate"
+      responses:
+        "201":
+          description: Created tag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Tag name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/tags/{tagId}:
+    patch:
+      summary: Rename a shared tag
+      operationId: updateTag
+      parameters:
+        - $ref: "#/components/parameters/TagId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagUpdate"
+      responses:
+        "200":
+          description: Updated tag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Tag name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Delete a shared tag
+      operationId: deleteTag
+      parameters:
+        - $ref: "#/components/parameters/TagId"
+      responses:
+        "204":
+          description: Deleted tag and removed assignments
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    VideoId:
+      name: videoId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TagId:
+      name: tagId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Current user is not allowed to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource was not found in the current user's scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    User:
+      type: object
+      required: [id, isAdmin]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        isAdmin:
+          type: boolean
+    TorrentMetadataStatus:
+      type: string
+      enum: [pending, processing, succeeded, failed]
+    VideoCreate:
+      type: object
+      required: [infoHash]
+      properties:
+        infoHash:
+          type: string
+          minLength: 32
+          maxLength: 64
+        title:
+          type: string
+          maxLength: 300
+        description:
+          type: string
+          maxLength: 5000
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        tagIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+    VideoUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+          maxLength: 300
+        description:
+          type: string
+          nullable: true
+          maxLength: 5000
+        rating:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+        tagIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+    VideoListResponse:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VideoSummary"
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+        offset:
+          type: integer
+    VideoSummary:
+      type: object
+      required: [id, infoHash, metadataStatus, tags, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayTitle:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        rating:
+          type: integer
+          nullable: true
+        infoHash:
+          type: string
+        torrentName:
+          type: string
+          nullable: true
+        metadataStatus:
+          $ref: "#/components/schemas/TorrentMetadataStatus"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    VideoDetail:
+      allOf:
+        - $ref: "#/components/schemas/VideoSummary"
+        - type: object
+          required: [files]
+          properties:
+            description:
+              type: string
+              nullable: true
+            sizeBytes:
+              type: integer
+              nullable: true
+            metadataError:
+              type: string
+              nullable: true
+            files:
+              type: array
+              items:
+                $ref: "#/components/schemas/TorrentFile"
+    TorrentFile:
+      type: object
+      required: [path, sizeBytes]
+      properties:
+        path:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 0
+    Tag:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    TagCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    TagUpdate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
