@@ -14,3 +14,6 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
 # Install OpenAI Codex CLI gobally
 npm i -g @openai/codex
+
+# Install Playwright CLI globally
+npm install -g @playwright/cli@latest
