@@ -42,6 +42,13 @@ export type CreateVideoInput = {
   tagIds?: string[];
 };
 
+export type UpdateVideoInput = {
+  title?: string;
+  description?: string;
+  rating?: number;
+  tagIds?: string[];
+};
+
 export function createVideo(input: CreateVideoInput) {
   return apiRequest<VideoDetail>("/videos", { method: "POST", body: input });
 }
@@ -56,4 +63,8 @@ export function searchVideos(params: { q?: string; tag?: string; rating?: string
 
 export function getVideo(videoId: string) {
   return apiRequest<VideoDetail>(`/videos/${videoId}`);
+}
+
+export function updateVideo(videoId: string, input: UpdateVideoInput) {
+  return apiRequest<VideoDetail>(`/videos/${videoId}`, { method: "PATCH", body: input });
 }

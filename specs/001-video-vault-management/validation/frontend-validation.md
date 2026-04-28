@@ -11,5 +11,5 @@ npm run build
 
 Results:
 
-- `npm run test`: passed, 3 test files and 5 tests.
+- `npm run test`: passed, 4 test files and 6 tests.
 - `npm run build`: passed.

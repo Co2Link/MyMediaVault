@@ -15,10 +15,10 @@ Results:
 
 - `ruff format`: passed, formatted backend files.
 - `ruff check`: passed.
-- `ty check`: passed with one deprecation warning for FastAPI `on_event`.
-- `pytest`: passed, 22 tests.
+- `ty check`: passed.
+- `pytest`: passed, 24 tests.
 
 Residual risk:
 
-- The FastAPI startup hook uses `on_event`, which is deprecated. It is tracked
-  as a future cleanup and does not block current behavior.
+- Cloud SQL, blob storage, and production Entra ID paths still require
+  environment-backed validation.

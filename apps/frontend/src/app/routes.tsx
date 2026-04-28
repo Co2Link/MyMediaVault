@@ -6,7 +6,7 @@ import { VideoDetailPage } from "../features/videos/VideoDetailPage";
 
 export type RouteName = "collection" | "add" | "detail" | "admin";
 
-export function renderRoute(route: RouteName, selectedVideoId?: string) {
+export function renderRoute(route: RouteName, selectedVideoId?: string, onSelectVideo?: (videoId: string) => void) {
   if (route === "add") return <AddVideoForm />;
   if (route === "detail" && selectedVideoId) return <VideoDetailPage videoId={selectedVideoId} />;
   if (route === "admin") {
@@ -16,5 +16,5 @@ export function renderRoute(route: RouteName, selectedVideoId?: string) {
       </AdminOnly>
     );
   }
-  return <CollectionPage />;
+  return <CollectionPage onSelectVideo={onSelectVideo} />;
 }

@@ -3,7 +3,11 @@ import { searchVideos, type VideoSummary } from "./api";
 import { EmptyState, ErrorState, LoadingState } from "./CollectionStates";
 import { MetadataStatus } from "./MetadataStatus";
 
-export function CollectionPage() {
+type CollectionPageProps = {
+  onSelectVideo?: (videoId: string) => void;
+};
+
+export function CollectionPage({ onSelectVideo }: CollectionPageProps) {
   const [query, setQuery] = useState("");
   const [videos, setVideos] = useState<VideoSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +54,11 @@ export function CollectionPage() {
             <p>{video.torrentName ?? video.infoHash}</p>
             <MetadataStatus status={video.metadataStatus} />
             <p>{video.tags.map((tag) => tag.name).join(", ")}</p>
+            {onSelectVideo ? (
+              <button type="button" onClick={() => onSelectVideo(video.id)}>
+                View details
+              </button>
+            ) : null}
           </article>
         ))}
       </div>

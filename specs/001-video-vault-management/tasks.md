@@ -109,9 +109,9 @@
 
 ### Tests for User Story 2 (write first)
 
-- [X] T046 [P] [US2] Add contract tests for `GET /videos` and `GET /videos/{videoId}` in `apps/backend/tests/contract/test_videos_read_contract.py`
+- [X] T046 [P] [US2] Add contract tests for `GET /videos`, `GET /videos/{videoId}`, and `PATCH /videos/{videoId}` in `apps/backend/tests/contract/test_videos_read_contract.py`
 - [X] T047 [P] [US2] Add integration tests for user-scoped collection search and empty results in `apps/backend/tests/integration/test_video_search.py`
-- [X] T048 [P] [US2] Add integration tests preventing cross-user video detail access in `apps/backend/tests/integration/test_video_user_isolation.py`
+- [X] T048 [P] [US2] Add integration tests preventing cross-user video detail read and update access in `apps/backend/tests/integration/test_video_user_isolation.py`
 - [X] T049 [P] [US2] Add frontend tests for collection loading, search results, and empty states in `apps/frontend/src/features/videos/CollectionPage.test.tsx`
 - [X] T050 [P] [US2] Add Playwright test for collection search by title, tag, rating, torrent name, and info hash in `apps/e2e/tests/search-collection.spec.ts`
 
@@ -119,10 +119,10 @@
 
 - [X] T051 [US2] Implement collection search query builder with user scoping and pagination in `apps/backend/app/videos/search.py`
 - [X] T052 [US2] Implement video summary/detail response mapping in `apps/backend/app/videos/schemas.py`
-- [X] T053 [US2] Implement `GET /videos` and `GET /videos/{videoId}` routes in `apps/backend/app/api/routers/videos.py`
-- [X] T054 [US2] Implement frontend collection and detail API calls in `apps/frontend/src/features/videos/api.ts`
+- [X] T053 [US2] Implement `GET /videos`, `GET /videos/{videoId}`, and `PATCH /videos/{videoId}` routes in `apps/backend/app/api/routers/videos.py`
+- [X] T054 [US2] Implement frontend collection, detail, and update API calls in `apps/frontend/src/features/videos/api.ts`
 - [X] T055 [US2] Implement collection list page with search controls in `apps/frontend/src/features/videos/CollectionPage.tsx`
-- [X] T056 [US2] Implement video detail page with torrent file list in `apps/frontend/src/features/videos/VideoDetailPage.tsx`
+- [X] T056 [US2] Implement video detail page with editable user details and torrent file list in `apps/frontend/src/features/videos/VideoDetailPage.tsx`
 - [X] T057 [US2] Implement loading, error, and empty collection states in `apps/frontend/src/features/videos/CollectionStates.tsx`
 - [X] T058 [US2] Validate 10,000-video search performance and document results in `specs/001-video-vault-management/validation/search-performance.md`
 
