@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import admin_tags, videos
+from app.auth.dependencies import load_azure_openid_config
 from app.core.config import get_settings
 from app.core.db import create_db_and_tables
 from app.core.errors import register_exception_handlers
@@ -13,6 +14,7 @@ from app.core.errors import register_exception_handlers
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     create_db_and_tables()
+    await load_azure_openid_config(get_settings())
     yield
 
 

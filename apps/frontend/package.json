@@ -10,11 +10,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.8.0",
+    "@azure/msal-react": "^5.3.1",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "latest",

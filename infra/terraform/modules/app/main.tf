@@ -33,6 +33,28 @@ variable "test_mode_enabled" {
   default = false
 }
 
+variable "entra_tenant_id" {
+  type = string
+}
+
+variable "backend_entra_client_id" {
+  type = string
+}
+
+variable "entra_api_scope" {
+  type = string
+}
+
+variable "admin_object_ids" {
+  type    = list(string)
+  default = []
+}
+
+variable "admin_role_names" {
+  type    = list(string)
+  default = ["Admin", "MyMediaVault.Admin"]
+}
+
 resource "azurerm_log_analytics_workspace" "main" {
   name                = "${var.prefix}-logs"
   location            = var.location
@@ -104,6 +126,31 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "MMV_AZURE_BLOB_CONTAINER"
         value = var.azure_blob_container
+      }
+
+      env {
+        name  = "MMV_ENTRA_TENANT_ID"
+        value = var.entra_tenant_id
+      }
+
+      env {
+        name  = "MMV_ENTRA_CLIENT_ID"
+        value = var.backend_entra_client_id
+      }
+
+      env {
+        name  = "MMV_ENTRA_API_SCOPE"
+        value = var.entra_api_scope
+      }
+
+      env {
+        name  = "MMV_ADMIN_OBJECT_IDS"
+        value = jsonencode(var.admin_object_ids)
+      }
+
+      env {
+        name  = "MMV_ADMIN_ROLE_NAMES"
+        value = jsonencode(var.admin_role_names)
       }
 
       env {

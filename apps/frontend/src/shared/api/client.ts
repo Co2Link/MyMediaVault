@@ -1,3 +1,7 @@
+import { loginRequest, isProductionAuthEnabled } from "../../features/auth/config";
+import { msalInstance } from "../../features/auth/msal";
+import { getTestAuthHeaders } from "../../features/auth/testMode";
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -15,12 +19,29 @@ export type ApiOptions = {
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+async function authHeaders(): Promise<Record<string, string>> {
+  if (!isProductionAuthEnabled) {
+    return getTestAuthHeaders();
+  }
+
+  const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+  if (!account) {
+    await msalInstance.loginRedirect(loginRequest);
+    return {};
+  }
+
+  const result = await msalInstance.acquireTokenSilent({ ...loginRequest, account }).catch(() =>
+    msalInstance.acquireTokenPopup({ ...loginRequest, account }),
+  );
+  return { Authorization: `Bearer ${result.accessToken}` };
+}
+
 export async function apiRequest<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? "GET",
     headers: {
       "Content-Type": "application/json",
-      "X-Test-User": localStorage.getItem("mmv.testUser") ?? "test-user-1",
+      ...(await authHeaders()),
       ...(options.headers ?? {}),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),

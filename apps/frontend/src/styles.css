@@ -21,6 +21,28 @@ select {
   min-height: 100vh;
 }
 
+.auth-screen {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(47, 125, 109, 0.18), transparent 36%),
+    linear-gradient(315deg, rgba(16, 33, 43, 0.16), transparent 42%),
+    #f7f8fa;
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.auth-panel {
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+}
+
+.auth-panel h1 {
+  font-size: 2rem;
+  margin: 0;
+}
+
 .topbar {
   align-items: center;
   background: #10212b;
