@@ -59,4 +59,6 @@ jobs:
 
       - name: Outputs
         if: ${{ inputs.apply }}
-        run: terraform output -json
+        run: |
+          terraform output -raw backend_url
+          terraform output -raw frontend_url
