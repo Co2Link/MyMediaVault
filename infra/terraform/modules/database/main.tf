@@ -10,13 +10,23 @@ variable "resource_group_name" {
   type = string
 }
 
+variable "administrator_login" {
+  type    = string
+  default = "mmvadmin"
+}
+
+variable "administrator_login_password" {
+  type      = string
+  sensitive = true
+}
+
 resource "azurerm_mssql_server" "main" {
   name                         = "${var.prefix}-sql"
   resource_group_name          = var.resource_group_name
   location                     = var.location
   version                      = "12.0"
-  administrator_login          = "mmvadmin"
-  administrator_login_password = "ChangeMe12345!"
+  administrator_login          = var.administrator_login
+  administrator_login_password = var.administrator_login_password
 }
 
 resource "azurerm_mssql_database" "main" {
@@ -24,4 +34,23 @@ resource "azurerm_mssql_database" "main" {
   server_id   = azurerm_mssql_server.main.id
   sku_name    = "GP_S_Gen5_1"
   max_size_gb = 32
+}
+
+resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
+  name             = "AllowAzureServices"
+  server_id        = azurerm_mssql_server.main.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
+output "administrator_login" {
+  value = var.administrator_login
+}
+
+output "database_name" {
+  value = azurerm_mssql_database.main.name
+}
+
+output "server_fqdn" {
+  value = azurerm_mssql_server.main.fully_qualified_domain_name
 }

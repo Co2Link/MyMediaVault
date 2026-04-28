@@ -23,3 +23,12 @@ resource "azurerm_storage_container" "torrents" {
   storage_account_id    = azurerm_storage_account.media.id
   container_access_type = "private"
 }
+
+output "connection_string" {
+  value     = azurerm_storage_account.media.primary_connection_string
+  sensitive = true
+}
+
+output "torrent_container_name" {
+  value = azurerm_storage_container.torrents.name
+}

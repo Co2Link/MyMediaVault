@@ -13,6 +13,7 @@ dependencies = [
     "bencode2>=0.3.30",
     "fastapi-azure-auth>=5.2.0",
     "fastapi[standard]>=0.136.1",
+    "pymssql>=2.3.13",
     "sqlmodel>=0.0.38",
 ]
 
