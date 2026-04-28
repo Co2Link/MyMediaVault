@@ -1,0 +1,22 @@
+name: Deploy Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Docker Hub image tag to deploy
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - run: |
+          az containerapp update \
+            --name "${{ vars.AZURE_BACKEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ inputs.image }}"

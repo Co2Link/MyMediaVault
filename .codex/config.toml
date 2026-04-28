@@ -1,2 +1,4 @@
-sandbox_mode="workspace-write"
+sandbox_mode="danger-full-access"
 approval_policy="on-request"
+hide_agent_reasoning=false
+model_reasoning_summary="detailed"
