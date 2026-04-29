@@ -84,6 +84,7 @@ module "database" {
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
   administrator_login = var.database_admin_login
+  server_name         = "${var.prefix}-sql-eus2"
 
   administrator_login_password = var.database_admin_password
 }

@@ -29,8 +29,13 @@ variable "administrator_login_password" {
   sensitive = true
 }
 
+variable "server_name" {
+  type    = string
+  default = null
+}
+
 resource "azurerm_mssql_server" "main" {
-  name                         = "${var.prefix}-sql"
+  name                         = coalesce(var.server_name, "${var.prefix}-sql")
   resource_group_name          = var.resource_group_name
   location                     = var.location
   version                      = "12.0"
