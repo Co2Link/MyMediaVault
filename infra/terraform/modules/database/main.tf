@@ -53,7 +53,7 @@ resource "azurerm_mssql_database" "main" {
 }
 
 resource "azapi_update_resource" "database_free_limit" {
-  type        = "Microsoft.Sql/servers/databases@2022-08-01-preview"
+  type        = "Microsoft.Sql/servers/databases@2023-02-01-preview"
   resource_id = azurerm_mssql_database.main.id
 
   body = {
