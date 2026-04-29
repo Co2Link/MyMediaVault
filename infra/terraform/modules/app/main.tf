@@ -6,6 +6,11 @@ variable "location" {
   type = string
 }
 
+variable "static_web_app_location" {
+  type    = string
+  default = null
+}
+
 variable "resource_group_name" {
   type = string
 }
@@ -157,7 +162,7 @@ resource "azurerm_container_app" "backend" {
 resource "azurerm_static_web_app" "frontend" {
   name                = "${var.prefix}-frontend"
   resource_group_name = var.resource_group_name
-  location            = var.location
+  location            = coalesce(var.static_web_app_location, var.location)
   sku_tier            = "Free"
   sku_size            = "Free"
 }

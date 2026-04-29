@@ -16,6 +16,12 @@ variable "storage_location" {
   description = "Region for the dev storage account."
 }
 
+variable "static_web_app_location" {
+  type        = string
+  default     = "eastasia"
+  description = "Nearest Static Web Apps free-tier region supported by Azure."
+}
+
 variable "prefix" {
   type    = string
   default = "mmv-dev"
@@ -100,6 +106,7 @@ module "app" {
   source                          = "../../modules/app"
   prefix                          = var.prefix
   location                        = var.location
+  static_web_app_location         = var.static_web_app_location
   resource_group_name             = azurerm_resource_group.main.name
   backend_image                   = var.backend_image
   database_url                    = local.database_url
