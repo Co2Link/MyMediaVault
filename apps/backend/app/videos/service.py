@@ -109,6 +109,34 @@ def get_video(session: Session, user: User, video_id: UUID):
     )
 
 
+def build_video_search_statement(
+    user_id: UUID,
+    q: str | None,
+    rating: int | None,
+    status: TorrentMetadataStatus | None,
+):
+    statement = select(Video).where(Video.user_id == user_id)
+    joined_torrent = False
+    if rating is not None:
+        statement = statement.where(Video.rating == rating)
+    if status is not None:
+        statement = statement.join(Torrent).where(Torrent.metadata_status == status)
+        joined_torrent = True
+    if q:
+        like = f"%{q.lower()}%"
+        if not joined_torrent:
+            statement = statement.join(Torrent)
+        statement = statement.where(
+            or_(
+                func.lower(Video.title).like(like),
+                func.lower(Video.description).like(like),
+                func.lower(Torrent.name).like(like),
+                func.lower(Torrent.info_hash).like(like),
+            )
+        )
+    return statement.order_by(col(Video.created_at).desc(), col(Video.id).desc())
+
+
 def search_videos(
     session: Session,
     user: User,
@@ -119,21 +147,7 @@ def search_videos(
     limit: int,
     offset: int,
 ) -> VideoListResponse:
-    statement = select(Video).where(Video.user_id == user.id)
-    if rating is not None:
-        statement = statement.where(Video.rating == rating)
-    if status is not None:
-        statement = statement.join(Torrent).where(Torrent.metadata_status == status)
-    if q:
-        like = f"%{q.lower()}%"
-        statement = statement.join(Torrent).where(
-            or_(
-                func.lower(Video.title).like(like),
-                func.lower(Video.description).like(like),
-                func.lower(Torrent.name).like(like),
-                func.lower(Torrent.info_hash).like(like),
-            )
-        )
+    statement = build_video_search_statement(user.id, q, rating, status)
     videos = list(session.exec(statement.offset(offset).limit(limit)).all())
     if tag:
         videos = [
