@@ -97,7 +97,8 @@ resource "azurerm_container_app" "backend" {
   }
 
   template {
-    min_replicas = 0
+    min_replicas               = 0
+    cooldown_period_in_seconds = 600
 
     container {
       name   = "backend"
