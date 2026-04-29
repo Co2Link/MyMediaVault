@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --all-groups
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run ty check
+      - run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            apps/frontend/package-lock.json
+            apps/e2e/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: apps/backend
+        run: uv sync --all-groups
+
+      - name: Install frontend dependencies
+        working-directory: apps/frontend
+        run: npm ci
+
+      - name: Install E2E dependencies
+        working-directory: apps/e2e
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: apps/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Start backend
+        working-directory: apps/backend
+        run: |
+          MMV_ENVIRONMENT=test MMV_TEST_MODE=true uv run fastapi dev app/main.py --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/mmv-backend.pid
+
+      - name: Start frontend
+        working-directory: apps/frontend
+        run: |
+          VITE_API_BASE_URL=http://127.0.0.1:8000 VITE_TEST_MODE=true npm run dev -- --port 5173 &
+          echo $! > /tmp/mmv-frontend.pid
+
+      - name: Wait for local app
+        run: |
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://127.0.0.1:8000/health
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://127.0.0.1:5173
+
+      - name: Run E2E tests
+        working-directory: apps/e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+        run: npm run test
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/dev
+    env:
+      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}
+      TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
+      TF_VAR_entra_tenant_id: ${{ vars.VITE_ENTRA_TENANT_ID }}
+      TF_VAR_frontend_entra_client_id: ${{ vars.VITE_ENTRA_CLIENT_ID }}
+      TF_VAR_backend_entra_client_id: ${{ vars.BACKEND_ENTRA_CLIENT_ID }}
+      TF_VAR_entra_api_scope: ${{ vars.VITE_API_SCOPE }}
+      TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+      - name: Check formatting
+        run: terraform fmt -check -recursive ../..
+      - name: Initialize without backend
+        run: terraform init -backend=false
+      - name: Validate
+        run: terraform validate

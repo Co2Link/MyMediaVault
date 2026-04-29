@@ -11,9 +11,17 @@ rating, and tags.
 apps/backend      FastAPI backend
 apps/frontend     React SPA
 apps/e2e          Playwright tests
+docs              Project decisions and workflow guidance
 infra/terraform   Azure infrastructure
 specs/001-video-vault-management   Spec Kit artifacts
 ```
+
+## Branching and Deployment
+
+The default integration branch is `develop`. Feature work should branch from
+`develop` and merge back through pull requests. A push to `develop` deploys the
+dev environment. See [docs/branching-strategy.md](docs/branching-strategy.md)
+for the agent-facing rules.
 
 ## Backend
 
