@@ -90,6 +90,7 @@ module "database" {
   location            = var.database_location
   resource_group_name = azurerm_resource_group.main.name
   administrator_login = var.database_admin_login
+  database_name       = "mymediavault-free"
   server_name         = "${var.prefix}-sql-wus2"
 
   administrator_login_password = var.database_admin_password

@@ -29,6 +29,11 @@ variable "administrator_login_password" {
   sensitive = true
 }
 
+variable "database_name" {
+  type    = string
+  default = "mymediavault"
+}
+
 variable "server_name" {
   type    = string
   default = null
@@ -44,12 +49,17 @@ resource "azurerm_mssql_server" "main" {
 }
 
 resource "azurerm_mssql_database" "main" {
-  name                        = "mymediavault"
+  name                        = var.database_name
   server_id                   = azurerm_mssql_server.main.id
   sku_name                    = "GP_S_Gen5_2"
   max_size_gb                 = 32
   min_capacity                = 0.5
   auto_pause_delay_in_minutes = 60
+  storage_account_type        = "Local"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "azapi_update_resource" "database_free_limit" {
