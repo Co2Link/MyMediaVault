@@ -48,6 +48,7 @@ jobs:
         working-directory: infra/terraform/envs/dev
     env:
       TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}-${{ github.sha }}
+      TF_VAR_backend_commit_sha: ${{ github.sha }}
       TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
       TF_VAR_entra_tenant_id: ${{ vars.VITE_ENTRA_TENANT_ID }}
       TF_VAR_frontend_entra_client_id: ${{ vars.VITE_ENTRA_CLIENT_ID }}
@@ -155,7 +156,14 @@ jobs:
     if: ${{ github.event_name == 'push' || inputs.deploy }}
     steps:
       - name: Backend health
-        run: curl --fail --connect-timeout 10 --max-time 20 --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.backend_url }}/health"
+        run: |
+          response="$(
+            curl --fail --connect-timeout 10 --max-time 20 \
+              --retry 12 --retry-all-errors --retry-delay 10 \
+              "${{ needs.terraform.outputs.backend_url }}/health"
+          )"
+          echo "$response"
+          test "$(echo "$response" | jq -r .commit)" = "${{ github.sha }}"
 
       - name: Frontend health
         run: curl --fail --connect-timeout 10 --max-time 20 --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.frontend_url }}"

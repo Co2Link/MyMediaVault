@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     blob_storage_root: Path = Path(".local/blob-storage")
     azure_storage_connection_string: str | None = None
     azure_blob_container: str = "torrent-raw"
+    commit_sha: str = "local"
     entra_tenant_id: str | None = None
     entra_client_id: str | None = None
     entra_openapi_client_id: str | None = None

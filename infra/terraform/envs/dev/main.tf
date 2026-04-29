@@ -38,6 +38,12 @@ variable "backend_image" {
   description = "Docker image to deploy to Azure Container Apps."
 }
 
+variable "backend_commit_sha" {
+  type        = string
+  default     = "local"
+  description = "Source commit deployed by the backend container."
+}
+
 variable "database_admin_login" {
   type    = string
   default = "mmvadmin"
@@ -115,6 +121,7 @@ module "app" {
   static_web_app_location         = var.static_web_app_location
   resource_group_name             = azurerm_resource_group.main.name
   backend_image                   = var.backend_image
+  backend_commit_sha              = var.backend_commit_sha
   database_url                    = local.database_url
   azure_storage_connection_string = module.storage.connection_string
   azure_blob_container            = module.storage.torrent_container_name

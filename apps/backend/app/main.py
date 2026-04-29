@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "commit": get_settings().commit_sha}
 
     return app
 

@@ -19,6 +19,11 @@ variable "backend_image" {
   type = string
 }
 
+variable "backend_commit_sha" {
+  type    = string
+  default = "local"
+}
+
 variable "database_url" {
   type      = string
   sensitive = true
@@ -114,6 +119,11 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "MMV_TEST_MODE"
         value = tostring(var.test_mode_enabled)
+      }
+
+      env {
+        name  = "MMV_COMMIT_SHA"
+        value = var.backend_commit_sha
       }
 
       env {
