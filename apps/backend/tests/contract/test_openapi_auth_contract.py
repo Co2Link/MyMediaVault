@@ -3,6 +3,9 @@ from typing import cast
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.auth.dependencies import _build_azure_scheme
+from app.core.config import Settings
+
 
 def test_openapi_exposes_entra_oauth_scheme(client: TestClient) -> None:
     response = client.get("/openapi.json")
@@ -37,3 +40,15 @@ def test_swagger_ui_uses_pkce_oauth_settings(client: TestClient) -> None:
     assert oauth_settings is not None
     assert oauth_settings["usePkceWithAuthorizationCodeGrant"] is True
     assert oauth_settings["scopes"] == "access_as_user"
+
+
+def test_azure_scheme_accepts_client_id_and_app_id_uri_audiences() -> None:
+    scheme = _build_azure_scheme(
+        Settings(
+            entra_tenant_id="tenant",
+            entra_client_id="backend-client-id",
+            entra_api_scope="api://backend-client-id/access_as_user",
+        )
+    )
+
+    assert scheme.accepted_audiences == ["backend-client-id", "api://backend-client-id"]

@@ -1,8 +1,10 @@
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import Depends, Header, Security
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
+from fastapi_azure_auth.auth import jwt
 from fastapi_azure_auth.user import User as EntraUser
+from jwt.types import Options
 from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
@@ -13,6 +15,25 @@ from app.core.models import User
 _initial_settings = get_settings()
 
 
+class MyMediaVaultAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
+    def __init__(self, *args: Any, accepted_audiences: list[str], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.accepted_audiences = accepted_audiences
+
+    def validate(self, access_token: str, key: Any, iss: str, options: dict[str, Any]) -> dict[str, Any]:
+        return dict(
+            jwt.decode(
+                access_token,
+                key=key,
+                algorithms=["RS256"],
+                audience=self.accepted_audiences,
+                issuer=iss,
+                leeway=self.leeway,
+                options=cast(Options, options),
+            )
+        )
+
+
 def _authorization_url(tenant_id: str) -> str:
     return f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
 
@@ -21,10 +42,19 @@ def _token_url(tenant_id: str) -> str:
     return f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 
 
-def _build_azure_scheme(settings: Settings) -> SingleTenantAzureAuthorizationCodeBearer:
+def _accepted_audiences(client_id: str) -> list[str]:
+    if not client_id:
+        return []
+    app_id_uri = client_id if client_id.startswith("api://") else f"api://{client_id}"
+    return list(dict.fromkeys([client_id, app_id_uri]))
+
+
+def _build_azure_scheme(settings: Settings) -> MyMediaVaultAzureScheme:
     tenant_id = settings.entra_tenant_id or ""
-    return SingleTenantAzureAuthorizationCodeBearer(
-        app_client_id=settings.entra_client_id or "",
+    client_id = settings.entra_client_id or ""
+    return MyMediaVaultAzureScheme(
+        accepted_audiences=_accepted_audiences(client_id),
+        app_client_id=client_id,
         tenant_id=tenant_id,
         scopes={settings.entra_api_scope: "Access MyMediaVault"},
         auto_error=False,
@@ -33,7 +63,7 @@ def _build_azure_scheme(settings: Settings) -> SingleTenantAzureAuthorizationCod
     )
 
 
-_azure_scheme: SingleTenantAzureAuthorizationCodeBearer = _build_azure_scheme(_initial_settings)
+_azure_scheme: MyMediaVaultAzureScheme = _build_azure_scheme(_initial_settings)
 _azure_scheme_key: tuple[str, str, str] | None = (
     _initial_settings.entra_tenant_id or "",
     _initial_settings.entra_client_id or "",
@@ -49,7 +79,7 @@ def _is_admin_subject(subject: str, x_test_admin: str | None) -> bool:
     return subject == "admin" or x_test_admin == "true"
 
 
-def get_azure_scheme(settings: Settings) -> SingleTenantAzureAuthorizationCodeBearer:
+def get_azure_scheme(settings: Settings) -> MyMediaVaultAzureScheme:
     if not settings.production_auth_configured:
         raise ForbiddenError("Production authentication is not configured")
 
