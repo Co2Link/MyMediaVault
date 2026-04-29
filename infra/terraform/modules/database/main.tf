@@ -48,29 +48,34 @@ resource "azurerm_mssql_server" "main" {
   administrator_login_password = var.administrator_login_password
 }
 
-resource "azurerm_mssql_database" "main" {
-  name                        = var.database_name
-  server_id                   = azurerm_mssql_server.main.id
-  sku_name                    = "GP_S_Gen5_2"
-  max_size_gb                 = 32
-  min_capacity                = 0.5
-  auto_pause_delay_in_minutes = 60
-  storage_account_type        = "Local"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "azapi_update_resource" "database_free_limit" {
-  type        = "Microsoft.Sql/servers/databases@2023-02-01-preview"
-  resource_id = azurerm_mssql_database.main.id
+resource "azapi_resource" "main" {
+  type                      = "Microsoft.Sql/servers/databases@2025-02-01-preview"
+  schema_validation_enabled = false
+  name                      = var.database_name
+  parent_id                 = azurerm_mssql_server.main.id
+  location                  = var.location
 
   body = {
     properties = {
-      useFreeLimit                = true
-      freeLimitExhaustionBehavior = "AutoPause"
+      createMode                       = "Default"
+      useFreeLimit                     = true
+      freeLimitExhaustionBehavior      = "AutoPause"
+      maxSizeBytes                     = 34359738368
+      autoPauseDelay                   = 60
+      minCapacity                      = 0.5
+      requestedBackupStorageRedundancy = "Local"
+      licenseType                      = "LicenseIncluded"
     }
+    sku = {
+      name     = "GP_S_Gen5"
+      tier     = "GeneralPurpose"
+      family   = "Gen5"
+      capacity = 2
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -86,7 +91,7 @@ output "administrator_login" {
 }
 
 output "database_name" {
-  value = azurerm_mssql_database.main.name
+  value = azapi_resource.main.name
 }
 
 output "server_fqdn" {
