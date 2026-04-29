@@ -16,6 +16,12 @@ variable "storage_location" {
   description = "Region for the dev storage account."
 }
 
+variable "database_location" {
+  type        = string
+  default     = "westus2"
+  description = "Azure SQL free-offer region fixed for this subscription."
+}
+
 variable "static_web_app_location" {
   type        = string
   default     = "eastasia"
@@ -93,11 +99,11 @@ module "storage" {
 module "database" {
   source              = "../../modules/database"
   prefix              = var.prefix
-  location            = var.location
+  location            = var.database_location
   resource_group_name = azurerm_resource_group.main.name
   administrator_login = var.database_admin_login
   database_name       = "mymediavault-free"
-  server_name         = "${var.prefix}-sql-jpe"
+  server_name         = "${var.prefix}-sql-wus2"
 
   administrator_login_password = var.database_admin_password
 }
