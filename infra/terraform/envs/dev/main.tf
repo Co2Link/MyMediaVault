@@ -1,19 +1,19 @@
 variable "location" {
   type        = string
-  default     = "eastus2"
-  description = "Primary region for dev compute, database, and frontend resources."
+  default     = "japaneast"
+  description = "Primary region for dev compute and frontend resources."
 }
 
 variable "resource_group_location" {
   type        = string
-  default     = "eastus"
-  description = "Resource group and existing dev storage region."
+  default     = "japaneast"
+  description = "Resource group and storage region."
 }
 
 variable "database_location" {
   type        = string
-  default     = "westus2"
-  description = "Azure SQL region. Kept separate because SQL provisioning may be restricted by subscription and region."
+  default     = "japaneast"
+  description = "Azure SQL region."
 }
 
 variable "prefix" {
@@ -91,7 +91,7 @@ module "database" {
   resource_group_name = azurerm_resource_group.main.name
   administrator_login = var.database_admin_login
   database_name       = "mymediavault-free"
-  server_name         = "${var.prefix}-sql-wus2"
+  server_name         = "${var.prefix}-sql-jpe"
 
   administrator_login_password = var.database_admin_password
 }

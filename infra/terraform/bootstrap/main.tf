@@ -1,6 +1,6 @@
 variable "location" {
   type    = string
-  default = "eastus"
+  default = "japaneast"
 }
 
 variable "resource_group_name" {
