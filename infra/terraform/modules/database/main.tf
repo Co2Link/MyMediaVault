@@ -44,10 +44,12 @@ resource "azurerm_mssql_server" "main" {
 }
 
 resource "azurerm_mssql_database" "main" {
-  name        = "mymediavault"
-  server_id   = azurerm_mssql_server.main.id
-  sku_name    = "GP_S_Gen5_2"
-  max_size_gb = 32
+  name                        = "mymediavault"
+  server_id                   = azurerm_mssql_server.main.id
+  sku_name                    = "GP_S_Gen5_2"
+  max_size_gb                 = 32
+  min_capacity                = 0.5
+  auto_pause_delay_in_minutes = 60
 }
 
 resource "azapi_update_resource" "database_free_limit" {
