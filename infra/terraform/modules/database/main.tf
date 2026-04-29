@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    azapi = {
+      source  = "azure/azapi"
+      version = "~> 2.0"
+    }
+  }
+}
+
 variable "prefix" {
   type = string
 }
@@ -32,8 +41,20 @@ resource "azurerm_mssql_server" "main" {
 resource "azurerm_mssql_database" "main" {
   name        = "mymediavault"
   server_id   = azurerm_mssql_server.main.id
-  sku_name    = "GP_S_Gen5_1"
+  sku_name    = "GP_S_Gen5_2"
   max_size_gb = 32
+}
+
+resource "azapi_update_resource" "database_free_limit" {
+  type        = "Microsoft.Sql/servers/databases@2022-08-01-preview"
+  resource_id = azurerm_mssql_database.main.id
+
+  body = {
+    properties = {
+      useFreeLimit                = true
+      freeLimitExhaustionBehavior = "AutoPause"
+    }
+  }
 }
 
 resource "azurerm_mssql_firewall_rule" "allow_azure_services" {

@@ -55,19 +55,10 @@ variable "admin_role_names" {
   default = ["Admin", "MyMediaVault.Admin"]
 }
 
-resource "azurerm_log_analytics_workspace" "main" {
-  name                = "${var.prefix}-logs"
+resource "azurerm_container_app_environment" "main" {
+  name                = "${var.prefix}-apps"
   location            = var.location
   resource_group_name = var.resource_group_name
-  sku                 = "PerGB2018"
-  retention_in_days   = 30
-}
-
-resource "azurerm_container_app_environment" "main" {
-  name                       = "${var.prefix}-apps"
-  location                   = var.location
-  resource_group_name        = var.resource_group_name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
 }
 
 resource "azurerm_container_app" "backend" {
@@ -97,6 +88,8 @@ resource "azurerm_container_app" "backend" {
   }
 
   template {
+    min_replicas = 0
+
     container {
       name   = "backend"
       image  = var.backend_image
