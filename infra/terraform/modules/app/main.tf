@@ -46,6 +46,10 @@ variable "backend_entra_client_id" {
   type = string
 }
 
+variable "entra_openapi_client_id" {
+  type = string
+}
+
 variable "entra_api_scope" {
   type = string
 }
@@ -134,6 +138,11 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "MMV_ENTRA_CLIENT_ID"
         value = var.backend_entra_client_id
+      }
+
+      env {
+        name  = "MMV_ENTRA_OPENAPI_CLIENT_ID"
+        value = var.entra_openapi_client_id
       }
 
       env {

@@ -1,7 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, Header, Request
-from fastapi.security import SecurityScopes
+from fastapi import Depends, Header, Security
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from fastapi_azure_auth.user import User as EntraUser
 from sqlmodel import Session, select
@@ -11,8 +10,35 @@ from app.core.db import get_session
 from app.core.errors import ForbiddenError
 from app.core.models import User
 
-_azure_scheme: SingleTenantAzureAuthorizationCodeBearer | None = None
-_azure_scheme_key: tuple[str, str, str] | None = None
+_initial_settings = get_settings()
+
+
+def _authorization_url(tenant_id: str) -> str:
+    return f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
+
+
+def _token_url(tenant_id: str) -> str:
+    return f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+
+
+def _build_azure_scheme(settings: Settings) -> SingleTenantAzureAuthorizationCodeBearer:
+    tenant_id = settings.entra_tenant_id or ""
+    return SingleTenantAzureAuthorizationCodeBearer(
+        app_client_id=settings.entra_client_id or "",
+        tenant_id=tenant_id,
+        scopes={settings.entra_api_scope: "Access MyMediaVault"},
+        auto_error=False,
+        openapi_authorization_url=_authorization_url(tenant_id),
+        openapi_token_url=_token_url(tenant_id),
+    )
+
+
+_azure_scheme: SingleTenantAzureAuthorizationCodeBearer = _build_azure_scheme(_initial_settings)
+_azure_scheme_key: tuple[str, str, str] | None = (
+    _initial_settings.entra_tenant_id or "",
+    _initial_settings.entra_client_id or "",
+    _initial_settings.entra_api_scope,
+)
 
 
 def _test_subject(x_test_user: str | None) -> str:
@@ -29,12 +55,8 @@ def get_azure_scheme(settings: Settings) -> SingleTenantAzureAuthorizationCodeBe
 
     global _azure_scheme, _azure_scheme_key
     scheme_key = (settings.entra_tenant_id or "", settings.entra_client_id or "", settings.entra_api_scope)
-    if _azure_scheme is None or _azure_scheme_key != scheme_key:
-        _azure_scheme = SingleTenantAzureAuthorizationCodeBearer(
-            app_client_id=settings.entra_client_id or "",
-            tenant_id=settings.entra_tenant_id or "",
-            scopes={settings.entra_api_scope: "Access MyMediaVault"},
-        )
+    if _azure_scheme_key != scheme_key:
+        _azure_scheme = _build_azure_scheme(settings)
         _azure_scheme_key = scheme_key
     return _azure_scheme
 
@@ -73,7 +95,7 @@ def _upsert_user(session: Session, subject: str, display_name: str | None, email
 async def get_current_user(
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
-    request: Request,
+    entra_user: Annotated[EntraUser | None, Security(_azure_scheme)],
     authorization: Annotated[str | None, Header()] = None,
     x_test_user: Annotated[str | None, Header(alias="X-Test-User")] = None,
     x_test_admin: Annotated[str | None, Header(alias="X-Test-Admin")] = None,
@@ -101,7 +123,6 @@ async def get_current_user(
     if not authorization:
         raise ForbiddenError("Authentication is required")
 
-    entra_user = await get_azure_scheme(settings)(request, SecurityScopes(scopes=[settings.entra_api_scope]))
     if entra_user is None:
         raise ForbiddenError("Authentication token is invalid")
     subject = entra_user.oid or entra_user.sub

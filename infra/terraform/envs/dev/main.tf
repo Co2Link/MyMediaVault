@@ -121,6 +121,7 @@ module "app" {
   test_mode_enabled               = var.test_mode_enabled
   entra_tenant_id                 = var.entra_tenant_id
   backend_entra_client_id         = var.backend_entra_client_id
+  entra_openapi_client_id         = var.frontend_entra_client_id
   entra_api_scope                 = var.entra_api_scope
   admin_object_ids                = var.admin_object_ids
   admin_role_names                = var.admin_role_names

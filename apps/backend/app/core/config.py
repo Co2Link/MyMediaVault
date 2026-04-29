@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     azure_blob_container: str = "torrent-raw"
     entra_tenant_id: str | None = None
     entra_client_id: str | None = None
+    entra_openapi_client_id: str | None = None
     entra_api_scope: str = "access_as_user"
     admin_object_ids: list[str] = Field(default_factory=list)
     admin_role_names: list[str] = Field(default_factory=lambda: ["Admin", "MyMediaVault.Admin"])

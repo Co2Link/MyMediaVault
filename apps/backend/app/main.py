@@ -20,7 +20,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="MyMediaVault API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="MyMediaVault API",
+        version="0.1.0",
+        lifespan=lifespan,
+        swagger_ui_oauth2_redirect_url="/oauth2-redirect",
+        swagger_ui_init_oauth={
+            "usePkceWithAuthorizationCodeGrant": True,
+            "clientId": settings.entra_openapi_client_id or settings.entra_client_id or "",
+            "scopes": settings.entra_api_scope,
+        },
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
