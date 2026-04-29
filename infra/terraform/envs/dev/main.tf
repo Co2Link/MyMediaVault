@@ -10,6 +10,12 @@ variable "resource_group_location" {
   description = "Resource group and existing dev storage region."
 }
 
+variable "database_location" {
+  type        = string
+  default     = "westus2"
+  description = "Azure SQL region. Kept separate because SQL provisioning may be restricted by subscription and region."
+}
+
 variable "prefix" {
   type    = string
   default = "mmv-dev"
@@ -81,10 +87,10 @@ module "storage" {
 module "database" {
   source              = "../../modules/database"
   prefix              = var.prefix
-  location            = var.location
+  location            = var.database_location
   resource_group_name = azurerm_resource_group.main.name
   administrator_login = var.database_admin_login
-  server_name         = "${var.prefix}-sql-eus2"
+  server_name         = "${var.prefix}-sql-wus2"
 
   administrator_login_password = var.database_admin_password
 }
