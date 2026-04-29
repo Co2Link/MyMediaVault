@@ -13,7 +13,7 @@ on:
 
 concurrency:
   group: dev
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   image:
@@ -153,7 +153,7 @@ jobs:
     if: ${{ github.event_name == 'push' || inputs.deploy }}
     steps:
       - name: Backend health
-        run: curl --fail --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.backend_url }}/health"
+        run: curl --fail --connect-timeout 10 --max-time 20 --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.backend_url }}/health"
 
       - name: Frontend health
-        run: curl --fail --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.frontend_url }}"
+        run: curl --fail --connect-timeout 10 --max-time 20 --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.frontend_url }}"

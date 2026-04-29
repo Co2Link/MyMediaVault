@@ -40,7 +40,7 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    external_subject: str = Field(index=True, unique=True)
+    external_subject: str = Field(max_length=255, index=True, unique=True)
     display_name: str | None = None
     email: str | None = None
     is_admin: bool = False
@@ -52,11 +52,11 @@ class Torrent(SQLModel, table=True):
     __tablename__ = "torrents"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    info_hash: str = Field(index=True, unique=True)
-    name: str | None = Field(default=None, index=True)
+    info_hash: str = Field(max_length=64, index=True, unique=True)
+    name: str | None = Field(default=None, max_length=512, index=True)
     size_bytes: int | None = None
     raw_blob_key: str | None = None
-    metadata_status: TorrentMetadataStatus = Field(default=TorrentMetadataStatus.PENDING, index=True)
+    metadata_status: TorrentMetadataStatus = Field(default=TorrentMetadataStatus.PENDING, max_length=32, index=True)
     metadata_error: str | None = None
     metadata_attempts: int = 0
     metadata_last_attempt_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
@@ -79,7 +79,7 @@ class Tag(SQLModel, table=True):
     __tablename__ = "tags"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    name: str = Field(index=True, unique=True)
+    name: str = Field(max_length=128, index=True, unique=True)
     created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
     updated_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
 
@@ -91,7 +91,7 @@ class Video(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", index=True)
     torrent_id: UUID = Field(foreign_key="torrents.id", index=True)
-    title: str | None = Field(default=None, index=True)
+    title: str | None = Field(default=None, max_length=512, index=True)
     description: str | None = None
     rating: int | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
@@ -103,7 +103,7 @@ class TorrentProcessingJob(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     torrent_id: UUID = Field(foreign_key="torrents.id", index=True)
-    status: TorrentJobStatus = Field(default=TorrentJobStatus.QUEUED, index=True)
+    status: TorrentJobStatus = Field(default=TorrentJobStatus.QUEUED, max_length=32, index=True)
     error: str | None = None
     started_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     finished_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
