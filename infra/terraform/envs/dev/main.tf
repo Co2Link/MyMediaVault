@@ -4,18 +4,6 @@ variable "location" {
   description = "Primary region for dev compute and frontend resources."
 }
 
-variable "resource_group_location" {
-  type        = string
-  default     = "japaneast"
-  description = "Resource group and storage region."
-}
-
-variable "database_location" {
-  type        = string
-  default     = "japaneast"
-  description = "Azure SQL region."
-}
-
 variable "prefix" {
   type    = string
   default = "mmv-dev"
@@ -80,14 +68,14 @@ locals {
 module "storage" {
   source              = "../../modules/storage"
   prefix              = var.prefix
-  location            = var.resource_group_location
+  location            = var.location
   resource_group_name = azurerm_resource_group.main.name
 }
 
 module "database" {
   source              = "../../modules/database"
   prefix              = var.prefix
-  location            = var.database_location
+  location            = var.location
   resource_group_name = azurerm_resource_group.main.name
   administrator_login = var.database_admin_login
   database_name       = "mymediavault-free"
@@ -115,7 +103,7 @@ module "app" {
 
 resource "azurerm_resource_group" "main" {
   name     = "rg-${var.prefix}"
-  location = var.resource_group_location
+  location = var.location
 }
 
 output "backend_url" {
