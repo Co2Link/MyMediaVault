@@ -4,6 +4,18 @@ variable "location" {
   description = "Primary region for dev compute and frontend resources."
 }
 
+variable "resource_group_location" {
+  type        = string
+  default     = "eastus"
+  description = "Existing resource group metadata location."
+}
+
+variable "storage_location" {
+  type        = string
+  default     = "eastus2"
+  description = "Region for the dev storage account."
+}
+
 variable "prefix" {
   type    = string
   default = "mmv-dev"
@@ -68,7 +80,7 @@ locals {
 module "storage" {
   source              = "../../modules/storage"
   prefix              = var.prefix
-  location            = var.location
+  location            = var.storage_location
   resource_group_name = azurerm_resource_group.main.name
 }
 
@@ -103,7 +115,7 @@ module "app" {
 
 resource "azurerm_resource_group" "main" {
   name     = "rg-${var.prefix}"
-  location = var.location
+  location = var.resource_group_location
 }
 
 output "backend_url" {
