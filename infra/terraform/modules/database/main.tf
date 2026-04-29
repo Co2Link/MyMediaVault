@@ -67,7 +67,7 @@ resource "azapi_resource" "main" {
       licenseType                      = "LicenseIncluded"
     }
     sku = {
-      name     = "GP_S_Gen5"
+      name     = "GP_S_Gen5_2"
       tier     = "GeneralPurpose"
       family   = "Gen5"
       capacity = 2
