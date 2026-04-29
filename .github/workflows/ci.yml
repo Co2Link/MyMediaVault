@@ -76,18 +76,18 @@ jobs:
       - name: Start frontend
         working-directory: apps/frontend
         run: |
-          VITE_API_BASE_URL=http://127.0.0.1:8000 VITE_TEST_MODE=true npm run dev -- --port 5173 &
+          VITE_API_BASE_URL=http://localhost:8000 VITE_TEST_MODE=true npm run dev -- --port 5173 &
           echo $! > /tmp/mmv-frontend.pid
 
       - name: Wait for local app
         run: |
-          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://127.0.0.1:8000/health
-          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://127.0.0.1:5173
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost:8000/health
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost:5173
 
       - name: Run E2E tests
         working-directory: apps/e2e
         env:
-          E2E_BASE_URL: http://127.0.0.1:5173
+          E2E_BASE_URL: http://localhost:5173
         run: npm run test
 
   terraform:

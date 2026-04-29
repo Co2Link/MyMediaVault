@@ -20,13 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      image: ${{ steps.image.outputs.image }}
     steps:
       - uses: actions/checkout@v5
-
-      - id: image
-        run: echo "image=${{ vars.BACKEND_IMAGE }}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -41,7 +36,7 @@ jobs:
           file: apps/backend/Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name == 'push' || inputs.deploy }}
-          tags: ${{ steps.image.outputs.image }}
+          tags: ${{ vars.BACKEND_IMAGE }}
 
   terraform:
     runs-on: ubuntu-latest
@@ -50,7 +45,7 @@ jobs:
       run:
         working-directory: infra/terraform/envs/dev
     env:
-      TF_VAR_backend_image: ${{ needs.image.outputs.image }}
+      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}
       TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
       TF_VAR_entra_tenant_id: ${{ vars.VITE_ENTRA_TENANT_ID }}
       TF_VAR_frontend_entra_client_id: ${{ vars.VITE_ENTRA_CLIENT_ID }}
