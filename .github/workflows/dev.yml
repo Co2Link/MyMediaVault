@@ -36,7 +36,9 @@ jobs:
           file: apps/backend/Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name == 'push' || inputs.deploy }}
-          tags: ${{ vars.BACKEND_IMAGE }}
+          tags: |
+            ${{ vars.BACKEND_IMAGE }}
+            ${{ vars.BACKEND_IMAGE }}-${{ github.sha }}
 
   terraform:
     runs-on: ubuntu-latest
@@ -45,7 +47,7 @@ jobs:
       run:
         working-directory: infra/terraform/envs/dev
     env:
-      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}
+      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}-${{ github.sha }}
       TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
       TF_VAR_entra_tenant_id: ${{ vars.VITE_ENTRA_TENANT_ID }}
       TF_VAR_frontend_entra_client_id: ${{ vars.VITE_ENTRA_CLIENT_ID }}
