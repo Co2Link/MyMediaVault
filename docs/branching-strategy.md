@@ -17,6 +17,8 @@ for a direct commit.
 ## Agent Rules
 
 - Read this document before changing CI/CD, deployment, or release behavior.
+- Keep `docs/` current with implementation and workflow changes; update
+  [Documentation Index](index.md) when adding, removing, or renaming docs.
 - Keep local work on the current feature branch unless the user asks to switch.
 - Push feature work to the matching feature branch first.
 - Push to `develop` only when the user asks to deploy dev or when the requested

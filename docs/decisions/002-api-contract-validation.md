@@ -1,5 +1,7 @@
 # Decision: API Contract Validation
 
+Status: accepted.
+
 FastAPI already generates the runtime OpenAPI document at `/openapi.json`, and
 that generated schema should be treated as the implementation source of truth.
 
@@ -11,4 +13,5 @@ Maintenance rule:
 
 - Do not maintain a separate hand-edited OpenAPI artifact for this feature.
 - When API behavior changes, update the backend behavior, the contract tests,
-  and any generated-OpenAPI assertions together.
+  generated-OpenAPI assertions, and [Backend Design](../backend-design.md)
+  together.
