@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:local": "bash ./scripts/run-local.sh",
+    "test:local:headed": "bash ./scripts/run-local.sh --headed"
   },
   "devDependencies": {
     "@playwright/test": "latest",

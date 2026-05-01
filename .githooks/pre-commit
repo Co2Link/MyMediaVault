@@ -18,6 +18,8 @@ run_in apps/backend uv run pytest
 run_in apps/frontend npm run build
 run_in apps/frontend npm run test
 
+run_in apps/e2e npm run test:local
+
 run_in infra/terraform/envs/dev terraform fmt -check -recursive ../..
 run_in infra/terraform/envs/dev terraform init -backend=false
 run_in infra/terraform/envs/dev terraform validate

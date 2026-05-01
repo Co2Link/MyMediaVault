@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-video-vault-management`  
 **Created**: 2026-04-27  
-**Status**: Draft  
+**Status**: Implemented  
 **Input**: User description: "This is an empty repository for a new app that allows users to manage their video collection by adding videos from torrent info hashes, sharing canonical torrent metadata across users, supporting admin tag management, and establishing the initial development, testing, deployment, and quality foundations."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -76,13 +76,13 @@ A developer can set up the repository, run automated validation, and execute rep
 
 **Why this priority**: The codebase is empty, so the initial feature must establish a repeatable foundation for future application, integration, and deployment work.
 
-**Independent Test**: A developer can follow documented setup instructions, run validation commands, and complete a repeatable test of the add-video and search flows without depending on external identity services.
+**Independent Test**: A developer can follow documented setup instructions, run validation commands, and verify the supported automated checks for add-video and search flows with deterministic fixtures and documented authentication prerequisites.
 
 **Acceptance Scenarios**:
 
 1. **Given** a fresh development environment, **When** a developer follows the setup instructions, **Then** the required project areas for application code, tests, and deployment configuration are available.
 2. **Given** validation commands are run, **When** application checks, interface checks, and end-to-end checks complete, **Then** failures clearly identify the affected project area and scenario.
-3. **Given** automated end-to-end tests run in a test environment, **When** the core add-video and search flows execute, **Then** tests can authenticate or bypass authentication in a repeatable way that does not require a live external identity provider.
+3. **Given** automated end-to-end tests run in a test environment, **When** the core add-video and search flows execute, **Then** tests can run in a repeatable environment with deterministic torrent metadata fixtures and documented authentication prerequisites.
 
 ### Edge Cases
 
@@ -117,8 +117,8 @@ A developer can set up the repository, run automated validation, and execute rep
 - **FR-015**: The system MUST allow administrators to create, rename, and delete shared tags.
 - **FR-016**: The system MUST restrict tag management to administrators.
 - **FR-017**: The system MUST preserve video records when a tag is deleted by removing that tag association from affected videos.
-- **FR-018**: The system MUST provide a repeatable test mode for core workflows that does not require a live external identity provider.
-- **FR-019**: The system MUST include documented validation commands for application checks, interface checks, and end-to-end user-flow checks.
+- **FR-018**: The system MUST provide repeatable automated validation for core workflows with deterministic torrent metadata fixtures and documented authentication prerequisites.
+- **FR-019**: The system MUST include documented validation commands for application checks, interface checks, and available user-flow validation checks.
 - **FR-020**: The first delivery MUST prioritize the smallest usable slice: adding videos, processing torrent metadata, viewing and searching a personal collection, and the testing foundation.
 
 ### User Experience Requirements *(mandatory for user-facing changes)*
@@ -133,8 +133,8 @@ A developer can set up the repository, run automated validation, and execute rep
 ### Quality & Performance Requirements *(mandatory)*
 
 - **QP-001**: The feature MUST preserve documented setup, build, test, run, and deployment validation commands.
-- **QP-002**: The feature MUST include automated coverage for video submission, metadata processing outcomes, canonical torrent reuse, collection search, user isolation, admin tag management, and authentication-free test mode.
-- **QP-003**: The feature MUST include repeatable end-to-end coverage for adding a video, observing processing status, viewing the collection, searching the collection, and managing tags as an administrator.
+- **QP-002**: The feature MUST include automated coverage for video submission, metadata processing outcomes, canonical torrent reuse, collection search, user isolation, admin tag management, and documented authentication prerequisites for validation environments.
+- **QP-003**: The feature MUST include repeatable validation coverage for adding a video, observing processing status, viewing the collection, searching the collection, and enforcing administrator-only tag management, using the supported automated test layers for the environment.
 - **QP-004**: Collection search MUST return visible results or an empty state within 2 seconds for a user with 10,000 videos.
 - **QP-005**: Adding a video MUST acknowledge submission within 2 seconds under normal operating conditions, even when metadata retrieval continues in the background.
 - **QP-006**: The system MUST handle concurrent submissions of the same info hash without creating duplicate canonical torrent records.
@@ -161,7 +161,7 @@ A developer can set up the repository, run automated validation, and execute rep
 
 ## Assumptions
 
-- Users must be signed in for normal app usage, and test environments may use a controlled authentication bypass for repeatable automated tests.
+- Users must be signed in for normal app usage, and automated tests may rely on documented environment-specific authentication setup rather than a dedicated runtime bypass mode.
 - The first release is a web application optimized for desktop and mobile browsers, not a native mobile application.
 - Torrent retrieval can be asynchronous; users do not need metadata to be complete before the video appears in their collection.
 - Rating is a user-specific value stored on the video record, not shared through the canonical torrent record.

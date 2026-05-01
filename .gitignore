@@ -32,6 +32,8 @@ node_modules/
 coverage/
 playwright-report/
 test-results/
+apps/e2e/.auth/
+apps/e2e/.logs/
 
 # Terraform
 .terraform/

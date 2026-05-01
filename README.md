@@ -33,6 +33,8 @@ git config core.hooksPath .githooks
 ```
 
 The hook runs the backend, frontend, and Terraform checks that mirror CI.
+It also runs the local authenticated Playwright browser suite through
+`apps/e2e/.env.local`, so Entra test-user credentials must be available there.
 
 ## Backend
 
@@ -49,7 +51,7 @@ Run locally:
 
 ```bash
 cd apps/backend
-MMV_ENVIRONMENT=test MMV_TEST_MODE=true uv run fastapi dev app/main.py
+uv run fastapi dev app/main.py
 ```
 
 ## Frontend
@@ -73,12 +75,12 @@ npm run dev
 ```bash
 cd apps/e2e
 npm install
-npm run test
+npm run test:local
 ```
 
-The application supports an explicit test mode so end-to-end tests can use
-deterministic users and torrent metadata without a live external identity
-provider.
+`npm run test:local` starts backend and frontend automatically, loads env from
+`apps/backend/.env`, `apps/frontend/.env`, and `apps/e2e/.env.local`, performs
+real Entra login, and runs the browser suite against the local stack.
 
 ## Infrastructure
 

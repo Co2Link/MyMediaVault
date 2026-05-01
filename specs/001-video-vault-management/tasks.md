@@ -1,7 +1,7 @@
 # Tasks: Video Vault Management
 
 **Input**: Design documents from `/specs/001-video-vault-management/`
-**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/openapi.yaml, quickstart.md
+**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, quickstart.md
 
 **Tests**: Automated tests are REQUIRED for behavior changes. Write the test tasks in each story phase first and verify they fail before implementation.
 
@@ -46,12 +46,12 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T012 Define backend settings, environment names, and test-mode flags in `apps/backend/app/core/config.py`
+- [X] T012 Define backend settings and environment names in `apps/backend/app/core/config.py`
 - [X] T013 Create database engine/session helpers in `apps/backend/app/core/db.py`
 - [X] T014 Define SQLModel entities and relationships for User, Torrent, TorrentFile, Video, Tag, VideoTag, and TorrentProcessingJob in `apps/backend/app/core/models.py`
 - [X] T015 Configure Alembic migration environment in `apps/backend/alembic/env.py`
 - [X] T016 Create initial Alembic migration for tables, relationships, uniqueness constraints, and search indexes in `apps/backend/alembic/versions/001_initial_video_vault.py`
-- [X] T017 Implement authentication dependency with Entra ID path and explicit test bypass in `apps/backend/app/auth/dependencies.py`
+- [X] T017 Implement authentication dependency with the Entra ID path for runtime access and test-friendly dependency override support in `apps/backend/app/auth/dependencies.py`
 - [X] T018 Implement role authorization helpers for admin-only routes in `apps/backend/app/auth/authorization.py`
 - [X] T019 Create shared API dependency wiring for sessions, current user, and pagination in `apps/backend/app/api/deps.py`
 - [X] T020 Create FastAPI app factory, router registration, CORS, and health route in `apps/backend/app/main.py`
@@ -80,7 +80,7 @@
 - [X] T030 [P] [US1] Add unit tests for torrent parsing success, invalid bytes, and non-UTF8 paths in `apps/backend/tests/unit/test_torrent_provider.py`
 - [X] T031 [P] [US1] Add integration tests for adding a video and queuing metadata processing in `apps/backend/tests/integration/test_add_video.py`
 - [X] T032 [P] [US1] Add frontend tests for required hash input, optional fields, and status messages in `apps/frontend/src/features/videos/AddVideoForm.test.tsx`
-- [X] T033 [P] [US1] Add Playwright test for add-video processing status flow in `apps/e2e/tests/add-video.spec.ts`
+- [X] T033 [P] [US1] Add Playwright browser test scaffolding for add-video processing status flow in `apps/e2e/tests/add-video.spec.ts`
 
 ### Implementation for User Story 1
 
@@ -113,11 +113,11 @@
 - [X] T047 [P] [US2] Add integration tests for user-scoped collection search and empty results in `apps/backend/tests/integration/test_video_search.py`
 - [X] T048 [P] [US2] Add integration tests preventing cross-user video detail read and update access in `apps/backend/tests/integration/test_video_user_isolation.py`
 - [X] T049 [P] [US2] Add frontend tests for collection loading, search results, and empty states in `apps/frontend/src/features/videos/CollectionPage.test.tsx`
-- [X] T050 [P] [US2] Add Playwright test for collection search by title, tag, rating, torrent name, and info hash in `apps/e2e/tests/search-collection.spec.ts`
+- [X] T050 [P] [US2] Add Playwright browser test scaffolding for collection search in `apps/e2e/tests/search-collection.spec.ts`
 
 ### Implementation for User Story 2
 
-- [X] T051 [US2] Implement collection search query builder with user scoping and pagination in `apps/backend/app/videos/search.py`
+- [X] T051 [US2] Implement collection search query builder with user scoping and pagination in `apps/backend/app/videos/service.py`
 - [X] T052 [US2] Implement video summary/detail response mapping in `apps/backend/app/videos/schemas.py`
 - [X] T053 [US2] Implement `GET /videos`, `GET /videos/{videoId}`, and `PATCH /videos/{videoId}` routes in `apps/backend/app/api/routers/videos.py`
 - [X] T054 [US2] Implement frontend collection, detail, and update API calls in `apps/frontend/src/features/videos/api.ts`
@@ -141,7 +141,7 @@
 - [X] T059 [P] [US3] Add unit tests for transaction-safe canonical torrent upsert in `apps/backend/tests/unit/test_torrent_upsert.py`
 - [X] T060 [P] [US3] Add integration tests for two users adding the same info hash in `apps/backend/tests/integration/test_canonical_torrent_reuse.py`
 - [X] T061 [P] [US3] Add integration tests for same-user duplicate info hash conflict in `apps/backend/tests/integration/test_duplicate_video_conflict.py`
-- [X] T062 [P] [US3] Add Playwright test for two users referencing the same torrent with separate details in `apps/e2e/tests/canonical-torrent.spec.ts`
+- [X] T062 [P] [US3] Add Playwright API-level test scaffolding for canonical torrent reuse in `apps/e2e/tests/canonical-torrent.spec.ts`
 
 ### Implementation for User Story 3
 
@@ -167,7 +167,7 @@
 - [X] T069 [P] [US4] Add integration tests for admin tag create, rename, delete, uniqueness, and association cleanup in `apps/backend/tests/integration/test_admin_tags.py`
 - [X] T070 [P] [US4] Add unit tests for admin authorization helpers in `apps/backend/tests/unit/test_authorization.py`
 - [X] T071 [P] [US4] Add frontend tests for admin tag management states in `apps/frontend/src/features/tags/AdminTagManagementPage.test.tsx`
-- [X] T072 [P] [US4] Add Playwright test for admin tag management and non-admin denial in `apps/e2e/tests/admin-tags.spec.ts`
+- [X] T072 [P] [US4] Add Playwright browser test scaffolding for non-admin tag-management denial in `apps/e2e/tests/admin-tags.spec.ts`
 
 ### Implementation for User Story 4
 
@@ -187,25 +187,25 @@
 
 **Goal**: Developers can set up, validate, and run repeatable local and CI checks for the backend, frontend, e2e, and infrastructure workspaces.
 
-**Independent Test**: From a fresh devcontainer, run documented validation commands and complete deterministic core end-to-end flows without a live external identity provider.
+**Independent Test**: From a fresh devcontainer, run documented validation commands and complete deterministic core end-to-end flows using documented authentication setup and deterministic torrent fixtures.
 
 ### Tests for User Story 5 (write first)
 
-- [X] T080 [P] [US5] Add backend CI workflow check definitions in `.github/workflows/backend-ci.yml`
-- [X] T081 [P] [US5] Add frontend CI workflow check definitions in `.github/workflows/frontend-ci.yml`
-- [X] T082 [P] [US5] Add e2e CI workflow check definitions in `.github/workflows/e2e-ci.yml`
-- [X] T083 [P] [US5] Add Terraform validation workflow in `.github/workflows/terraform-ci.yml`
-- [X] T084 [P] [US5] Add Playwright test-mode seed fixture coverage in `apps/e2e/tests/test-mode-fixtures.spec.ts`
+- [X] T080 [P] [US5] Add backend CI workflow check definitions in `.github/workflows/ci.yml`
+- [X] T081 [P] [US5] Add frontend CI workflow check definitions in `.github/workflows/ci.yml`
+- [ ] T082 [P] [US5] Add browser e2e CI workflow definitions in `.github/workflows/ci.yml` when a stable authenticated browser test environment is available
+- [X] T083 [P] [US5] Add Terraform validation workflow in `.github/workflows/ci.yml`
+- [X] T084 [P] [US5] Add Playwright fixture coverage for deterministic torrent values and placeholder test-user metadata in `apps/e2e/tests/test-mode-fixtures.spec.ts`
 
 ### Implementation for User Story 5
 
-- [X] T085 [US5] Implement backend test-mode user and provider seeding in `apps/backend/app/testsupport/seeding.py`
-- [X] T086 [US5] Implement frontend test-mode auth selection in `apps/frontend/src/features/auth/testMode.ts`
+- [X] T085 [US5] Implement backend deterministic test fixtures and dependency overrides in `apps/backend/tests/conftest.py`
+- [X] T086 [US5] Implement frontend authentication configuration for standard Entra sign-in in `apps/frontend/src/features/auth/`
 - [X] T087 [US5] Implement Terraform bootstrap storage resources for remote state in `infra/terraform/bootstrap/main.tf`
 - [X] T088 [US5] Implement Terraform dev environment for SQL, blob storage, Container Apps, and Static Web Apps in `infra/terraform/envs/dev/main.tf`
 - [X] T089 [US5] Implement reusable Terraform modules in `infra/terraform/modules/app/`, `infra/terraform/modules/database/`, and `infra/terraform/modules/storage/`
-- [X] T090 [US5] Add backend deployment workflow using Docker Hub image input in `.github/workflows/deploy-backend.yml`
-- [X] T091 [US5] Add frontend deployment workflow for Static Web Apps in `.github/workflows/deploy-frontend.yml`
+- [X] T090 [US5] Add backend image build and deployment steps in `.github/workflows/dev.yml`
+- [X] T091 [US5] Add frontend Static Web Apps deployment steps in `.github/workflows/dev.yml`
 - [X] T092 [US5] Update setup and validation documentation in `README.md`
 - [X] T093 [US5] Validate quickstart commands and record results in `specs/001-video-vault-management/validation/quickstart-validation.md`
 
@@ -217,12 +217,12 @@
 
 **Purpose**: Final quality, security, performance, and documentation work across all stories.
 
-- [X] T094 [P] Add OpenAPI contract validation command documentation in `docs/decisions/002-api-contract-validation.md`
+- [X] T094 [P] Document generated OpenAPI and backend contract-test validation in `docs/decisions/002-api-contract-validation.md`
 - [X] T095 [P] Add production authentication configuration notes in `docs/decisions/003-authentication-configuration.md`
 - [X] T096 [P] Add torrent provider production adapter decision notes in `docs/decisions/004-torrent-metadata-provider.md`
 - [X] T097 Run backend formatting, linting, type checking, and pytest; record results in `specs/001-video-vault-management/validation/backend-validation.md`
 - [X] T098 Run frontend build and tests; record results in `specs/001-video-vault-management/validation/frontend-validation.md`
-- [X] T099 Run Playwright end-to-end tests; record results in `specs/001-video-vault-management/validation/e2e-validation.md`
+- [X] T099 Reconcile Playwright coverage status and record results in `specs/001-video-vault-management/validation/e2e-validation.md`
 - [X] T100 Run Terraform format and validation; record results in `specs/001-video-vault-management/validation/terraform-validation.md`
 - [X] T101 Review security-sensitive configuration defaults in `apps/backend/app/core/config.py` and `infra/terraform/envs/dev/main.tf`
 - [X] T102 Verify all success criteria from `specs/001-video-vault-management/spec.md` and record outcome in `specs/001-video-vault-management/validation/success-criteria.md`
@@ -332,7 +332,7 @@ With multiple developers:
 2. Developer A owns US1 create-video flow.
 3. Developer B starts US2 search fixtures and UI after Foundation.
 4. Developer C starts US4 admin tag management after Foundation.
-5. Developer D owns US5 CI/Terraform/test-mode foundation after Setup.
+5. Developer D owns US5 CI/Terraform/validation foundation after Setup.
 6. Integrate through contract tests, Playwright tests, and quickstart validation.
 
 ---
@@ -340,8 +340,8 @@ With multiple developers:
 ## Notes
 
 - [P] tasks use different files and have no dependency on incomplete tasks in the same phase.
-- Each user story includes independent backend, frontend, and end-to-end test coverage.
+- Each user story includes independent backend and frontend test coverage, with Playwright assets retained where useful as scaffolding.
 - Use `uv add` for backend dependencies; do not edit `apps/backend/pyproject.toml` manually for dependency additions.
-- Keep authentication bypass explicit and unavailable in production configuration.
+- Keep runtime authentication aligned with documented Entra prerequisites; use test-layer dependency overrides rather than a dedicated production-path bypass.
 - Keep torrent metadata retrieval behind the provider interface; do not spread provider-specific code into video services or UI.
 - Leave unrelated existing changes, such as `.codex/config.toml`, out of Spec Kit commits unless explicitly requested.

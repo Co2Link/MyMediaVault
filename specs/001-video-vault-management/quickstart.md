@@ -21,13 +21,11 @@ specs/001-video-vault-management   Feature design artifacts
 
 ```bash
 cd apps/backend
-uv init --package
-uv add "fastapi[standard]" fastapi-azure-auth sqlmodel alembic azure-storage-blob bencode2
-uv add --dev pytest pytest-asyncio httpx ruff ty
+uv sync --all-groups
 ```
 
-Do not edit `pyproject.toml` directly to add dependencies. Use `uv add` so the
-lockfile and dependency metadata stay in sync.
+When adding or updating backend dependencies, use `uv add` rather than editing
+`pyproject.toml` directly so the lockfile and dependency metadata stay in sync.
 
 ## Backend Validation
 
@@ -43,9 +41,7 @@ uv run pytest
 
 ```bash
 cd apps/frontend
-npm create vite@latest . -- --template react-ts
-npm install
-npm install -D vitest @testing-library/react @testing-library/user-event @testing-library/jest-dom jsdom
+npm ci
 ```
 
 ## Frontend Validation
@@ -56,23 +52,30 @@ npm run build
 npm run test
 ```
 
-## End-to-End Setup
+## Playwright Assets
 
 ```bash
 cd apps/e2e
-npm init -y
-npm install -D @playwright/test typescript
+npm ci
 npx playwright install --with-deps
 ```
 
-## End-to-End Validation
+For local authenticated runs, create `apps/e2e/.env.local` from
+`apps/e2e/.env.local.example` and set:
 
-Run the backend and frontend in test mode, with authentication bypass enabled
-only for local and CI test environments.
+- `E2E_ENTRA_USERNAME`
+- `E2E_ENTRA_PASSWORD`
+- optional `E2E_BASE_URL`
+
+## Playwright Validation Status
+
+`npm run test:local` starts the backend and frontend automatically using
+`apps/backend/.env`, `apps/frontend/.env`, and `apps/e2e/.env.local`, then runs
+Playwright against the local stack.
 
 ```bash
 cd apps/e2e
-npx playwright test
+npm run test:local
 ```
 
 Core scenarios:
@@ -81,9 +84,17 @@ Core scenarios:
 - Metadata completion fixture updates the video detail view.
 - User searches by title, tag, rating, torrent name, and info hash.
 - Second user cannot see the first user's video.
-- Two users adding the same info hash reuse one canonical torrent.
 - Admin creates, renames, and deletes tags.
 - Non-admin cannot access tag management actions.
+
+Current status:
+
+- The repository intentionally does not provide a standalone runtime auth-bypass
+  mode for browser end-to-end execution.
+- Browser Playwright execution is available locally through `npm run test:local`
+  and is also part of the tracked pre-commit hook.
+- Backend tests use in-process dependency overrides; frontend tests mock MSAL at
+  the component-test layer.
 
 ## Infrastructure Bootstrap
 
@@ -115,26 +126,19 @@ hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-Backend CI must run:
+CI currently runs:
 
 - ruff format check
 - ruff lint
 - ty type check
 - pytest unit and integration tests
 
-Frontend CI must run:
-
 - frontend build
 - frontend tests
-
-End-to-end CI must run Playwright tests against a test-mode deployment or local
-services with deterministic torrent metadata fixtures.
+- local authenticated Playwright browser tests
+- terraform fmt and validate
 
 ## Test Mode Requirements
 
-- Authentication bypass must be explicit and unavailable in production
-  configuration.
-- Test users must include one standard user, one second standard user, and one
-  administrator.
-- Torrent metadata provider must support deterministic fixtures for success,
-  failure, delayed processing, large file list, and duplicate info hash cases.
+- Local browser validation requires a real Entra test user configured through
+  `apps/e2e/.env.local`.

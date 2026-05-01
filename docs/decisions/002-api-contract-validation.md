@@ -1,9 +1,14 @@
 # Decision: API Contract Validation
 
-The source API contract for this feature is
-`specs/001-video-vault-management/contracts/openapi.yaml`.
+FastAPI already generates the runtime OpenAPI document at `/openapi.json`, and
+that generated schema should be treated as the implementation source of truth.
 
-Contract tests in `apps/backend/tests/contract/` verify that implemented routes
-match the expected status codes and response shapes. A future dedicated OpenAPI
-validator can be added to CI once the project standardizes on a validator
-package.
+Contract tests in `apps/backend/tests/contract/` verify route behavior and key
+response shapes. Tests in `apps/backend/tests/contract/test_openapi_auth_contract.py`
+also assert important properties of the generated OpenAPI schema.
+
+Maintenance rule:
+
+- Do not maintain a separate hand-edited OpenAPI artifact for this feature.
+- When API behavior changes, update the backend behavior, the contract tests,
+  and any generated-OpenAPI assertions together.
