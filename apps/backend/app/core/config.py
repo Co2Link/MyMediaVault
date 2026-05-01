@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     entra_api_scope: str = "access_as_user"
     admin_object_ids: list[str] = Field(default_factory=list)
     admin_role_names: list[str] = Field(default_factory=lambda: ["Admin", "MyMediaVault.Admin"])
+    torrent_provider: Literal["fake", "http"] = "fake"
+    torrent_resolver_urls: list[str] = Field(default_factory=list)
+    torrent_fetch_timeout_seconds: float = 10.0
+    torrent_worker_enabled: bool = True
+    torrent_worker_poll_interval_seconds: float = 2.0
+    torrent_job_lease_seconds: int = 30
 
     @property
     def entra_scope_description(self) -> str:

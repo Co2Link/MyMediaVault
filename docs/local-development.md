@@ -14,7 +14,10 @@ uv run fastapi dev app/main.py
 
 Backend settings load from `apps/backend/.env` with the `MMV_` prefix. Local
 defaults use SQLite at `sqlite:///./mymediavault.db` and filesystem blob storage
-under `.local/blob-storage` unless Azure storage variables are set.
+under `.local/blob-storage` unless Azure storage variables are set. For live
+`.torrent` resolution, set `MMV_TORRENT_PROVIDER=http` and provide
+`MMV_TORRENT_RESOLVER_URLS` as a JSON array of resolver URL templates such as
+`["https://itorrents.org/torrent/{info_hash}.torrent"]`.
 
 ## Frontend
 

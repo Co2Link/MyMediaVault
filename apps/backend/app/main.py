@@ -9,13 +9,20 @@ from app.auth.dependencies import configure_azure_scheme, load_azure_openid_conf
 from app.core.config import Settings, get_settings
 from app.core.db import create_db_and_tables
 from app.core.errors import register_exception_handlers
+from app.torrents.worker import TorrentProcessingWorker
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI, settings: Settings) -> AsyncIterator[None]:
     create_db_and_tables()
     await load_azure_openid_config(settings)
+    worker: TorrentProcessingWorker | None = None
+    if settings.torrent_worker_enabled:
+        worker = TorrentProcessingWorker(settings=settings, provider=videos.get_torrent_provider(settings))
+        worker.start()
     yield
+    if worker is not None:
+        worker.stop()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

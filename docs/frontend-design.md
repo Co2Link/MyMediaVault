@@ -34,7 +34,9 @@ authorization, so this UI guard is only a convenience.
 The app exposes four current screens: collection search, add video, video detail,
 and admin tags. Collection search currently sends text queries to `/videos` and
 displays torrent metadata status. Add video accepts info hash, optional title,
-description, and rating. Detail view allows editing private video fields and
-shows torrent files when metadata is available.
+description, and rating. Add-video responses are asynchronous: the UI should
+expect `202 Accepted` with `metadataStatus` still `pending` or `processing`, and
+subsequent reads surface completion or failure. Detail view allows editing
+private video fields and shows torrent files when metadata is available.
 
 Tests use Vitest and Testing Library with colocated `*.test.tsx` files.

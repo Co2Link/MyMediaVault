@@ -91,11 +91,19 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("torrent_id", sa.Uuid(), sa.ForeignKey("torrents.id"), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("attempt", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("worker_id", sa.String(length=128)),
         sa.Column("error", AutoString()),
         sa.Column("started_at", sa.DateTime(timezone=True)),
         sa.Column("finished_at", sa.DateTime(timezone=True)),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
+        sa.Column("last_heartbeat_at", sa.DateTime(timezone=True)),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
+    op.create_index("ix_torrent_processing_jobs_torrent_id", "torrent_processing_jobs", ["torrent_id"])
+    op.create_index("ix_torrent_processing_jobs_status", "torrent_processing_jobs", ["status"])
+    op.create_index("ix_torrent_processing_jobs_worker_id", "torrent_processing_jobs", ["worker_id"])
+    op.create_index("ix_torrent_processing_jobs_lease_expires_at", "torrent_processing_jobs", ["lease_expires_at"])
 
 
 def downgrade() -> None:

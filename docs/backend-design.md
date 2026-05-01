@@ -31,9 +31,12 @@ tag IDs. The service normalizes the info hash, enforces one video per
 `(user_id, torrent_id)`, stores user-private fields on `Video`, and stores shared
 torrent metadata on `Torrent` and `TorrentFile`.
 
-Torrent metadata processing writes raw `.torrent` bytes to the configured
-`BlobStore`, replaces the torrent file list, and records processing jobs. Status
-values are `pending`, `processing`, `succeeded`, and `failed`.
+Torrent metadata processing is asynchronous. The request path enqueues a
+`torrent_processing_jobs` record and returns `202 Accepted` immediately. An
+in-process worker started from FastAPI lifespan claims queued jobs, fetches the
+raw `.torrent` payload from the configured resolver, writes it to the configured
+`BlobStore`, replaces the torrent file list, and updates aggregate torrent
+status. Status values are `pending`, `processing`, `succeeded`, and `failed`.
 
 ## API Routes
 
@@ -64,4 +67,7 @@ Settings use the `MMV_` prefix and load `.env` in `apps/backend`. Important
 values include `MMV_DATABASE_URL`, `MMV_CORS_ORIGINS`,
 `MMV_AZURE_STORAGE_CONNECTION_STRING`, `MMV_AZURE_BLOB_CONTAINER`,
 `MMV_ENTRA_TENANT_ID`, `MMV_ENTRA_CLIENT_ID`, `MMV_ENTRA_OPENAPI_CLIENT_ID`,
-`MMV_ENTRA_API_SCOPE`, and `MMV_COMMIT_SHA`.
+`MMV_ENTRA_API_SCOPE`, `MMV_COMMIT_SHA`, `MMV_TORRENT_PROVIDER`,
+`MMV_TORRENT_RESOLVER_URLS`, `MMV_TORRENT_FETCH_TIMEOUT_SECONDS`,
+`MMV_TORRENT_WORKER_ENABLED`, `MMV_TORRENT_WORKER_POLL_INTERVAL_SECONDS`, and
+`MMV_TORRENT_JOB_LEASE_SECONDS`.

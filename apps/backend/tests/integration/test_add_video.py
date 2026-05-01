@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 
-def test_add_video_creates_visible_processed_video(client: TestClient, act_as, standard_user) -> None:
+def test_add_video_creates_visible_queued_video(client: TestClient, act_as, standard_user) -> None:
     act_as(standard_user)
     response = client.post(
         "/videos",
@@ -17,5 +17,5 @@ def test_add_video_creates_visible_processed_video(client: TestClient, act_as, s
     body = response.json()
     assert body["title"] == "Fixture"
     assert body["description"] == "Personal note"
-    assert body["metadataStatus"] == "succeeded"
-    assert body["files"][0]["path"] == "Fixture Movie/video.mp4"
+    assert body["metadataStatus"] == "pending"
+    assert body["files"] == []

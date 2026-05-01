@@ -9,7 +9,7 @@ def test_post_videos_accepts_valid_hash(client: TestClient, act_as, standard_use
     assert response.status_code == 202
     body = response.json()
     assert body["infoHash"] == VALID_HASH
-    assert body["metadataStatus"] == "succeeded"
+    assert body["metadataStatus"] == "pending"
 
 
 def test_post_videos_rejects_invalid_hash(client: TestClient, act_as, standard_user) -> None:

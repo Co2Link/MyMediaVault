@@ -25,7 +25,8 @@ erDiagram
   rating; unique by `(user_id, torrent_id)`.
 - `tags`: global tag catalog keyed by unique tag name.
 - `video_tags`: many-to-many links between videos and tags.
-- `torrent_processing_jobs`: audit records for metadata processing attempts.
+- `torrent_processing_jobs`: audit records for metadata processing attempts and
+  the async work queue for background `.torrent` resolution.
 
 ## Important Constraints
 
@@ -42,3 +43,5 @@ unique.
 `Torrent.metadata_status` tracks `pending`, `processing`, `succeeded`, or
 `failed`. Failed metadata processing stores `metadata_error`; successful
 processing stores `name`, `size_bytes`, `raw_blob_key`, and ordered files.
+`TorrentProcessingJob` also records queued/running/completed attempts plus
+worker lease fields used by the in-process background worker.

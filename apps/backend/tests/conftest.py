@@ -13,8 +13,10 @@ from app.auth.dependencies import get_current_user
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.models import User
+from app.storage.blob_store import build_blob_store
 from app.main import create_app
 from app.torrents.provider import FakeTorrentMetadataProvider, TorrentFileMetadata, TorrentMetadata
+from app.torrents.service import claim_torrent_processing_job, process_torrent_metadata
 
 
 @pytest.fixture()
@@ -62,11 +64,24 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         environment="test",
         blob_storage_root=tmp_path,
+        torrent_worker_enabled=False,
         entra_tenant_id="tenant-id",
         entra_client_id="backend-client-id",
         entra_openapi_client_id="openapi-client-id",
         entra_api_scope="access_as_user",
     )
+
+
+@pytest.fixture()
+def run_processing_cycle(session: Session, provider: FakeTorrentMetadataProvider, settings: Settings):
+    def _run() -> int:
+        job = claim_torrent_processing_job(session, "test-worker", settings.torrent_job_lease_seconds)
+        if job is None:
+            return 0
+        process_torrent_metadata(session, job.id, provider, build_blob_store(settings))
+        return 1
+
+    return _run
 
 
 def _persist_user(

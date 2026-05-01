@@ -104,7 +104,11 @@ class TorrentProcessingJob(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     torrent_id: UUID = Field(foreign_key="torrents.id", index=True)
     status: TorrentJobStatus = Field(default=TorrentJobStatus.QUEUED, max_length=32, index=True)
+    attempt: int = 0
+    worker_id: str | None = Field(default=None, max_length=128, index=True)
     error: str | None = None
     started_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     finished_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    lease_expires_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), index=True))
+    last_heartbeat_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))

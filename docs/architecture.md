@@ -37,6 +37,8 @@ FastAPI validates the token, upserts the user by Entra subject, and checks admin
 roles or object IDs for admin-only tag management.
 
 Adding a video normalizes the info hash, reuses or creates the canonical torrent,
-creates a user-owned video row, and processes torrent metadata when needed. The
-current provider is deterministic and local; it is intentionally abstracted
-behind a provider protocol so a production torrent metadata source can replace it.
+creates a user-owned video row, and enqueues metadata processing when needed.
+The backend worker later resolves the raw `.torrent` payload through a provider,
+stores that raw artifact, and derives torrent metadata from it. The provider is
+abstracted behind a protocol so deterministic fixtures and production resolver
+sources can share the same orchestration flow.

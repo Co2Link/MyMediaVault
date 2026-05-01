@@ -37,6 +37,11 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
 - Database: Azure SQL free database using `AutoPause`.
 - Storage: Standard LRS storage account with private `torrent-raw` container.
 
+The backend deployment also injects torrent resolver settings into the Container
+App. Dev defaults use the direct HTTP resolver provider with
+`https://itorrents.org/torrent/{info_hash}.torrent`, a 20 second fetch timeout,
+and the in-process torrent worker enabled.
+
 ## Required Secrets and Variables
 
 GitHub Actions expects Docker Hub credentials, Azure credentials, Terraform state

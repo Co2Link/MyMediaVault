@@ -6,15 +6,16 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.deps import CurrentUserDep, SessionDep
 from app.core.config import Settings, get_settings
 from app.core.models import TorrentMetadataStatus
-from app.storage.blob_store import build_blob_store
-from app.torrents.provider import FakeTorrentMetadataProvider, TorrentMetadataProvider
+from app.torrents.provider import FakeTorrentMetadataProvider, HttpTorrentMetadataProvider, TorrentMetadataProvider
 from app.videos.schemas import VideoCreate, VideoDetail, VideoListResponse, VideoUpdate
 from app.videos.service import create_video, get_video, search_videos, update_video
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
 
-def get_torrent_provider() -> TorrentMetadataProvider:
+def get_torrent_provider(settings: Annotated[Settings, Depends(get_settings)]) -> TorrentMetadataProvider:
+    if settings.torrent_provider == "http":
+        return HttpTorrentMetadataProvider(settings.torrent_resolver_urls, settings.torrent_fetch_timeout_seconds)
     return FakeTorrentMetadataProvider()
 
 
@@ -23,10 +24,8 @@ def create_video_route(
     payload: VideoCreate,
     session: SessionDep,
     current_user: CurrentUserDep,
-    settings: Annotated[Settings, Depends(get_settings)],
-    provider: Annotated[TorrentMetadataProvider, Depends(get_torrent_provider)],
 ) -> VideoDetail:
-    return create_video(session, current_user, payload, provider, build_blob_store(settings))
+    return create_video(session, current_user, payload)
 
 
 @router.get("", response_model=VideoListResponse)

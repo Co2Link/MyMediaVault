@@ -4,10 +4,8 @@ from sqlmodel import Session, col, delete, func, or_, select
 
 from app.core.errors import ConflictError, NotFoundError
 from app.core.models import Tag, Torrent, TorrentFile, TorrentMetadataStatus, User, Video, VideoTag, utcnow
-from app.storage.blob_store import BlobStore
-from app.torrents.provider import TorrentMetadataProvider
 from app.torrents.repository import get_or_create_torrent
-from app.torrents.service import process_torrent_metadata
+from app.torrents.service import enqueue_torrent_metadata
 from app.videos.schemas import VideoCreate, VideoListResponse, VideoUpdate, video_to_detail, video_to_summary
 from app.videos.validation import normalize_info_hash, validate_rating
 
@@ -50,8 +48,6 @@ def create_video(
     session: Session,
     user: User,
     payload: VideoCreate,
-    provider: TorrentMetadataProvider,
-    blob_store: BlobStore,
 ):
     info_hash = normalize_info_hash(payload.info_hash)
     validate_rating(payload.rating)
@@ -72,7 +68,7 @@ def create_video(
     _replace_video_tags(session, video, _load_tags(session, payload.tag_ids))
     session.commit()
     if created or torrent.metadata_status in {TorrentMetadataStatus.PENDING, TorrentMetadataStatus.FAILED}:
-        process_torrent_metadata(session, torrent, provider, blob_store)
+        enqueue_torrent_metadata(session, torrent)
     session.refresh(video)
     return video_to_detail(
         video, _video_torrent(session, video), _video_tags(session, video.id), _video_files(session, video.torrent_id)

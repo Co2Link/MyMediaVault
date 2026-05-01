@@ -64,6 +64,36 @@ variable "admin_role_names" {
   default = ["Admin", "MyMediaVault.Admin"]
 }
 
+variable "torrent_provider" {
+  type    = string
+  default = "http"
+}
+
+variable "torrent_resolver_urls" {
+  type    = list(string)
+  default = ["https://itorrents.org/torrent/{info_hash}.torrent"]
+}
+
+variable "torrent_fetch_timeout_seconds" {
+  type    = number
+  default = 20
+}
+
+variable "torrent_worker_enabled" {
+  type    = bool
+  default = true
+}
+
+variable "torrent_worker_poll_interval_seconds" {
+  type    = number
+  default = 2
+}
+
+variable "torrent_job_lease_seconds" {
+  type    = number
+  default = 30
+}
+
 resource "azurerm_container_app_environment" "main" {
   name                = "${var.prefix}-apps"
   location            = var.location
@@ -164,6 +194,36 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "MMV_CORS_ORIGINS"
         value = jsonencode(["https://${azurerm_static_web_app.frontend.default_host_name}"])
+      }
+
+      env {
+        name  = "MMV_TORRENT_PROVIDER"
+        value = var.torrent_provider
+      }
+
+      env {
+        name  = "MMV_TORRENT_RESOLVER_URLS"
+        value = jsonencode(var.torrent_resolver_urls)
+      }
+
+      env {
+        name  = "MMV_TORRENT_FETCH_TIMEOUT_SECONDS"
+        value = tostring(var.torrent_fetch_timeout_seconds)
+      }
+
+      env {
+        name  = "MMV_TORRENT_WORKER_ENABLED"
+        value = tostring(var.torrent_worker_enabled)
+      }
+
+      env {
+        name  = "MMV_TORRENT_WORKER_POLL_INTERVAL_SECONDS"
+        value = tostring(var.torrent_worker_poll_interval_seconds)
+      }
+
+      env {
+        name  = "MMV_TORRENT_JOB_LEASE_SECONDS"
+        value = tostring(var.torrent_job_lease_seconds)
       }
     }
   }

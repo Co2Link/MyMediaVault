@@ -19,8 +19,10 @@ shared even when multiple users reference the same torrent.
 
 Torrent records are reused by normalized info hash. Metadata processing stores
 shared torrent name, size, file list, raw torrent blob key, status, attempts, and
-errors. The current provider is deterministic and local; the provider interface
-is ready for a production metadata source.
+errors. `POST /videos` enqueues metadata processing and returns immediately; the
+backend resolves the raw `.torrent` payload asynchronously, stores only that
+payload, and derives shared metadata from it. The provider interface supports
+deterministic local fixtures or a production HTTP resolver source.
 
 ## Search and Detail Editing
 

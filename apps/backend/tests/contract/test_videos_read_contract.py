@@ -18,7 +18,7 @@ def test_get_video_returns_detail(client: TestClient, act_as, standard_user) -> 
     created = client.post("/videos", json={"infoHash": VALID_HASH}).json()
     response = client.get(f"/videos/{created['id']}")
     assert response.status_code == 200
-    assert response.json()["files"]
+    assert response.json()["metadataStatus"] == "pending"
 
 
 def test_patch_video_updates_user_specific_details(client: TestClient, act_as, standard_user) -> None:

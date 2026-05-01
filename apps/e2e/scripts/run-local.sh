@@ -53,6 +53,11 @@ reset_backend_state() {
   rm -rf "$E2E_DIR/.auth"
 }
 
+stop_existing_local_stack() {
+  pkill -f "fastapi dev app/main.py --host 0.0.0.0 --port 8000" >/dev/null 2>&1 || true
+  pkill -f "vite --host 0.0.0.0 --port 5173 --strictPort" >/dev/null 2>&1 || true
+}
+
 cleanup() {
   local exit_code=$?
   if [[ -n "${FRONTEND_PID:-}" ]]; then
@@ -77,8 +82,30 @@ source_required_file "$E2E_DIR/.env.local"
 
 export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:5173}"
 BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
+PLAYWRIGHT_ARGS=("$@")
 
-if ! curl -fsS "$BACKEND_URL/health" >/dev/null 2>&1; then
+if [[ "${E2E_REQUIRE_HTTP_TORRENT_PROVIDER:-}" == "1" ]]; then
+  export MMV_TORRENT_PROVIDER="${MMV_TORRENT_PROVIDER:-http}"
+  if [[ -z "${MMV_TORRENT_RESOLVER_URLS:-}" ]]; then
+    export MMV_TORRENT_RESOLVER_URLS='["https://itorrents.org/torrent/{info_hash}.torrent"]'
+  fi
+  export MMV_TORRENT_FETCH_TIMEOUT_SECONDS="${MMV_TORRENT_FETCH_TIMEOUT_SECONDS:-20}"
+fi
+
+if [[ "${E2E_INCLUDE_MANUAL_TORRENT_TESTS:-}" != "1" ]]; then
+  PLAYWRIGHT_ARGS+=(--grep-invert "@manual-torrent")
+fi
+
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
+  stop_existing_local_stack
+  reset_backend_state
+else
+  if ! curl -fsS "$BACKEND_URL/health" >/dev/null 2>&1; then
+    reset_backend_state
+  fi
+fi
+
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! curl -fsS "$BACKEND_URL/health" >/dev/null 2>&1; then
   reset_backend_state
   (
     cd "$BACKEND_DIR"
@@ -87,7 +114,7 @@ if ! curl -fsS "$BACKEND_URL/health" >/dev/null 2>&1; then
   BACKEND_PID=$!
 fi
 
-if ! curl -fsS "$E2E_BASE_URL" >/dev/null 2>&1; then
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! curl -fsS "$E2E_BASE_URL" >/dev/null 2>&1; then
   (
     cd "$FRONTEND_DIR"
     npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
@@ -99,4 +126,4 @@ wait_for_http "$BACKEND_URL/health" "Backend"
 wait_for_http "$E2E_BASE_URL" "Frontend"
 
 cd "$E2E_DIR"
-npx playwright test "$@"
+npx playwright test "${PLAYWRIGHT_ARGS[@]}"

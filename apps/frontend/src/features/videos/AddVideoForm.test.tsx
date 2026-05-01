@@ -23,7 +23,7 @@ describe("AddVideoForm", () => {
           rating: null,
           infoHash: "0123456789abcdef0123456789abcdef01234567",
           torrentName: "Fixture",
-          metadataStatus: "succeeded",
+          metadataStatus: "pending",
           metadataError: null,
           tags: [],
           files: [],
@@ -38,6 +38,6 @@ describe("AddVideoForm", () => {
     await userEvent.type(screen.getByLabelText(/info hash/i), "0123456789abcdef0123456789abcdef01234567");
     await userEvent.click(screen.getByRole("button", { name: /add video/i }));
 
-    expect(await screen.findByText(/metadata ready/i)).toBeInTheDocument();
+    expect(await screen.findByText(/metadata pending/i)).toBeInTheDocument();
   });
 });
