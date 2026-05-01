@@ -12,8 +12,7 @@ for a direct commit.
   smoke checks.
 - `main`: reserved for future production releases. Do not target `main` for dev
   deployment changes.
-- `NNN-short-feature-name`: Spec Kit feature branches. Keep feature branches
-  focused on one feature or infrastructure change.
+- Feature branches: keep them focused on one feature or infrastructure change.
 
 ## Agent Rules
 

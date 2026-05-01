@@ -13,7 +13,6 @@ apps/frontend     React SPA
 apps/e2e          Playwright tests
 docs              Project decisions and workflow guidance
 infra/terraform   Azure infrastructure
-specs/001-video-vault-management   Spec Kit artifacts
 ```
 
 ## Branching and Deployment
