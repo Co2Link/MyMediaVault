@@ -1,6 +1,5 @@
-import { loginRequest, isProductionAuthEnabled } from "../../features/auth/config";
+import { loginRequest } from "../../features/auth/config";
 import { msalInstance } from "../../features/auth/msal";
-import { getTestAuthHeaders } from "../../features/auth/testMode";
 
 export class ApiError extends Error {
   constructor(
@@ -17,17 +16,21 @@ export type ApiOptions = {
   headers?: Record<string, string>;
 };
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+function getRequiredApiBaseUrl(): string {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  if (!apiBaseUrl) {
+    throw new Error("Missing VITE_API_BASE_URL. The frontend must be built with the deployed backend URL.");
+  }
+  return apiBaseUrl;
+}
+
+export const API_BASE_URL = getRequiredApiBaseUrl();
 
 async function authHeaders(): Promise<Record<string, string>> {
-  if (!isProductionAuthEnabled) {
-    return getTestAuthHeaders();
-  }
-
   const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
   if (!account) {
     await msalInstance.loginRedirect(loginRequest);
-    return {};
+    throw new Error("Sign-in is required before calling the API.");
   }
 
   const result = await msalInstance.acquireTokenSilent({ ...loginRequest, account }).catch(() =>
