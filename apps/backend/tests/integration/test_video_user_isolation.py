@@ -10,9 +10,7 @@ def test_user_cannot_read_other_users_video(client: TestClient, act_as, standard
     assert response.status_code == 404
 
 
-def test_user_cannot_update_other_users_video(
-    client: TestClient, act_as, standard_user, second_standard_user
-) -> None:
+def test_user_cannot_update_other_users_video(client: TestClient, act_as, standard_user, second_standard_user) -> None:
     act_as(standard_user)
     created = client.post(
         "/videos",

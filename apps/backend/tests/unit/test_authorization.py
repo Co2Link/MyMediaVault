@@ -32,7 +32,9 @@ def test_get_current_user_rejects_invalid_token(session: Session) -> None:
     settings = Settings(entra_tenant_id="tenant", entra_client_id="backend-client-id")
 
     with pytest.raises(ForbiddenError, match="Authentication token is invalid"):
-        asyncio.run(get_current_user(session=session, settings=settings, entra_user=None, authorization="Bearer invalid"))
+        asyncio.run(
+            get_current_user(session=session, settings=settings, entra_user=None, authorization="Bearer invalid")
+        )
 
 
 def test_get_current_user_upserts_entra_user(session: Session) -> None:
