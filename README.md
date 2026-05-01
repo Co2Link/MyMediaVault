@@ -19,9 +19,20 @@ specs/001-video-vault-management   Spec Kit artifacts
 ## Branching and Deployment
 
 The default integration branch is `develop`. Feature work should branch from
-`develop` and merge back through pull requests. A push to `develop` deploys the
-dev environment. See [docs/branching-strategy.md](docs/branching-strategy.md)
-for the agent-facing rules.
+`develop` and merge back through pull requests. A push to `develop` runs CI; the
+dev environment deploys only after the `CI` workflow succeeds on `develop`. See
+[docs/branching-strategy.md](docs/branching-strategy.md) for the agent-facing
+rules.
+
+## Git Hooks
+
+Enable the tracked pre-commit hook once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs the backend, frontend, and Terraform checks that mirror CI.
 
 ## Backend
 

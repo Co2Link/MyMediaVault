@@ -1,7 +1,9 @@
 from collections.abc import Generator
 from pathlib import Path
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
@@ -116,9 +118,10 @@ def admin_user(session: Session) -> User:
 @pytest.fixture()
 def act_as(client: TestClient):
     def _act_as(user: User | None) -> None:
+        app = cast(FastAPI, client.app)
         if user is None:
-            client.app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_current_user, None)
             return
-        client.app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_user] = lambda: user
 
     return _act_as
