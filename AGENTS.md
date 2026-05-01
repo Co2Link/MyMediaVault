@@ -55,4 +55,4 @@ Do not commit `.env` files, Entra credentials, database passwords, Terraform sec
 
 ## Documentation Maintenance
 
-Coding agents own `docs/`. When code, APIs, architecture, data models, tests, deployment, or workflows change, update the matching Markdown file in the same change. Create a focused `.md` when no existing doc fits, and link it from `docs/index.md`.
+Coding agents own `docs/`. Treat [docs/index.md](/workspaces/MyMediaVault/docs/index.md) as the documentation entry point and read the relevant linked documents before changing code that affects architecture, APIs, data models, tests, deployment, or workflows. When behavior changes, update the matching Markdown file in the same change. Create a focused `.md` when no existing doc fits, and link it from `docs/index.md`.
