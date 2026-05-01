@@ -1,15 +1,10 @@
 name: Dev
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches: [develop]
-  workflow_dispatch:
-    inputs:
-      deploy:
-        description: Build image, apply Terraform, and deploy frontend
-        required: true
-        default: false
-        type: boolean
+    types: [completed]
 
 concurrency:
   group: dev
@@ -17,11 +12,14 @@ concurrency:
 
 jobs:
   image:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -35,20 +33,21 @@ jobs:
           context: apps/backend
           file: apps/backend/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name == 'push' || inputs.deploy }}
+          push: true
           tags: |
             ${{ vars.BACKEND_IMAGE }}
-            ${{ vars.BACKEND_IMAGE }}-${{ github.sha }}
+            ${{ vars.BACKEND_IMAGE }}-${{ github.event.workflow_run.head_sha }}
 
   terraform:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     needs: image
     defaults:
       run:
         working-directory: infra/terraform/envs/dev
     env:
-      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}-${{ github.sha }}
-      TF_VAR_backend_commit_sha: ${{ github.sha }}
+      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}-${{ github.event.workflow_run.head_sha }}
+      TF_VAR_backend_commit_sha: ${{ github.event.workflow_run.head_sha }}
       TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
       TF_VAR_entra_tenant_id: ${{ vars.VITE_ENTRA_TENANT_ID }}
       TF_VAR_frontend_entra_client_id: ${{ vars.VITE_ENTRA_CLIENT_ID }}
@@ -60,6 +59,8 @@ jobs:
       frontend_url: ${{ steps.outputs.outputs.frontend_url }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: azure/login@v2
         with:
@@ -90,11 +91,9 @@ jobs:
         run: terraform plan -out=tfplan
 
       - name: Apply
-        if: ${{ github.event_name == 'push' || inputs.deploy }}
         run: terraform apply -auto-approve tfplan
 
       - id: outputs
-        if: ${{ github.event_name == 'push' || inputs.deploy }}
         run: |
           {
             echo "backend_url=$(terraform output -raw backend_url)"
@@ -102,14 +101,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   frontend:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     needs: terraform
-    if: ${{ github.event_name == 'push' || inputs.deploy }}
     defaults:
       run:
         working-directory: apps/frontend
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: azure/login@v2
         with:
@@ -151,9 +152,9 @@ jobs:
           skip_app_build: true
 
   smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     needs: [terraform, frontend]
-    if: ${{ github.event_name == 'push' || inputs.deploy }}
     steps:
       - name: Backend health
         run: |
@@ -163,7 +164,7 @@ jobs:
               "${{ needs.terraform.outputs.backend_url }}/health"
           )"
           echo "$response"
-          test "$(echo "$response" | jq -r .commit)" = "${{ github.sha }}"
+          test "$(echo "$response" | jq -r .commit)" = "${{ github.event.workflow_run.head_sha }}"
 
       - name: Frontend health
         run: curl --fail --connect-timeout 10 --max-time 20 --retry 12 --retry-all-errors --retry-delay 10 "${{ needs.terraform.outputs.frontend_url }}"

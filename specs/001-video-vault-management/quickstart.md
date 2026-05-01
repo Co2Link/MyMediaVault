@@ -108,6 +108,13 @@ Use `terraform apply` only when ready to provision or update Azure resources.
 
 ## CI Expectations
 
+To run CI-equivalent checks before committing, enable the tracked pre-commit
+hook once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 Backend CI must run:
 
 - ruff format check

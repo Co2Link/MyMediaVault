@@ -1,6 +1,7 @@
 from typing import cast
 
 from fastapi import FastAPI
+from fastapi.openapi.models import OAuth2
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import _build_azure_scheme
@@ -52,6 +53,7 @@ def test_azure_scheme_uses_full_scope_name() -> None:
         )
     )
 
-    authorization_code = scheme.model.flows.authorizationCode
+    model = cast(OAuth2, scheme.model)
+    authorization_code = model.flows.authorizationCode
     assert authorization_code is not None
     assert authorization_code.scopes == {"api://backend-client-id/access_as_user": "access_as_user"}

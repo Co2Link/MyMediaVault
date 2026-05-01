@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+run_in() {
+  local dir="$1"
+  shift
+  printf '\n[%s] %s\n' "$dir" "$*"
+  (cd "$repo_root/$dir" && "$@")
+}
+
+run_in apps/backend uv run ruff format --check .
+run_in apps/backend uv run ruff check .
+run_in apps/backend uv run ty check
+run_in apps/backend uv run pytest
+
+run_in apps/frontend npm run build
+run_in apps/frontend npm run test
+
+run_in infra/terraform/envs/dev terraform fmt -check -recursive ../..
+run_in infra/terraform/envs/dev terraform init -backend=false
+run_in infra/terraform/envs/dev terraform validate
