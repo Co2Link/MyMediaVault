@@ -17,9 +17,9 @@ def test_openapi_exposes_entra_oauth_scheme(client: TestClient) -> None:
 
     assert azure_scheme["type"] == "oauth2"
     authorization_code = azure_scheme["flows"]["authorizationCode"]
-    assert authorization_code["authorizationUrl"].endswith("/oauth2/v2.0/authorize")
-    assert authorization_code["tokenUrl"].endswith("/oauth2/v2.0/token")
-    assert authorization_code["scopes"]["access_as_user"] == "Access MyMediaVault"
+    assert authorization_code["authorizationUrl"] == "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/authorize"
+    assert authorization_code["tokenUrl"] == "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token"
+    assert authorization_code["scopes"] == {"api://backend-client-id/access_as_user": "access_as_user"}
 
 
 def test_openapi_marks_video_routes_as_secured(client: TestClient) -> None:
@@ -39,16 +39,19 @@ def test_swagger_ui_uses_pkce_oauth_settings(client: TestClient) -> None:
     oauth_settings = app.swagger_ui_init_oauth
     assert oauth_settings is not None
     assert oauth_settings["usePkceWithAuthorizationCodeGrant"] is True
-    assert oauth_settings["scopes"] == "access_as_user"
+    assert oauth_settings["clientId"] == "openapi-client-id"
+    assert oauth_settings["scopes"] == "api://backend-client-id/access_as_user"
 
 
-def test_azure_scheme_accepts_client_id_and_app_id_uri_audiences() -> None:
+def test_azure_scheme_uses_full_scope_name() -> None:
     scheme = _build_azure_scheme(
         Settings(
             entra_tenant_id="tenant",
             entra_client_id="backend-client-id",
-            entra_api_scope="api://backend-client-id/access_as_user",
+            entra_api_scope="access_as_user",
         )
     )
 
-    assert scheme.accepted_audiences == ["backend-client-id", "api://backend-client-id"]
+    authorization_code = scheme.model.flows.authorizationCode
+    assert authorization_code is not None
+    assert authorization_code.scopes == {"api://backend-client-id/access_as_user": "access_as_user"}

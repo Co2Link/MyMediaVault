@@ -1,13 +1,9 @@
 import { useMsal } from "@azure/msal-react";
 import type { PropsWithChildren } from "react";
-import { isProductionAuthEnabled, loginRequest } from "./config";
+import { loginRequest } from "./config";
 
 export function AuthGate({ children }: PropsWithChildren) {
   const { accounts, instance } = useMsal();
-
-  if (!isProductionAuthEnabled) {
-    return <>{children}</>;
-  }
 
   if (accounts.length === 0) {
     return (

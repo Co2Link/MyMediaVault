@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
 
-def test_search_collection_by_title_and_empty_result(client: TestClient) -> None:
+def test_search_collection_by_title_and_empty_result(client: TestClient, act_as, standard_user) -> None:
+    act_as(standard_user)
     client.post(
         "/videos",
         json={"infoHash": "0123456789abcdef0123456789abcdef01234567", "title": "Ocean Film", "rating": 3},

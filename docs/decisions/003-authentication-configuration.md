@@ -1,8 +1,10 @@
 # Decision: Authentication Configuration
 
 Production authentication uses Entra ID through the backend authentication
-dependency. Test mode is explicit through `MMV_TEST_MODE=true` or
-`MMV_ENVIRONMENT=test` and accepts deterministic test headers.
+dependency. Protected API access requires a standard bearer token flow, and the
+OpenAPI documentation is configured for PKCE against the separate OpenAPI app
+registration.
 
-Test mode must never be enabled in production configuration. CI and local
-Playwright runs may use it to avoid depending on a live identity provider.
+Automated backend tests override the current-user dependency in-process instead
+of using alternate transport headers. Local CI does not perform interactive
+browser authentication against Entra.

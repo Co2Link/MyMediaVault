@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
 
-def test_add_video_creates_visible_processed_video(client: TestClient) -> None:
+def test_add_video_creates_visible_processed_video(client: TestClient, act_as, standard_user) -> None:
+    act_as(standard_user)
     response = client.post(
         "/videos",
         json={

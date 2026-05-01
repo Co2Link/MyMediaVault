@@ -1,4 +1,11 @@
 sandbox_mode="danger-full-access"
 approval_policy="on-request"
-hide_agent_reasoning=false
+hide_agent_reasoning=true
 model_reasoning_summary="detailed"
+
+[features]
+memories=true
+goals=true
+
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "git-branch", "context-remaining", "five-hour-limit", "context-window-size", "total-input-tokens", "total-output-tokens", "run-state"]

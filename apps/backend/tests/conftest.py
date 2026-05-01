@@ -7,8 +7,10 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.api.routers.videos import get_torrent_provider
+from app.auth.dependencies import get_current_user
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
+from app.core.models import User
 from app.main import create_app
 from app.torrents.provider import FakeTorrentMetadataProvider, TorrentFileMetadata, TorrentMetadata
 
@@ -39,18 +41,84 @@ def provider() -> FakeTorrentMetadataProvider:
 
 @pytest.fixture()
 def client(
-    session: Session, provider: FakeTorrentMetadataProvider, tmp_path: Path
+    session: Session, provider: FakeTorrentMetadataProvider, settings: Settings
 ) -> Generator[TestClient, None, None]:
-    app = create_app()
+    app = create_app(settings)
 
     def override_session() -> Generator[Session, None, None]:
         yield session
 
-    def override_settings() -> Settings:
-        return Settings(environment="test", test_mode=True, blob_storage_root=tmp_path)
-
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_settings] = override_settings
+    app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_torrent_provider] = lambda: provider
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture()
+def settings(tmp_path: Path) -> Settings:
+    return Settings(
+        environment="test",
+        blob_storage_root=tmp_path,
+        entra_tenant_id="tenant-id",
+        entra_client_id="backend-client-id",
+        entra_openapi_client_id="openapi-client-id",
+        entra_api_scope="access_as_user",
+    )
+
+
+def _persist_user(
+    session: Session,
+    *,
+    subject: str,
+    display_name: str,
+    email: str,
+    is_admin: bool = False,
+) -> User:
+    user = User(external_subject=subject, display_name=display_name, email=email, is_admin=is_admin)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+@pytest.fixture()
+def standard_user(session: Session) -> User:
+    return _persist_user(
+        session,
+        subject="test-user-1",
+        display_name="Test User 1",
+        email="test-user-1@example.test",
+    )
+
+
+@pytest.fixture()
+def second_standard_user(session: Session) -> User:
+    return _persist_user(
+        session,
+        subject="test-user-2",
+        display_name="Test User 2",
+        email="test-user-2@example.test",
+    )
+
+
+@pytest.fixture()
+def admin_user(session: Session) -> User:
+    return _persist_user(
+        session,
+        subject="admin",
+        display_name="Admin User",
+        email="admin@example.test",
+        is_admin=True,
+    )
+
+
+@pytest.fixture()
+def act_as(client: TestClient):
+    def _act_as(user: User | None) -> None:
+        if user is None:
+            client.app.dependency_overrides.pop(get_current_user, None)
+            return
+        client.app.dependency_overrides[get_current_user] = lambda: user
+
+    return _act_as

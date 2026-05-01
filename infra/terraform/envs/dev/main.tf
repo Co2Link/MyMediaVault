@@ -54,12 +54,6 @@ variable "database_admin_password" {
   sensitive = true
 }
 
-variable "test_mode_enabled" {
-  type        = bool
-  default     = false
-  description = "Enable only for temporary development smoke tests."
-}
-
 variable "entra_tenant_id" {
   type    = string
   default = "2f601908-d99b-48db-af49-314ae7490559"
@@ -125,7 +119,6 @@ module "app" {
   database_url                    = local.database_url
   azure_storage_connection_string = module.storage.connection_string
   azure_blob_container            = module.storage.torrent_container_name
-  test_mode_enabled               = var.test_mode_enabled
   entra_tenant_id                 = var.entra_tenant_id
   backend_entra_client_id         = var.backend_entra_client_id
   entra_openapi_client_id         = var.frontend_entra_client_id

@@ -38,11 +38,6 @@ variable "azure_blob_container" {
   type = string
 }
 
-variable "test_mode_enabled" {
-  type    = bool
-  default = false
-}
-
 variable "entra_tenant_id" {
   type = string
 }
@@ -113,12 +108,7 @@ resource "azurerm_container_app" "backend" {
 
       env {
         name  = "MMV_ENVIRONMENT"
-        value = var.test_mode_enabled ? "test" : "production"
-      }
-
-      env {
-        name  = "MMV_TEST_MODE"
-        value = tostring(var.test_mode_enabled)
+        value = "production"
       }
 
       env {

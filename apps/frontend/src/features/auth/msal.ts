@@ -1,5 +1,5 @@
 import { PublicClientApplication } from "@azure/msal-browser";
-import { authConfig, isProductionAuthEnabled } from "./config";
+import { authConfig } from "./config";
 
 export const msalInstance = new PublicClientApplication({
   auth: {
@@ -13,7 +13,6 @@ export const msalInstance = new PublicClientApplication({
 });
 
 export async function initializeAuth() {
-  if (!isProductionAuthEnabled) return;
   await msalInstance.initialize();
   const result = await msalInstance.handleRedirectPromise();
   const account = result?.account ?? msalInstance.getAllAccounts()[0];

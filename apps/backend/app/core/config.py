@@ -14,7 +14,6 @@ class Settings(BaseSettings):
 
     environment: Environment = "development"
     database_url: str = "sqlite:///./mymediavault.db"
-    test_mode: bool = False
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     blob_storage_root: Path = Path(".local/blob-storage")
     azure_storage_connection_string: str | None = None
@@ -28,8 +27,28 @@ class Settings(BaseSettings):
     admin_role_names: list[str] = Field(default_factory=lambda: ["Admin", "MyMediaVault.Admin"])
 
     @property
-    def is_test(self) -> bool:
-        return self.environment == "test" or self.test_mode
+    def entra_scope_description(self) -> str:
+        if self.entra_api_scope.startswith("api://"):
+            return self.entra_api_scope.rsplit("/", 1)[-1]
+        return self.entra_api_scope
+
+    @property
+    def entra_scope_name(self) -> str:
+        if not self.entra_client_id:
+            return self.entra_api_scope
+        return f"api://{self.entra_client_id}/{self.entra_scope_description}"
+
+    @property
+    def entra_scopes(self) -> dict[str, str]:
+        return {self.entra_scope_name: self.entra_scope_description}
+
+    @property
+    def entra_authorization_url(self) -> str:
+        return f"https://login.microsoftonline.com/{self.entra_tenant_id}/oauth2/v2.0/authorize"
+
+    @property
+    def entra_token_url(self) -> str:
+        return f"https://login.microsoftonline.com/{self.entra_tenant_id}/oauth2/v2.0/token"
 
     @property
     def production_auth_configured(self) -> bool:
