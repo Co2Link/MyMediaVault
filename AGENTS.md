@@ -35,7 +35,7 @@ cd apps/e2e && npm ci && npm run test:local
 cd infra/terraform/envs/dev && terraform fmt -check -recursive ../.. && terraform init -backend=false && terraform validate
 ```
 
-Enable the tracked hook with `git config core.hooksPath .githooks` to run checks matching CI before commits.
+Enable the tracked pre-commit hook in `.githooks` with `git config core.hooksPath .githooks` to run checks matching CI before commits.
 
 ## Coding Style & Naming Conventions
 
@@ -47,7 +47,7 @@ Backend tests use `pytest`; name files `test_*.py` and place them in the appropr
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short imperative subjects, for example `Fix CI checks and gate dev deploys` or `Add local authenticated e2e flow`; keep that style and add a `[Spec Kit]` prefix only for related generated/spec work. Branch from `develop` and merge back by pull request. PRs should summarize behavior changes, list checks run, link related issues or docs, and include screenshots for visible frontend changes.
+Recent commits use short imperative subjects, for example `Fix CI checks and gate dev deploys` or `Add local authenticated e2e flow`. Branch from `develop` and merge back by pull request. PRs should summarize behavior changes, list checks run, link related issues or docs, and include screenshots for visible frontend changes.
 
 ## Security & Configuration Tips
 
