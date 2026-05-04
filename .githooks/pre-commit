@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
 
 run_in() {
   local dir="$1"
@@ -10,16 +11,42 @@ run_in() {
   (cd "$repo_root/$dir" && "$@")
 }
 
-run_in apps/backend uv run ruff format --check .
-run_in apps/backend uv run ruff check .
-run_in apps/backend uv run ty check
-run_in apps/backend uv run pytest
+has_staged_changes_in() {
+  local prefix="$1"
+  grep -qE "^${prefix}(/|$)" <<<"$staged_files"
+}
 
-run_in apps/frontend npm run build
-run_in apps/frontend npm run test
+skip_section() {
+  local label="$1"
+  printf '\n[skip] %s\n' "$label"
+}
 
-run_in apps/e2e npm run test:local
+if has_staged_changes_in "apps/backend"; then
+  run_in apps/backend uv run ruff format --check .
+  run_in apps/backend uv run ruff check .
+  run_in apps/backend uv run ty check
+  run_in apps/backend uv run pytest
+else
+  skip_section "backend checks"
+fi
 
-run_in infra/terraform/envs/dev terraform fmt -check -recursive ../..
-run_in infra/terraform/envs/dev terraform init -backend=false
-run_in infra/terraform/envs/dev terraform validate
+if has_staged_changes_in "apps/frontend"; then
+  run_in apps/frontend npm run build
+  run_in apps/frontend npm run test
+else
+  skip_section "frontend checks"
+fi
+
+if has_staged_changes_in "apps/backend" || has_staged_changes_in "apps/frontend" || has_staged_changes_in "apps/e2e"; then
+  run_in apps/e2e npm run test:local
+else
+  skip_section "e2e checks"
+fi
+
+if has_staged_changes_in "infra/terraform"; then
+  run_in infra/terraform/envs/dev terraform fmt -check -recursive ../..
+  run_in infra/terraform/envs/dev terraform init -backend=false
+  run_in infra/terraform/envs/dev terraform validate
+else
+  skip_section "terraform checks"
+fi

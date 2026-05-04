@@ -3,6 +3,11 @@
 Testing is split by application layer and mirrored by `.github/workflows/ci.yml`
 where practical.
 
+The tracked pre-commit hook runs these check groups selectively based on staged
+paths, so backend checks run only for `apps/backend` changes, frontend checks
+only for `apps/frontend`, e2e for `apps/backend`, `apps/frontend`, or
+`apps/e2e`, and Terraform checks only for `infra/terraform`.
+
 ## Backend
 
 ```bash

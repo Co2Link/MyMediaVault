@@ -53,4 +53,7 @@ git config core.hooksPath .githooks
 ```
 
 The hook runs backend lint/type/tests, frontend build/tests, authenticated local
-e2e tests, and Terraform formatting/validation.
+e2e tests, and Terraform formatting/validation, but only for relevant staged
+changes. Backend checks run for `apps/backend`, frontend checks for
+`apps/frontend`, e2e for `apps/backend`, `apps/frontend`, or `apps/e2e`, and
+Terraform checks for `infra/terraform`.
