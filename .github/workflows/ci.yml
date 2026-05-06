@@ -18,7 +18,7 @@ jobs:
       AUTH_MICROSOFT_ENTRA_ID_SECRET: test-client-secret
       AUTH_MICROSOFT_ENTRA_ID_ISSUER: https://login.microsoftonline.com/test-tenant/v2.0
       MMV_ADMIN_OBJECT_IDS: '[]'
-      MMV_ADMIN_ROLE_NAMES: '["Admin","MyMediaVault.Admin"]'
+      MMV_ADMIN_GROUP_OBJECT_IDS: '[]'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
@@ -37,13 +37,15 @@ jobs:
       run:
         working-directory: infra/terraform/envs/dev
     env:
-      TF_VAR_backend_image: ${{ vars.BACKEND_IMAGE }}
+      TF_VAR_app_image: docker.io/example/mymediavault:validate
+      TF_VAR_app_commit_sha: validate
       TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
-      TF_VAR_entra_tenant_id: ${{ vars.VITE_ENTRA_TENANT_ID }}
-      TF_VAR_frontend_entra_client_id: ${{ vars.VITE_ENTRA_CLIENT_ID }}
-      TF_VAR_backend_entra_client_id: ${{ vars.BACKEND_ENTRA_CLIENT_ID }}
-      TF_VAR_entra_api_scope: ${{ vars.VITE_API_SCOPE }}
-      TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS }}
+      TF_VAR_auth_secret: test-auth-secret
+      TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT || vars.VITE_ENTRA_TENANT_ID }}
+      TF_VAR_auth_entra_client_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_ID || vars.VITE_ENTRA_CLIENT_ID }}
+      TF_VAR_auth_entra_client_secret: test-entra-client-secret
+      TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS || '[]' }}
+      TF_VAR_admin_group_object_ids: ${{ vars.TF_VAR_ADMIN_GROUP_OBJECT_IDS || '[]' }}
     steps:
       - uses: actions/checkout@v5
       - uses: hashicorp/setup-terraform@v3

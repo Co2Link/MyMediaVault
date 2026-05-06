@@ -18,8 +18,9 @@ infra/terraform   Azure infrastructure
 ## Branching and Deployment
 
 The default integration branch is `develop`. Feature work should branch from
-`develop` and merge back through pull requests. A push to `develop` runs CI.
-See [docs/branching-strategy.md](docs/branching-strategy.md) for the current
+`develop` and merge back through pull requests. A push to `develop` runs CI, and
+the `Dev` workflow deploys after `CI` succeeds on `develop`. See
+[docs/branching-strategy.md](docs/branching-strategy.md) for the current
 workflow rules.
 
 ## Git Hooks
@@ -80,3 +81,6 @@ cd ../envs/dev
 terraform init
 terraform plan
 ```
+
+The dev Terraform backend and the shared-infra SQL remote state both live in
+the Azure Blob backend documented in `/workspaces/shared-infra/README.md`.

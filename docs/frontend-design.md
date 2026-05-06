@@ -15,6 +15,8 @@ health/photo/auth route handlers in one package.
 - `src/lib`: Prisma access, validation, blob storage adapters, and torrent/job
   domain logic shared by pages and the worker.
 - `src/worker`: long-running polling worker for torrent metadata processing.
+- `Dockerfile`: production image definition used by the dev deployment workflow
+  for both the public web server and the private worker process.
 
 ## Authentication Flow
 

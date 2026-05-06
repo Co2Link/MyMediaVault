@@ -2,10 +2,11 @@ terraform {
   required_version = ">= 1.6.0"
 
   backend "azurerm" {
-    resource_group_name  = "placeholder"
-    storage_account_name = "placeholder"
+    resource_group_name  = "rg-tfstate"
+    storage_account_name = "stlingxttfstate"
     container_name       = "tfstate"
-    key                  = "dev.terraform.tfstate"
+    key                  = "mymediavault-dev.tfstate"
+    use_azuread_auth     = true
   }
 
   required_providers {

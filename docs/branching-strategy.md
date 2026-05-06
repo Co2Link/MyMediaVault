@@ -6,7 +6,8 @@ for a direct commit.
 
 ## Branches
 
-- `develop`: active development branch. A push to `develop` runs CI.
+- `develop`: active development branch. A push to `develop` runs CI, and a
+  successful `CI` run triggers the `Dev` deployment workflow.
 - `main`: reserved for future production releases. Do not target `main` for dev
   deployment changes.
 - Feature branches: keep them focused on one feature or infrastructure change.
@@ -18,7 +19,8 @@ for a direct commit.
   [Documentation Index](index.md) when adding, removing, or renaming docs.
 - Keep local work on the current feature branch unless the user asks to switch.
 - Push feature work to the matching feature branch first.
-- Push to `develop` only when the user asks for integration on `develop`.
+- Push to `develop` only when the user asks for integration on `develop` or asks
+  to deploy dev.
 - Do not push deployment workflow changes to `main` unless the user explicitly
   requests a production release path.
 - If a change affects deployment, document whether it is CI-only, dev deploy, or

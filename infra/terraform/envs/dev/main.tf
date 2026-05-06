@@ -1,7 +1,7 @@
 variable "location" {
   type        = string
   default     = "japaneast"
-  description = "Primary region for dev compute and frontend resources."
+  description = "Primary region for dev compute resources."
 }
 
 variable "resource_group_location" {
@@ -16,16 +16,24 @@ variable "storage_location" {
   description = "Region for the dev storage account."
 }
 
-variable "database_location" {
-  type        = string
-  default     = "westus2"
-  description = "Azure SQL free-offer region fixed for this subscription."
+variable "shared_infra_state_resource_group_name" {
+  type    = string
+  default = "rg-tfstate"
 }
 
-variable "static_web_app_location" {
-  type        = string
-  default     = "eastasia"
-  description = "Nearest Static Web Apps free-tier region supported by Azure."
+variable "shared_infra_state_storage_account_name" {
+  type    = string
+  default = "stlingxttfstate"
+}
+
+variable "shared_infra_state_container_name" {
+  type    = string
+  default = "tfstate"
+}
+
+variable "shared_infra_state_key" {
+  type    = string
+  default = "shared-infra.tfstate"
 }
 
 variable "prefix" {
@@ -33,20 +41,15 @@ variable "prefix" {
   default = "mmv-dev"
 }
 
-variable "backend_image" {
+variable "app_image" {
   type        = string
-  description = "Docker image to deploy to Azure Container Apps."
+  description = "Docker image to deploy to both web and worker container apps."
 }
 
-variable "backend_commit_sha" {
+variable "app_commit_sha" {
   type        = string
   default     = "local"
-  description = "Source commit deployed by the backend container."
-}
-
-variable "database_admin_login" {
-  type    = string
-  default = "mmvadmin"
+  description = "Source commit deployed by the application containers."
 }
 
 variable "database_admin_password" {
@@ -59,19 +62,19 @@ variable "entra_tenant_id" {
   default = "2f601908-d99b-48db-af49-314ae7490559"
 }
 
-variable "frontend_entra_client_id" {
-  type    = string
-  default = "60458566-1aed-4e15-934b-47d12c79c95c"
+variable "auth_secret" {
+  type      = string
+  sensitive = true
 }
 
-variable "backend_entra_client_id" {
+variable "auth_entra_client_id" {
   type    = string
-  default = "93b539f6-6b22-43ce-a536-033009c9f06d"
+  default = "0efa4e4c-7232-41b0-b8b4-46a45ac3b9ce"
 }
 
-variable "entra_api_scope" {
-  type    = string
-  default = "api://93b539f6-6b22-43ce-a536-033009c9f06d/access_as_user"
+variable "auth_entra_client_secret" {
+  type      = string
+  sensitive = true
 }
 
 variable "admin_object_ids" {
@@ -80,9 +83,10 @@ variable "admin_object_ids" {
   description = "Entra user object IDs that should receive MyMediaVault admin rights."
 }
 
-variable "admin_role_names" {
-  type    = list(string)
-  default = ["Admin", "MyMediaVault.Admin"]
+variable "admin_group_object_ids" {
+  type        = list(string)
+  default     = []
+  description = "Entra group object IDs that should receive MyMediaVault admin rights."
 }
 
 variable "torrent_provider" {
@@ -100,11 +104,6 @@ variable "torrent_fetch_timeout_seconds" {
   default = 20
 }
 
-variable "torrent_worker_enabled" {
-  type    = bool
-  default = true
-}
-
 variable "torrent_worker_poll_interval_seconds" {
   type    = number
   default = 2
@@ -115,8 +114,20 @@ variable "torrent_job_lease_seconds" {
   default = 30
 }
 
+data "terraform_remote_state" "shared_infra" {
+  backend = "azurerm"
+
+  config = {
+    resource_group_name  = var.shared_infra_state_resource_group_name
+    storage_account_name = var.shared_infra_state_storage_account_name
+    container_name       = var.shared_infra_state_container_name
+    key                  = var.shared_infra_state_key
+    use_azuread_auth     = true
+  }
+}
+
 locals {
-  database_url = "mssql+pymssql://${module.database.administrator_login}:${urlencode(var.database_admin_password)}@${module.database.server_fqdn}:1433/${module.database.database_name}?charset=utf8"
+  database_url = "sqlserver://${data.terraform_remote_state.shared_infra.outputs.sql_server_fqdn}:1433;database=${data.terraform_remote_state.shared_infra.outputs.sql_database_name};user=${data.terraform_remote_state.shared_infra.outputs.sql_administrator_login};password=${var.database_admin_password};encrypt=true;trustServerCertificate=true"
 }
 
 module "storage" {
@@ -126,39 +137,25 @@ module "storage" {
   resource_group_name = azurerm_resource_group.main.name
 }
 
-module "database" {
-  source              = "../../modules/database"
-  prefix              = var.prefix
-  location            = var.database_location
-  resource_group_name = azurerm_resource_group.main.name
-  administrator_login = var.database_admin_login
-  database_name       = "mymediavault-free"
-  server_name         = "${var.prefix}-sql-wus2"
-
-  administrator_login_password = var.database_admin_password
-}
-
 module "app" {
   source                               = "../../modules/app"
   prefix                               = var.prefix
   location                             = var.location
-  static_web_app_location              = var.static_web_app_location
   resource_group_name                  = azurerm_resource_group.main.name
-  backend_image                        = var.backend_image
-  backend_commit_sha                   = var.backend_commit_sha
+  app_image                            = var.app_image
+  app_commit_sha                       = var.app_commit_sha
   database_url                         = local.database_url
+  auth_secret                          = var.auth_secret
+  auth_entra_client_id                 = var.auth_entra_client_id
+  auth_entra_client_secret             = var.auth_entra_client_secret
+  entra_tenant_id                      = var.entra_tenant_id
   azure_storage_connection_string      = module.storage.connection_string
   azure_blob_container                 = module.storage.torrent_container_name
-  entra_tenant_id                      = var.entra_tenant_id
-  backend_entra_client_id              = var.backend_entra_client_id
-  entra_openapi_client_id              = var.frontend_entra_client_id
-  entra_api_scope                      = var.entra_api_scope
   admin_object_ids                     = var.admin_object_ids
-  admin_role_names                     = var.admin_role_names
+  admin_group_object_ids               = var.admin_group_object_ids
   torrent_provider                     = var.torrent_provider
   torrent_resolver_urls                = var.torrent_resolver_urls
   torrent_fetch_timeout_seconds        = var.torrent_fetch_timeout_seconds
-  torrent_worker_enabled               = var.torrent_worker_enabled
   torrent_worker_poll_interval_seconds = var.torrent_worker_poll_interval_seconds
   torrent_job_lease_seconds            = var.torrent_job_lease_seconds
 }
@@ -168,24 +165,10 @@ resource "azurerm_resource_group" "main" {
   location = var.resource_group_location
 }
 
-output "backend_url" {
-  value = "https://${module.app.backend_fqdn}"
+output "web_url" {
+  value = "https://${module.app.web_fqdn}"
 }
 
-output "frontend_url" {
-  value = "https://${module.app.frontend_default_host_name}"
-}
-
-output "frontend_static_web_app_api_key" {
-  value     = module.app.frontend_api_key
-  sensitive = true
-}
-
-output "frontend_build_variables" {
-  value = {
-    VITE_ENTRA_TENANT_ID = var.entra_tenant_id
-    VITE_ENTRA_CLIENT_ID = var.frontend_entra_client_id
-    VITE_API_SCOPE       = var.entra_api_scope
-    VITE_API_BASE_URL    = "https://${module.app.backend_fqdn}"
-  }
+output "worker_name" {
+  value = module.app.worker_name
 }

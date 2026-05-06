@@ -6,25 +6,34 @@ variable "location" {
   type = string
 }
 
-variable "static_web_app_location" {
-  type    = string
-  default = null
-}
-
 variable "resource_group_name" {
   type = string
 }
 
-variable "backend_image" {
+variable "app_image" {
   type = string
 }
 
-variable "backend_commit_sha" {
+variable "app_commit_sha" {
   type    = string
   default = "local"
 }
 
 variable "database_url" {
+  type      = string
+  sensitive = true
+}
+
+variable "auth_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "auth_entra_client_id" {
+  type = string
+}
+
+variable "auth_entra_client_secret" {
   type      = string
   sensitive = true
 }
@@ -42,26 +51,14 @@ variable "entra_tenant_id" {
   type = string
 }
 
-variable "backend_entra_client_id" {
-  type = string
-}
-
-variable "entra_openapi_client_id" {
-  type = string
-}
-
-variable "entra_api_scope" {
-  type = string
-}
-
 variable "admin_object_ids" {
   type    = list(string)
   default = []
 }
 
-variable "admin_role_names" {
+variable "admin_group_object_ids" {
   type    = list(string)
-  default = ["Admin", "MyMediaVault.Admin"]
+  default = []
 }
 
 variable "torrent_provider" {
@@ -77,11 +74,6 @@ variable "torrent_resolver_urls" {
 variable "torrent_fetch_timeout_seconds" {
   type    = number
   default = 20
-}
-
-variable "torrent_worker_enabled" {
-  type    = bool
-  default = true
 }
 
 variable "torrent_worker_poll_interval_seconds" {
@@ -100,8 +92,8 @@ resource "azurerm_container_app_environment" "main" {
   resource_group_name = var.resource_group_name
 }
 
-resource "azurerm_container_app" "backend" {
-  name                         = "${var.prefix}-backend"
+resource "azurerm_container_app" "web" {
+  name                         = "${var.prefix}-web"
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
@@ -112,13 +104,23 @@ resource "azurerm_container_app" "backend" {
   }
 
   secret {
+    name  = "auth-secret"
+    value = var.auth_secret
+  }
+
+  secret {
+    name  = "entra-client-secret"
+    value = var.auth_entra_client_secret
+  }
+
+  secret {
     name  = "azure-storage-connection-string"
     value = var.azure_storage_connection_string
   }
 
   ingress {
     external_enabled = true
-    target_port      = 8000
+    target_port      = 3000
 
     traffic_weight {
       latest_revision = true
@@ -131,23 +133,55 @@ resource "azurerm_container_app" "backend" {
     cooldown_period_in_seconds = 600
 
     container {
-      name   = "backend"
-      image  = var.backend_image
-      cpu    = 0.25
-      memory = "0.5Gi"
+      name    = "web"
+      image   = var.app_image
+      cpu     = 0.25
+      memory  = "0.5Gi"
+      command = ["npm"]
+      args    = ["run", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]
 
       env {
-        name  = "MMV_ENVIRONMENT"
+        name  = "NODE_ENV"
         value = "production"
       }
 
       env {
-        name  = "MMV_COMMIT_SHA"
-        value = var.backend_commit_sha
+        name  = "PORT"
+        value = "3000"
       }
 
       env {
-        name        = "MMV_DATABASE_URL"
+        name  = "HOSTNAME"
+        value = "0.0.0.0"
+      }
+
+      env {
+        name        = "AUTH_SECRET"
+        secret_name = "auth-secret"
+      }
+
+      env {
+        name  = "AUTH_MICROSOFT_ENTRA_ID_ID"
+        value = var.auth_entra_client_id
+      }
+
+      env {
+        name        = "AUTH_MICROSOFT_ENTRA_ID_SECRET"
+        secret_name = "entra-client-secret"
+      }
+
+      env {
+        name  = "AUTH_MICROSOFT_ENTRA_ID_ISSUER"
+        value = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
+      }
+
+      env {
+        name  = "MMV_COMMIT_SHA"
+        value = var.app_commit_sha
+      }
+
+      env {
+        name        = "DATABASE_URL"
         secret_name = "database-url"
       }
 
@@ -162,38 +196,13 @@ resource "azurerm_container_app" "backend" {
       }
 
       env {
-        name  = "MMV_ENTRA_TENANT_ID"
-        value = var.entra_tenant_id
-      }
-
-      env {
-        name  = "MMV_ENTRA_CLIENT_ID"
-        value = var.backend_entra_client_id
-      }
-
-      env {
-        name  = "MMV_ENTRA_OPENAPI_CLIENT_ID"
-        value = var.entra_openapi_client_id
-      }
-
-      env {
-        name  = "MMV_ENTRA_API_SCOPE"
-        value = var.entra_api_scope
-      }
-
-      env {
         name  = "MMV_ADMIN_OBJECT_IDS"
         value = jsonencode(var.admin_object_ids)
       }
 
       env {
-        name  = "MMV_ADMIN_ROLE_NAMES"
-        value = jsonencode(var.admin_role_names)
-      }
-
-      env {
-        name  = "MMV_CORS_ORIGINS"
-        value = jsonencode(["https://${azurerm_static_web_app.frontend.default_host_name}"])
+        name  = "MMV_ADMIN_GROUP_OBJECT_IDS"
+        value = jsonencode(var.admin_group_object_ids)
       }
 
       env {
@@ -212,8 +221,124 @@ resource "azurerm_container_app" "backend" {
       }
 
       env {
-        name  = "MMV_TORRENT_WORKER_ENABLED"
-        value = tostring(var.torrent_worker_enabled)
+        name  = "MMV_TORRENT_WORKER_POLL_INTERVAL_SECONDS"
+        value = tostring(var.torrent_worker_poll_interval_seconds)
+      }
+
+      env {
+        name  = "MMV_TORRENT_JOB_LEASE_SECONDS"
+        value = tostring(var.torrent_job_lease_seconds)
+      }
+    }
+  }
+}
+
+resource "azurerm_container_app" "worker" {
+  name                         = "${var.prefix}-worker"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = var.resource_group_name
+  revision_mode                = "Single"
+
+  secret {
+    name  = "database-url"
+    value = var.database_url
+  }
+
+  secret {
+    name  = "auth-secret"
+    value = var.auth_secret
+  }
+
+  secret {
+    name  = "entra-client-secret"
+    value = var.auth_entra_client_secret
+  }
+
+  secret {
+    name  = "azure-storage-connection-string"
+    value = var.azure_storage_connection_string
+  }
+
+  template {
+    min_replicas               = 1
+    cooldown_period_in_seconds = 600
+
+    container {
+      name    = "worker"
+      image   = var.app_image
+      cpu     = 0.25
+      memory  = "0.5Gi"
+      command = ["npm"]
+      args    = ["run", "worker"]
+
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+
+      env {
+        name        = "AUTH_SECRET"
+        secret_name = "auth-secret"
+      }
+
+      env {
+        name  = "AUTH_MICROSOFT_ENTRA_ID_ID"
+        value = var.auth_entra_client_id
+      }
+
+      env {
+        name        = "AUTH_MICROSOFT_ENTRA_ID_SECRET"
+        secret_name = "entra-client-secret"
+      }
+
+      env {
+        name  = "AUTH_MICROSOFT_ENTRA_ID_ISSUER"
+        value = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
+      }
+
+      env {
+        name  = "MMV_COMMIT_SHA"
+        value = var.app_commit_sha
+      }
+
+      env {
+        name        = "DATABASE_URL"
+        secret_name = "database-url"
+      }
+
+      env {
+        name        = "MMV_AZURE_STORAGE_CONNECTION_STRING"
+        secret_name = "azure-storage-connection-string"
+      }
+
+      env {
+        name  = "MMV_AZURE_BLOB_CONTAINER"
+        value = var.azure_blob_container
+      }
+
+      env {
+        name  = "MMV_ADMIN_OBJECT_IDS"
+        value = jsonencode(var.admin_object_ids)
+      }
+
+      env {
+        name  = "MMV_ADMIN_GROUP_OBJECT_IDS"
+        value = jsonencode(var.admin_group_object_ids)
+      }
+
+      env {
+        name  = "MMV_TORRENT_PROVIDER"
+        value = var.torrent_provider
+      }
+
+      env {
+        name  = "MMV_TORRENT_RESOLVER_URLS"
+        value = jsonencode(var.torrent_resolver_urls)
+      }
+
+      env {
+        name  = "MMV_TORRENT_FETCH_TIMEOUT_SECONDS"
+        value = tostring(var.torrent_fetch_timeout_seconds)
       }
 
       env {
@@ -229,23 +354,10 @@ resource "azurerm_container_app" "backend" {
   }
 }
 
-resource "azurerm_static_web_app" "frontend" {
-  name                = "${var.prefix}-frontend"
-  resource_group_name = var.resource_group_name
-  location            = coalesce(var.static_web_app_location, var.location)
-  sku_tier            = "Free"
-  sku_size            = "Free"
+output "web_fqdn" {
+  value = azurerm_container_app.web.ingress[0].fqdn
 }
 
-output "backend_fqdn" {
-  value = azurerm_container_app.backend.ingress[0].fqdn
-}
-
-output "frontend_default_host_name" {
-  value = azurerm_static_web_app.frontend.default_host_name
-}
-
-output "frontend_api_key" {
-  value     = azurerm_static_web_app.frontend.api_key
-  sensitive = true
+output "worker_name" {
+  value = azurerm_container_app.worker.name
 }

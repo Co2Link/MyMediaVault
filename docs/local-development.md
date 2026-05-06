@@ -46,6 +46,22 @@ database must already be reachable via `DATABASE_URL`.
 `E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use
 `apps/e2e/.env.local.example` as the template.
 
+## Dev Terraform
+
+The dev stack uses Azure Blob remote state with Azure AD auth and also reads the
+shared SQL contract from the shared-infra state in the same backend. After
+`az login`:
+
+```bash
+cd infra/terraform/envs/dev
+terraform init
+terraform plan
+```
+
+Provide the required `TF_VAR_*` values for the app image, shared SQL admin
+password, Auth.js secret, and Entra client credentials before planning or
+applying.
+
 ## Git Hooks
 
 Enable the tracked hook once per clone:

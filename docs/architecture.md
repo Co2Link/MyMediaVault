@@ -29,8 +29,10 @@ flowchart LR
 
 The rewritten app targets Azure Container Apps with a Node runtime. The intended
 shape is one Docker image and two commands: a public Next.js web server and a
-private worker process. Data persists in Azure SQL and raw torrent files are
-stored in a private Azure Blob container.
+private worker process. Dev infrastructure reads the shared Azure SQL contract
+from the shared-infra remote state, while this repository still owns its app
+resource group, Container Apps environment, and private raw-torrent Blob
+storage container.
 
 ## Request Flow
 

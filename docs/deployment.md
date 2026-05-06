@@ -15,10 +15,21 @@ release workflows are intentionally out of scope until requested.
 
 ## Dev Workflow
 
-The repository no longer includes the retired FastAPI backend or Vite frontend.
-The previous `dev.yml` deployment workflow targeted those legacy apps and has
-been removed. Dev deployment automation for the current Next.js web server and
-worker will need a new workflow when that path is requested.
+`.github/workflows/dev.yml` runs after `CI` succeeds on `develop`.
+
+1. It builds and pushes one Docker image from `apps/web/Dockerfile`.
+2. It runs `terraform init -reconfigure`, `terraform plan`, and `terraform apply`
+   in `infra/terraform/envs/dev`.
+3. It smoke-checks `GET /api/health` on the deployed web app and verifies that
+   the worker container app has a current revision.
+
+The dev Terraform stack uses Azure Blob remote state with Azure AD auth:
+
+- resource group: `rg-tfstate`
+- storage account: `stlingxttfstate`
+- container: `tfstate`
+- app state key: `mymediavault-dev.tfstate`
+- shared infra contract key: `shared-infra.tfstate`
 
 ## Azure Resources
 
@@ -29,12 +40,13 @@ under `infra/terraform/modules`.
 - Web: target shape is a public Azure Container Apps Node runtime for the Next.js
   server.
 - Worker: target shape is a private worker process using the same build artifact.
-- Database: Azure SQL free database using `AutoPause`.
+- Database: shared Azure SQL server and database read from the shared-infra
+  remote state contract.
 - Storage: Standard LRS storage account with private `torrent-raw` container.
 
 ## Required Secrets and Variables
 
-GitHub Actions expects Docker Hub credentials, Azure credentials, Terraform
-state variables, `DATABASE_URL`, Auth.js Entra credentials, database admin
-password, and optional admin object IDs. Keep all secrets in GitHub or local
-`.env` files; never commit them.
+GitHub Actions expects Docker Hub credentials, Azure credentials, the shared SQL
+admin password, `AUTH_SECRET`, Entra client credentials, and optional admin
+object/group IDs. Keep all secrets in GitHub or local `.env` files; never
+commit them.
