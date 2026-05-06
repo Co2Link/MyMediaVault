@@ -7,6 +7,14 @@ RUN npm ci
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 
+ENV DATABASE_URL="sqlserver://localhost:1433;database=placeholder;user=sa;password=Password123!;encrypt=true;trustServerCertificate=true"
+ENV AUTH_SECRET="build-time-secret"
+ENV AUTH_MICROSOFT_ENTRA_ID_ID="build-time-client-id"
+ENV AUTH_MICROSOFT_ENTRA_ID_SECRET="build-time-client-secret"
+ENV AUTH_MICROSOFT_ENTRA_ID_ISSUER="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0"
+ENV MMV_ADMIN_OBJECT_IDS="[]"
+ENV MMV_ADMIN_GROUP_OBJECT_IDS="[]"
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
