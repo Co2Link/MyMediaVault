@@ -5,6 +5,18 @@ import path from "node:path";
 import { db } from "../src/lib/db";
 import { getEnv } from "../src/lib/env";
 
+type TargetUser = {
+  id: string;
+  videos: Array<{
+    torrentId: string;
+  }>;
+};
+
+type OrphanedTorrent = {
+  id: string;
+  rawBlobKey: string | null;
+};
+
 async function main() {
   const usernames = [process.env.E2E_USER_USERNAME, process.env.E2E_ADMIN_USERNAME].filter(
     (value): value is string => Boolean(value),
@@ -14,7 +26,7 @@ async function main() {
   }
   const displayNames = usernames.map((username) => username.split("@")[0] ?? username);
 
-  const targetUsers = await db.user.findMany({
+  const targetUsers: TargetUser[] = await db.user.findMany({
     where: {
       OR: [
         { email: { in: usernames } },
@@ -61,7 +73,7 @@ async function main() {
     return;
   }
 
-  const orphanedTorrents = await db.torrent.findMany({
+  const orphanedTorrents: OrphanedTorrent[] = await db.torrent.findMany({
     where: {
       id: {
         in: [...candidateTorrentIds],
