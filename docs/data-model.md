@@ -1,7 +1,7 @@
 # Data Model
 
-The backend uses SQLModel models in `apps/backend/app/core/models.py` and the
-initial Alembic migration in `apps/backend/alembic/versions/001_initial_video_vault.py`.
+The active schema lives in `apps/web/prisma/schema.prisma` and is applied in
+local development through `prisma db push`.
 
 ## Entity Relationships
 
@@ -17,7 +17,13 @@ erDiagram
 
 ## Tables
 
-- `users`: local projection of Entra users keyed by unique `external_subject`.
+- `users`: local projection of Entra users keyed by internal UUID, with unique
+  `email` and optional unique `entra_oid`.
+- `accounts`: Auth.js OAuth account rows that store Entra access and refresh
+  tokens for server-side photo fetches and sign-in bookkeeping.
+- `sessions`: Auth.js database sessions keyed by unique `session_token`.
+- `verification_tokens`: Auth.js verification token storage.
+- `authenticators`: Auth.js WebAuthn authenticator storage.
 - `torrents`: canonical torrent metadata keyed by unique normalized `info_hash`.
 - `torrent_files`: ordered file list for a torrent, unique by
   `(torrent_id, position)`.
@@ -34,8 +40,8 @@ Canonical torrent reuse is enforced by `torrents.info_hash`. User isolation is
 enforced by querying videos with both `video.id` and `video.user_id`; multiple
 users may reference the same torrent while keeping private video fields.
 
-Rating is optional and constrained to 1 through 5 at the API schema and service
-validation layers. Tag names are trimmed, whitespace-normalized, non-empty, and
+Rating is optional and constrained to 1 through 5 in validation code before
+write operations. Tag names are trimmed, whitespace-normalized, non-empty, and
 unique.
 
 ## Metadata State

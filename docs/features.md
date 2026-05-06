@@ -5,9 +5,9 @@ management backed by shared torrent metadata.
 
 ## Authentication
 
-Users sign in through Entra ID. The frontend uses MSAL to acquire API access
-tokens, and the backend validates bearer tokens before serving collection data.
-Users are created or updated locally from Entra claims on authenticated requests.
+Users sign in through Entra ID using Auth.js. The app stores server-side
+sessions in SQL Server, persists the local user row, and records admin access
+from configured Entra object IDs or group membership.
 
 ## Personal Video Collection
 
@@ -19,8 +19,8 @@ shared even when multiple users reference the same torrent.
 
 Torrent records are reused by normalized info hash. Metadata processing stores
 shared torrent name, size, file list, raw torrent blob key, status, attempts, and
-errors. `POST /videos` enqueues metadata processing and returns immediately; the
-backend resolves the raw `.torrent` payload asynchronously, stores only that
+errors. Creating a video enqueues metadata processing and returns immediately; the
+worker resolves the raw `.torrent` payload asynchronously, stores only that
 payload, and derives shared metadata from it. The provider interface supports
 deterministic local fixtures or a production HTTP resolver source.
 
@@ -35,10 +35,11 @@ torrent file entries when available.
 
 Tags are a global catalog managed through admin-only routes and UI. Admin users
 can list, create, rename, and delete tags. Videos can store tag links through the
-backend API, though the current add/detail UI does not yet expose full tag
+server-side data model, though the current add/detail UI does not yet expose full tag
 assignment controls.
 
 ## End-to-End Coverage
 
-Playwright tests cover authenticated add-video, collection search, and admin tag
-flows against a local stack using a real Entra test account.
+Playwright tests cover the authenticated header/account menu, add-video,
+collection search, and admin tag flows against a local stack using a real Entra
+test account.

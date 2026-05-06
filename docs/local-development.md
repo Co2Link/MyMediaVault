@@ -1,34 +1,33 @@
 # Local Development
 
-Use the dev container when available. The repository expects Python managed by
-`uv`, Node.js 24 for frontend/e2e packages, and Terraform for infrastructure
-validation.
+Use the dev container when available. The repository expects Node.js 24 for the
+web app and e2e packages, access to a SQL Server database, and Terraform for
+infrastructure validation.
 
-## Backend
-
-```bash
-cd apps/backend
-uv sync --all-groups
-uv run fastapi dev app/main.py
-```
-
-Backend settings load from `apps/backend/.env` with the `MMV_` prefix. Local
-defaults use SQLite at `sqlite:///./mymediavault.db` and filesystem blob storage
-under `.local/blob-storage` unless Azure storage variables are set. For live
-`.torrent` resolution, set `MMV_TORRENT_PROVIDER=http` and provide
-`MMV_TORRENT_RESOLVER_URLS` as a JSON array of resolver URL templates such as
-`["https://itorrents.org/torrent/{info_hash}.torrent"]`.
-
-## Frontend
+## Web App
 
 ```bash
-cd apps/frontend
+cd apps/web
 npm ci
+npx prisma generate
 npm run dev
 ```
 
-Required frontend variables are `VITE_API_BASE_URL`, `VITE_ENTRA_TENANT_ID`,
-`VITE_ENTRA_CLIENT_ID`, and `VITE_API_SCOPE`.
+Copy `apps/web/.env.local.example` to `apps/web/.env.local` and fill in the
+Entra credentials, `AUTH_SECRET`, and any optional `MMV_*` overrides. The local
+default `DATABASE_URL` targets SQL Server on `localhost:1433`.
+
+Microsoft's current SQL Server Linux container images support only Intel/AMD
+x86-64 hosts. On ARM64 devcontainer hosts, do not expect `.devcontainer` to
+start a local SQL Server container. Point `DATABASE_URL` at an external SQL
+Server or Azure SQL instance instead.
+
+Run the worker in a second terminal:
+
+```bash
+cd apps/web
+npm run worker
+```
 
 ## End-to-End Local Stack
 
@@ -38,10 +37,13 @@ npm ci
 npm run test:local
 ```
 
-`test:local` sources `apps/backend/.env`, `apps/frontend/.env`, and
-`apps/e2e/.env.local`, starts backend and frontend if they are not already
-running, waits for readiness, then runs Playwright. `apps/e2e/.env.local` must
-define `E2E_ENTRA_USERNAME` and `E2E_ENTRA_PASSWORD`; use
+`test:local` sources `apps/web/.env.local` and `apps/e2e/.env.local`, starts a
+database migration with `prisma db push`, deletes the Playwright test users'
+existing rows plus any now-orphaned torrent metadata, starts the Next.js app
+and worker if they are not already running, then executes Playwright. The
+database must already be reachable via `DATABASE_URL`.
+`apps/e2e/.env.local` must define `E2E_USER_USERNAME`, `E2E_USER_PASSWORD`,
+`E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use
 `apps/e2e/.env.local.example` as the template.
 
 ## Git Hooks
@@ -52,8 +54,5 @@ Enable the tracked hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook runs backend lint/type/tests, frontend build/tests, authenticated local
-e2e tests, and Terraform formatting/validation, but only for relevant staged
-changes. Backend checks run for `apps/backend`, frontend checks for
-`apps/frontend`, e2e for `apps/backend`, `apps/frontend`, or `apps/e2e`, and
-Terraform checks for `infra/terraform`.
+The hook runs `apps/web` build/tests, authenticated local e2e tests, and
+Terraform formatting/validation.

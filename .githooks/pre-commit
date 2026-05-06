@@ -21,23 +21,14 @@ skip_section() {
   printf '\n[skip] %s\n' "$label"
 }
 
-if has_staged_changes_in "apps/backend"; then
-  run_in apps/backend uv run ruff format --check .
-  run_in apps/backend uv run ruff check .
-  run_in apps/backend uv run ty check
-  run_in apps/backend uv run pytest
+if has_staged_changes_in "apps/web"; then
+  run_in apps/web npm run build
+  run_in apps/web npm run test
 else
-  skip_section "backend checks"
+  skip_section "web checks"
 fi
 
-if has_staged_changes_in "apps/frontend"; then
-  run_in apps/frontend npm run build
-  run_in apps/frontend npm run test
-else
-  skip_section "frontend checks"
-fi
-
-if has_staged_changes_in "apps/backend" || has_staged_changes_in "apps/frontend" || has_staged_changes_in "apps/e2e"; then
+if has_staged_changes_in "apps/web" || has_staged_changes_in "apps/e2e"; then
   run_in apps/e2e npm run test:local
 else
   skip_section "e2e checks"

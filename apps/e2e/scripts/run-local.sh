@@ -3,11 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 E2E_DIR="$ROOT_DIR/apps/e2e"
-BACKEND_DIR="$ROOT_DIR/apps/backend"
-FRONTEND_DIR="$ROOT_DIR/apps/frontend"
+WEB_DIR="$ROOT_DIR/apps/web"
 LOG_DIR="$E2E_DIR/.logs"
+SQL_PASSWORD="${SQL_PASSWORD:-Password123!}"
 
 mkdir -p "$LOG_DIR"
+
+log() {
+  printf '[run-local] %s\n' "$*"
+}
 
 source_required_file() {
   local file="$1"
@@ -40,90 +44,128 @@ wait_for_http() {
   exit 1
 }
 
-reset_backend_state() {
-  if [[ "${MMV_DATABASE_URL:-}" == sqlite:///./* ]]; then
-    local db_path="${MMV_DATABASE_URL#sqlite:///./}"
-    rm -f "$BACKEND_DIR/$db_path"
-  fi
-
-  if [[ -n "${MMV_BLOB_STORAGE_ROOT:-}" ]]; then
-    rm -rf "$BACKEND_DIR/$MMV_BLOB_STORAGE_ROOT"
-  fi
-
-  rm -rf "$E2E_DIR/.auth"
+stop_existing_local_stack() {
+  log "Stopping any existing local Next.js dev server and worker processes."
+  pkill -f "/workspaces/MyMediaVault/apps/web/node_modules/.bin/next dev" >/dev/null 2>&1 || true
+  pkill -f "next dev --hostname localhost --port 3000" >/dev/null 2>&1 || true
+  pkill -f "/workspaces/MyMediaVault/apps/web/node_modules/.bin/tsx src/worker/index.ts" >/dev/null 2>&1 || true
+  pkill -f "tsx src/worker/index.ts" >/dev/null 2>&1 || true
 }
 
-stop_existing_local_stack() {
-  pkill -f "fastapi dev app/main.py --host 0.0.0.0 --port 8000" >/dev/null 2>&1 || true
-  pkill -f "vite --host 0.0.0.0 --port 5173 --strictPort" >/dev/null 2>&1 || true
+stop_managed_process() {
+  local pid="$1"
+  local name="$2"
+
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    log "$name process group $pid is already stopped."
+    return
+  fi
+
+  log "Stopping $name process group $pid."
+  kill -- "-$pid" >/dev/null 2>&1 || kill "$pid" >/dev/null 2>&1 || true
+
+  for _ in {1..20}; do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 0.25
+  done
+
+  log "$name process group $pid did not exit after SIGTERM. Sending SIGKILL."
+  kill -9 -- "-$pid" >/dev/null 2>&1 || kill -9 "$pid" >/dev/null 2>&1 || true
 }
 
 cleanup() {
   local exit_code=$?
   if [[ -n "${FRONTEND_PID:-}" ]]; then
-    kill "$FRONTEND_PID" >/dev/null 2>&1 || true
+    log "Stopping Next.js dev server started by this run (process group $FRONTEND_PID)."
+    stop_managed_process "$FRONTEND_PID" "Next.js dev server"
     wait "$FRONTEND_PID" >/dev/null 2>&1 || true
+  else
+    log "Leaving existing Next.js dev server running because this run did not start it."
   fi
-  if [[ -n "${BACKEND_PID:-}" ]]; then
-    kill "$BACKEND_PID" >/dev/null 2>&1 || true
-    wait "$BACKEND_PID" >/dev/null 2>&1 || true
+  if [[ -n "${WORKER_PID:-}" ]]; then
+    log "Stopping worker started by this run (process group $WORKER_PID)."
+    stop_managed_process "$WORKER_PID" "Torrent worker"
+    wait "$WORKER_PID" >/dev/null 2>&1 || true
+  else
+    log "Leaving existing worker running because this run did not start it."
   fi
+  log "run-local.sh exiting with code $exit_code."
   exit "$exit_code"
 }
 
 trap cleanup EXIT INT TERM
 
-source_required_file "$BACKEND_DIR/.env"
-source_required_file "$FRONTEND_DIR/.env"
+source_required_file "$WEB_DIR/.env.local"
 source_required_file "$E2E_DIR/.env.local"
 
-: "${E2E_ENTRA_USERNAME:?Missing E2E_ENTRA_USERNAME in apps/e2e/.env.local}"
-: "${E2E_ENTRA_PASSWORD:?Missing E2E_ENTRA_PASSWORD in apps/e2e/.env.local}"
+: "${E2E_USER_USERNAME:?Missing E2E_USER_USERNAME in apps/e2e/.env.local}"
+: "${E2E_USER_PASSWORD:?Missing E2E_USER_PASSWORD in apps/e2e/.env.local}"
+: "${E2E_ADMIN_USERNAME:?Missing E2E_ADMIN_USERNAME in apps/e2e/.env.local}"
+: "${E2E_ADMIN_PASSWORD:?Missing E2E_ADMIN_PASSWORD in apps/e2e/.env.local}"
 
-export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:5173}"
-BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
+export DATABASE_URL="${DATABASE_URL:-sqlserver://localhost:1433;database=mymediavault;user=sa;password=$SQL_PASSWORD;trustServerCertificate=true}"
+export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:3000}"
+HEALTH_URL="${HEALTH_URL:-http://localhost:3000/api/health}"
 PLAYWRIGHT_ARGS=("$@")
-
-if [[ "${E2E_REQUIRE_HTTP_TORRENT_PROVIDER:-}" == "1" ]]; then
-  export MMV_TORRENT_PROVIDER="${MMV_TORRENT_PROVIDER:-http}"
-  if [[ -z "${MMV_TORRENT_RESOLVER_URLS:-}" ]]; then
-    export MMV_TORRENT_RESOLVER_URLS='["https://itorrents.org/torrent/{info_hash}.torrent"]'
-  fi
-  export MMV_TORRENT_FETCH_TIMEOUT_SECONDS="${MMV_TORRENT_FETCH_TIMEOUT_SECONDS:-20}"
-fi
 
 if [[ "${E2E_INCLUDE_MANUAL_TORRENT_TESTS:-}" != "1" ]]; then
   PLAYWRIGHT_ARGS+=(--grep-invert "@manual-torrent")
 fi
 
-if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
-  stop_existing_local_stack
-  reset_backend_state
-else
-  if ! curl -fsS "$BACKEND_URL/health" >/dev/null 2>&1; then
-    reset_backend_state
-  fi
+if [[ "${E2E_REQUIRE_HTTP_TORRENT_PROVIDER:-}" == "1" ]]; then
+  log "Manual torrent mode requested. Forcing MMV_TORRENT_PROVIDER=http."
+  export MMV_TORRENT_PROVIDER="http"
 fi
 
-if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! curl -fsS "$BACKEND_URL/health" >/dev/null 2>&1; then
-  reset_backend_state
-  (
-    cd "$BACKEND_DIR"
-    uv run fastapi dev app/main.py --host 0.0.0.0 --port 8000
-  ) >"$LOG_DIR/backend.log" 2>&1 &
-  BACKEND_PID=$!
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
+  log "Forced stack restart requested. Existing auth state and local processes will be cleared."
+  stop_existing_local_stack
+  rm -rf "$E2E_DIR/.auth"
 fi
+
+log "Running prisma db push. Logs: $LOG_DIR/prisma.log"
+(
+  cd "$WEB_DIR"
+  npx prisma db push --accept-data-loss
+) >"$LOG_DIR/prisma.log" 2>&1
+
+log "Resetting Playwright user data and orphaned torrent state. Logs: $LOG_DIR/reset.log"
+(
+  cd "$WEB_DIR"
+  npx tsx ./scripts/reset-e2e-state.ts
+) >"$LOG_DIR/reset.log" 2>&1
 
 if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! curl -fsS "$E2E_BASE_URL" >/dev/null 2>&1; then
+  log "Starting Next.js dev server. Logs: $LOG_DIR/frontend.log"
   (
-    cd "$FRONTEND_DIR"
-    npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+    cd "$WEB_DIR"
+    exec setsid npm run dev -- --hostname localhost --port 3000
   ) >"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
+  log "Started Next.js dev server with pid $FRONTEND_PID."
+else
+  log "Reusing existing Next.js dev server at $E2E_BASE_URL."
 fi
 
-wait_for_http "$BACKEND_URL/health" "Backend"
-wait_for_http "$E2E_BASE_URL" "Frontend"
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! pgrep -f "tsx src/worker/index.ts" >/dev/null 2>&1; then
+  log "Starting torrent worker. Logs: $LOG_DIR/worker.log"
+  (
+    cd "$WEB_DIR"
+    exec setsid npm run worker
+  ) >"$LOG_DIR/worker.log" 2>&1 &
+  WORKER_PID=$!
+  log "Started torrent worker with pid $WORKER_PID."
+else
+  log "Reusing existing torrent worker process."
+fi
 
+log "Waiting for frontend at $E2E_BASE_URL."
+wait_for_http "$E2E_BASE_URL" "Frontend"
+log "Waiting for health endpoint at $HEALTH_URL."
+wait_for_http "$HEALTH_URL" "Health endpoint"
+
+log "Running Playwright with args: ${PLAYWRIGHT_ARGS[*]:-(none)}"
 cd "$E2E_DIR"
 npx playwright test "${PLAYWRIGHT_ARGS[@]}"

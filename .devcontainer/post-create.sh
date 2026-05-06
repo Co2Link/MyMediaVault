@@ -17,3 +17,4 @@ npm i -g @openai/codex
 
 # Install Playwright CLI globally
 npm install -g @playwright/cli@latest
+npx playwright install chromium

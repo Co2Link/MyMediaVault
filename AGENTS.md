@@ -1,27 +1,23 @@
 # Repository Guidelines
 
+<!-- BEGIN:nextjs-agent-rules -->
+ 
+# Next.js: ALWAYS read docs before coding
+ 
+Before any Next.js work, find and read the relevant doc in `node_modules/next/dist/docs/`. Your training data is outdated — the docs are the source of truth.
+ 
+<!-- END:nextjs-agent-rules -->
+
 ## Project Structure & Module Organization
 
-MyMediaVault is a video collection manager monorepo. Main code lives under `apps/`: `apps/backend` is FastAPI, `apps/frontend` is the Vite/React SPA, and `apps/e2e` contains Playwright tests. Backend source is in `apps/backend/app`, migrations in `apps/backend/alembic`, and tests in `apps/backend/tests/{unit,integration,contract}`. Frontend source is in `apps/frontend/src`. Infrastructure lives in `infra/terraform`; architecture and decisions live in `docs`.
+MyMediaVault is a video collection manager monorepo. Main code lives under `apps/`: `apps/web` is the Next.js full-stack application and `apps/e2e` contains Playwright tests. Infrastructure lives in `infra/terraform`; architecture and decisions live in `docs`.
 
 ## Build, Test, and Development Commands
 
-Backend:
+Web:
 
 ```bash
-cd apps/backend
-uv sync --all-groups
-uv run fastapi dev app/main.py
-uv run ruff format --check .
-uv run ruff check .
-uv run ty check
-uv run pytest
-```
-
-Frontend:
-
-```bash
-cd apps/frontend
+cd apps/web
 npm ci
 npm run dev
 npm run build
@@ -39,15 +35,15 @@ Enable the tracked pre-commit hook in `.githooks` with `git config core.hooksPat
 
 ## Coding Style & Naming Conventions
 
-Python uses Ruff with a 120-character line length and type checking through `ty`. Use 4-space indentation, snake_case modules/functions, and PascalCase Pydantic/SQLModel schemas. React uses TypeScript modules with PascalCase component files such as `CollectionPage.tsx`; colocate feature helpers and tests in `features/*`. Keep Terraform formatted with `terraform fmt`.
+The active application uses TypeScript in Next.js with PascalCase component files and colocated route or domain helpers under `apps/web/src`. Keep Terraform formatted with `terraform fmt`.
 
 ## Testing Guidelines
 
-Backend tests use `pytest`; name files `test_*.py` and place them in the appropriate `unit`, `integration`, or `contract` directory. Frontend tests use Vitest and Testing Library with `*.test.tsx` naming. E2E tests use Playwright specs in `apps/e2e/tests`; local authenticated runs require env files for backend, frontend, and `apps/e2e/.env.local`.
+Web tests use Vitest and Testing Library with `*.test.tsx` or `*.test.ts` naming. E2E tests use Playwright specs in `apps/e2e/tests`; local authenticated runs require env files for `apps/web` and `apps/e2e/.env.local`.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short imperative subjects, for example `Fix CI checks and gate dev deploys` or `Add local authenticated e2e flow`. Branch from `develop` and merge back by pull request. PRs should summarize behavior changes, list checks run, link related issues or docs, and include screenshots for visible frontend changes.
+Recent commits use short imperative subjects, for example `Fix CI checks and gate dev deploys` or `Add local authenticated e2e flow`. Branch from `develop` and merge back by pull request. PRs should summarize behavior changes, list checks run, link related issues or docs, and include screenshots for visible UI changes.
 
 ## Security & Configuration Tips
 

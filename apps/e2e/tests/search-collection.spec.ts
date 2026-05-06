@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("user can search collection", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Your collection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your media vault" })).toBeVisible();
   await page.getByLabel("Search videos").fill("Fixture");
-  await page.getByLabel("Search videos").press("Enter");
+  await page.getByRole("button", { name: "Search" }).click();
 });

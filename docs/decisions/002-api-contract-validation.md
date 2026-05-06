@@ -1,17 +1,16 @@
 # Decision: API Contract Validation
 
-Status: accepted.
+Status: superseded.
 
-FastAPI already generates the runtime OpenAPI document at `/openapi.json`, and
-that generated schema should be treated as the implementation source of truth.
+This repository previously treated the FastAPI-generated OpenAPI document as the
+contract source of truth.
 
-Contract tests in `apps/backend/tests/contract/` verify route behavior and key
-response shapes. Tests in `apps/backend/tests/contract/test_openapi_auth_contract.py`
-also assert important properties of the generated OpenAPI schema.
+That decision no longer applies because the FastAPI application and its contract
+tests were removed when the Next.js full-stack rewrite became the only active
+application.
 
-Maintenance rule:
+Current rule:
 
-- Do not maintain a separate hand-edited OpenAPI artifact for this feature.
-- When API behavior changes, update the backend behavior, the contract tests,
-  generated-OpenAPI assertions, and [Backend Design](../backend-design.md)
-  together.
+- Do not resurrect or maintain the deleted FastAPI/OpenAPI contract artifacts
+  unless a new explicit API surface is introduced and documented for the current
+  application.

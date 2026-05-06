@@ -6,38 +6,28 @@ on:
     branches: [develop, main]
 
 jobs:
-  backend:
+  web:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/backend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
-      - run: uv sync --all-groups
-      - run: uv run ruff format --check .
-      - run: uv run ruff check .
-      - run: uv run ty check
-      - run: uv run pytest
-
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/frontend
+        working-directory: apps/web
     env:
-      VITE_API_BASE_URL: http://localhost:8000
-      VITE_ENTRA_TENANT_ID: test-tenant-id
-      VITE_ENTRA_CLIENT_ID: test-client-id
-      VITE_API_SCOPE: api://test-client-id/access_as_user
+      DATABASE_URL: sqlserver://localhost:1433;database=mymediavault;user=sa;password=Password123!;trustServerCertificate=true
+      AUTH_SECRET: test-secret
+      AUTH_MICROSOFT_ENTRA_ID_ID: test-client-id
+      AUTH_MICROSOFT_ENTRA_ID_SECRET: test-client-secret
+      AUTH_MICROSOFT_ENTRA_ID_ISSUER: https://login.microsoftonline.com/test-tenant/v2.0
+      MMV_ADMIN_OBJECT_IDS: '[]'
+      MMV_ADMIN_ROLE_NAMES: '["Admin","MyMediaVault.Admin"]'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - run: npx prisma generate
       - run: npm run build
       - run: npm run test
 

@@ -8,14 +8,13 @@ testing, or workflow behavior changes.
 
 - [Architecture](architecture.md): system components, request flow, and deployed topology.
 - [Application Features](features.md): current user-facing and admin capabilities.
-- [Backend Design](backend-design.md): FastAPI structure, API routes, domain services, authentication, and storage.
-- [Frontend Design](frontend-design.md): React application structure, auth flow, and UI behavior.
+- [Frontend Design](frontend-design.md): active Next.js application structure, auth flow, and UI behavior.
 - [Data Model](data-model.md): persisted entities, relationships, constraints, and metadata states.
 
 ## Operations
 
 - [Local Development](local-development.md): environment setup and local run commands.
-- [Testing Strategy](testing.md): backend, frontend, e2e, and CI checks.
+- [Testing Strategy](testing.md): backend, web, e2e, and CI checks.
 - [Deployment](deployment.md): dev deployment flow and Azure resources.
 - [Branching Strategy](branching-strategy.md): branch rules and release boundaries.
 
