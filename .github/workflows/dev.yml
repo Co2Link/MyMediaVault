@@ -128,14 +128,24 @@ jobs:
     needs: terraform
     steps:
       - name: Web health
+        shell: bash
         run: |
-          response="$(
-            curl --fail --connect-timeout 10 --max-time 20 \
-              --retry 12 --retry-all-errors --retry-delay 10 \
-              "${{ needs.terraform.outputs.web_url }}/api/health"
-          )"
-          echo "$response"
-          test "$(echo "$response" | jq -r .commit)" = "${{ github.event.workflow_run.head_sha }}"
+          expected_commit="${{ github.event.workflow_run.head_sha }}"
+          for attempt in $(seq 1 30); do
+            if response="$(
+              curl --fail --connect-timeout 10 --max-time 20 \
+                "${{ needs.terraform.outputs.web_url }}/api/health"
+            )"; then
+              echo "$response"
+              if test "$(echo "$response" | jq -r .commit)" = "$expected_commit"; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+
+          echo "Web health never reported commit $expected_commit"
+          exit 1
 
       - uses: azure/login@v2
         with:
