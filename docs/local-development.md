@@ -48,17 +48,22 @@ database must already be reachable via `DATABASE_URL`.
 
 ## Dev Terraform
 
-The dev stack uses Azure Blob remote state with Azure AD auth and also reads the
-shared SQL contract from the shared-infra state in the same backend. After
-`az login`:
+The dev stack uses a repo-owned Azure Blob backend and its own Azure SQL
+database. After `az login`:
 
 ```bash
 cd infra/terraform/envs/dev
-terraform init
+backend_key="$(
+  az storage account keys list \
+    --resource-group rg-mymediavault-tfstate \
+    --account-name mymediavaulttfstate \
+    --query '[0].value' -o tsv
+)"
+terraform init -reconfigure -backend-config="access_key=${backend_key}"
 terraform plan
 ```
 
-Provide the required `TF_VAR_*` values for the app image, shared SQL admin
+Provide the required `TF_VAR_*` values for the app image, database admin
 password, Auth.js secret, and Entra client credentials before planning or
 applying.
 

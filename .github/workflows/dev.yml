@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_REPOSITORY: ${{ vars.WEB_IMAGE || vars.BACKEND_IMAGE }}
+  IMAGE_REPOSITORY: ${{ vars.WEB_IMAGE }}
 
 jobs:
   image:
@@ -61,8 +61,8 @@ jobs:
       TF_VAR_app_commit_sha: ${{ github.event.workflow_run.head_sha }}
       TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
       TF_VAR_auth_secret: ${{ secrets.AUTH_SECRET }}
-      TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT || vars.VITE_ENTRA_TENANT_ID }}
-      TF_VAR_auth_entra_client_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_ID || vars.VITE_ENTRA_CLIENT_ID }}
+      TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT }}
+      TF_VAR_auth_entra_client_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_ID }}
       TF_VAR_auth_entra_client_secret: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_SECRET }}
       TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS || '[]' }}
       TF_VAR_admin_group_object_ids: ${{ vars.TF_VAR_ADMIN_GROUP_OBJECT_IDS || '[]' }}
@@ -93,8 +93,18 @@ jobs:
         with:
           terraform_wrapper: false
 
-      - name: Initialize remote state
-        run: terraform init -reconfigure
+      - name: Initialize repo-owned state backend
+        shell: bash
+        run: |
+          backend_access_key="$(
+            az storage account keys list \
+              --resource-group rg-mymediavault-tfstate \
+              --account-name mymediavaulttfstate \
+              --query '[0].value' \
+              --output tsv
+          )"
+          echo "::add-mask::$backend_access_key"
+          terraform init -reconfigure -backend-config="access_key=${backend_access_key}"
 
       - name: Validate
         run: terraform validate

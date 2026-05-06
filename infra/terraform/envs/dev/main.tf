@@ -16,29 +16,19 @@ variable "storage_location" {
   description = "Region for the dev storage account."
 }
 
-variable "shared_infra_state_resource_group_name" {
-  type    = string
-  default = "rg-tfstate"
-}
-
-variable "shared_infra_state_storage_account_name" {
-  type    = string
-  default = "stlingxttfstate"
-}
-
-variable "shared_infra_state_container_name" {
-  type    = string
-  default = "tfstate"
-}
-
-variable "shared_infra_state_key" {
-  type    = string
-  default = "shared-infra.tfstate"
-}
-
 variable "prefix" {
   type    = string
   default = "mmv-dev"
+}
+
+variable "database_admin_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "auth_secret" {
+  type      = string
+  sensitive = true
 }
 
 variable "app_image" {
@@ -52,19 +42,9 @@ variable "app_commit_sha" {
   description = "Source commit deployed by the application containers."
 }
 
-variable "database_admin_password" {
-  type      = string
-  sensitive = true
-}
-
 variable "entra_tenant_id" {
   type    = string
   default = "2f601908-d99b-48db-af49-314ae7490559"
-}
-
-variable "auth_secret" {
-  type      = string
-  sensitive = true
 }
 
 variable "auth_entra_client_id" {
@@ -114,20 +94,17 @@ variable "torrent_job_lease_seconds" {
   default = 30
 }
 
-data "terraform_remote_state" "shared_infra" {
-  backend = "azurerm"
-
-  config = {
-    resource_group_name  = var.shared_infra_state_resource_group_name
-    storage_account_name = var.shared_infra_state_storage_account_name
-    container_name       = var.shared_infra_state_container_name
-    key                  = var.shared_infra_state_key
-    use_azuread_auth     = true
-  }
+locals {
+  database_url = "sqlserver://${module.database.server_fqdn}:1433;database=${module.database.database_name};user=${module.database.administrator_login};password=${var.database_admin_password};encrypt=true;trustServerCertificate=true"
 }
 
-locals {
-  database_url = "sqlserver://${data.terraform_remote_state.shared_infra.outputs.sql_server_fqdn}:1433;database=${data.terraform_remote_state.shared_infra.outputs.sql_database_name};user=${data.terraform_remote_state.shared_infra.outputs.sql_administrator_login};password=${var.database_admin_password};encrypt=true;trustServerCertificate=true"
+module "database" {
+  source = "../../modules/database"
+
+  prefix                       = var.prefix
+  location                     = var.location
+  resource_group_name          = azurerm_resource_group.main.name
+  administrator_login_password = var.database_admin_password
 }
 
 module "storage" {

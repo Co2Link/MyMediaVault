@@ -9,7 +9,8 @@ variable "resource_group_name" {
 }
 
 variable "storage_account_name" {
-  type = string
+  type    = string
+  default = "mymediavaulttfstate"
 }
 
 resource "azurerm_resource_group" "state" {
@@ -29,4 +30,16 @@ resource "azurerm_storage_container" "state" {
   name                  = "tfstate"
   storage_account_id    = azurerm_storage_account.state.id
   container_access_type = "private"
+}
+
+output "resource_group_name" {
+  value = azurerm_resource_group.state.name
+}
+
+output "storage_account_name" {
+  value = azurerm_storage_account.state.name
+}
+
+output "container_name" {
+  value = azurerm_storage_container.state.name
 }

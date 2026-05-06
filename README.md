@@ -74,13 +74,20 @@ terraform init
 terraform plan
 ```
 
-After remote state storage exists:
+After the repo-owned backend storage exists:
 
 ```bash
 cd ../envs/dev
-terraform init
+backend_key="$(
+  az storage account keys list \
+    --resource-group rg-mymediavault-tfstate \
+    --account-name mymediavaulttfstate \
+    --query '[0].value' -o tsv
+)"
+terraform init -reconfigure -backend-config="access_key=${backend_key}"
 terraform plan
 ```
 
-The dev Terraform backend and the shared-infra SQL remote state both live in
-the Azure Blob backend documented in `/workspaces/shared-infra/README.md`.
+The dev Terraform backend lives in the Azure Blob storage account managed by
+this repository. The dev environment also provisions its own Azure SQL
+database.
