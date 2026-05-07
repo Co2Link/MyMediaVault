@@ -52,7 +52,12 @@ test("dev smoke verifies web, Cosmos DB, Function worker, blob storage, and read
   );
 
   const queuedJob = await waitForDocument(
-    async () => TorrentMetadataJobModel.findOne({ torrentId: torrent._id }).sort({ createdAt: -1, _id: -1 }).lean().exec(),
+    async () => {
+      const [job] = (await TorrentMetadataJobModel.find({ torrentId: torrent._id }).lean().exec()).sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id),
+      );
+      return job;
+    },
     `torrent metadata job for ${torrent._id} to exist`,
   );
 
