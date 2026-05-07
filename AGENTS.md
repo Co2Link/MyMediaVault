@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+- az cli and github cli are available, ask user to run `az login` or `gh auth login` when needed.
+- Prefer the best practice when deciding on infrastructure, architecture, code structure, and implementation, even if it requires more effort, unless the user specifies otherwise. If you are unsure about the best practice, ask the user for clarification or suggest a few options with pros and cons.
+
 <!-- BEGIN:nextjs-agent-rules -->
  
 # Next.js: ALWAYS read docs before coding
