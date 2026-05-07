@@ -21,6 +21,7 @@ ENV MMV_ADMIN_GROUP_OBJECT_IDS="[]"
 COPY --from=deps /app/apps/web/node_modules ./node_modules
 COPY apps/web .
 COPY packages/core /app/packages/core
+COPY --from=deps /app/packages/core/node_modules /app/packages/core/node_modules
 
 RUN npm --prefix ../../packages/core run build
 RUN npm run build
