@@ -121,21 +121,30 @@ jobs:
         if: ${{ needs.changes.outputs.web != 'true' }}
         shell: bash
         run: |
+          current_image="$(
+            az containerapp show \
+              --resource-group rg-mmv-dev \
+              --name mmv-dev-web \
+              --query "properties.template.containers[?name=='web'].image | [0]" \
+              --output tsv
+          )"
+          current_commit="$(
+            az containerapp show \
+              --resource-group rg-mmv-dev \
+              --name mmv-dev-web \
+              --query "properties.template.containers[?name=='web'].env[?name=='MMV_COMMIT_SHA'].value | [0]" \
+              --output tsv
+          )"
+          if [[ -z "$current_commit" && "$current_image" == *:* ]]; then
+            current_commit="${current_image##*:}"
+          fi
+          if [[ -z "$current_image" || -z "$current_commit" ]]; then
+            echo "Unable to resolve the current deployed web image and commit." >&2
+            exit 1
+          fi
           {
-            echo "TF_VAR_app_image=$(
-              az containerapp show \
-                --resource-group rg-mmv-dev \
-                --name mmv-dev-web \
-                --query "properties.template.containers[?name=='web'].image | [0]" \
-                --output tsv
-            )"
-            echo "TF_VAR_app_commit_sha=$(
-              az containerapp show \
-                --resource-group rg-mmv-dev \
-                --name mmv-dev-web \
-                --query "properties.template.containers[?name=='web'].env[?name=='MMV_COMMIT_SHA'].value | [0]" \
-                --output tsv
-            )"
+            echo "TF_VAR_app_image=${current_image}"
+            echo "TF_VAR_app_commit_sha=${current_commit}"
           } >> "$GITHUB_ENV"
 
       - uses: hashicorp/setup-terraform@v3

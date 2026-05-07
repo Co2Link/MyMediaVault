@@ -16,11 +16,12 @@ variable "database_name" {
 }
 
 resource "azurerm_cosmosdb_account" "main" {
-  name                = "${var.prefix}-cosmos"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  offer_type          = "Standard"
-  kind                = "MongoDB"
+  name                 = "${var.prefix}-cosmos"
+  location             = var.location
+  resource_group_name  = var.resource_group_name
+  offer_type           = "Standard"
+  kind                 = "MongoDB"
+  mongo_server_version = "4.2"
 
   capabilities {
     name = "EnableMongo"
