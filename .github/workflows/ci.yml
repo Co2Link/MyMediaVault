@@ -58,6 +58,7 @@ jobs:
           cache-dependency-path: |
             apps/web/package-lock.json
             packages/core/package-lock.json
+      - run: npm --prefix ../../packages/core ci
       - run: npm ci
       - run: npm run build
       - run: npm run test
@@ -83,6 +84,7 @@ jobs:
           cache-dependency-path: |
             apps/functions/package-lock.json
             packages/core/package-lock.json
+      - run: npm --prefix ../../packages/core ci
       - run: npm ci
       - run: npm run build
       - run: npm run test

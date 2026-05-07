@@ -2,7 +2,8 @@ FROM node:24-bookworm-slim AS deps
 WORKDIR /app/apps/web
 
 COPY apps/web/package.json apps/web/package-lock.json apps/web/.npmrc ./
-COPY packages/core/package.json /app/packages/core/package.json
+COPY packages/core /app/packages/core
+RUN npm --prefix ../../packages/core ci
 RUN npm ci
 
 FROM node:24-bookworm-slim AS builder
