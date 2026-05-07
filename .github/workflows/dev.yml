@@ -25,7 +25,7 @@ jobs:
       terraform: ${{ steps.flags.outputs.terraform }}
     steps:
       - name: Download CI change flags
-        run: gh run download "$CI_RUN_ID" --name dev-change-flags --dir dev-change-flags
+        run: gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" --name dev-change-flags --dir dev-change-flags
         env:
           CI_RUN_ID: ${{ github.event.workflow_run.id }}
           GH_TOKEN: ${{ github.token }}
