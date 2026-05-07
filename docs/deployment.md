@@ -61,6 +61,8 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   redirects return to the deployed app instead of an internal runtime address.
 - Functions: Azure Functions Flex Consumption Node.js 22 app with one maximum
   instance, queue trigger, poison queue handler, and timer repair trigger.
+  It receives the same auth settings as the web app because the shared core
+  environment loader is used by both HTTP and worker code paths.
 - Database: Azure Cosmos DB for MongoDB account created by this repository,
   configured for MongoDB 4.2 compatibility so the Node MongoDB driver can
   connect through Mongoose.

@@ -283,6 +283,10 @@ resource "azurerm_function_app_flex_consumption" "torrent_metadata" {
 
   app_settings = {
     AzureWebJobsStorage                        = var.azure_storage_connection_string
+    AUTH_SECRET                                = var.auth_secret
+    AUTH_MICROSOFT_ENTRA_ID_ID                 = var.auth_entra_client_id
+    AUTH_MICROSOFT_ENTRA_ID_SECRET             = var.auth_entra_client_secret
+    AUTH_MICROSOFT_ENTRA_ID_ISSUER             = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
     MONGODB_URI                                = var.mongodb_uri
     MMV_MONGODB_DB_NAME                        = var.mongodb_database
     MMV_AZURE_STORAGE_CONNECTION_STRING        = var.azure_storage_connection_string
