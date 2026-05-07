@@ -27,7 +27,7 @@ type VideoRecord = {
 export async function searchVideos(userId: string, query?: string) {
   await connectMongo();
   const normalizedQuery = query?.trim().toLowerCase();
-  const videos = await VideoModel.find({ userId }).sort({ createdAt: -1, _id: -1 }).lean().exec();
+  const videos = (await VideoModel.find({ userId }).lean().exec()).sort(compareNewestVideoFirst);
   const records = await hydrateVideos(videos);
 
   return records
@@ -124,10 +124,9 @@ export async function enqueueTorrentMetadata(torrentId: string) {
     return null;
   }
 
-  let job = await TorrentMetadataJobModel.findOne({ torrentId, status: { $in: ["queued", "processing"] } })
-    .sort({ createdAt: -1, _id: -1 })
-    .lean()
-    .exec();
+  let job = (
+    await TorrentMetadataJobModel.find({ torrentId, status: { $in: ["queued", "processing"] } }).lean().exec()
+  ).sort(compareNewestJobFirst)[0];
 
   if (!job) {
     await TorrentModel.updateOne({ _id: torrentId }, { $set: { metadataStatus: "pending", metadataError: null } }).exec();
@@ -301,16 +300,18 @@ export async function repairStaleTorrentMetadataJobs(now = new Date()) {
   const env = getEnv();
   const queuedBefore = new Date(now.getTime() - env.torrentRepairStaleQueuedMinutes * 60 * 1000);
   const processingBefore = new Date(now.getTime() - env.torrentRepairStaleProcessingMinutes * 60 * 1000);
-  const jobs = await TorrentMetadataJobModel.find({
-    $or: [
-      { status: "queued", $or: [{ queueEnqueuedAt: null }, { queueEnqueuedAt: { $lt: queuedBefore } }] },
-      { status: "processing", $or: [{ lastDequeuedAt: null }, { lastDequeuedAt: { $lt: processingBefore } }] },
-    ],
-  })
-    .sort({ createdAt: 1, _id: 1 })
-    .limit(25)
-    .lean()
-    .exec();
+  const jobs = (
+    await TorrentMetadataJobModel.find({
+      $or: [
+        { status: "queued", $or: [{ queueEnqueuedAt: null }, { queueEnqueuedAt: { $lt: queuedBefore } }] },
+        { status: "processing", $or: [{ lastDequeuedAt: null }, { lastDequeuedAt: { $lt: processingBefore } }] },
+      ],
+    })
+      .lean()
+      .exec()
+  )
+    .sort(compareOldestJobFirst)
+    .slice(0, 25);
 
   for (const job of jobs) {
     await TorrentMetadataJobModel.updateOne({ _id: job._id }, { $set: { status: "queued", error: null } }).exec();
@@ -400,6 +401,18 @@ function groupVideoTags(videoTags: VideoTagDoc[]) {
 
 function isFinalJobStatus(status: string) {
   return status === "succeeded" || status === "failed" || status === "dead_lettered";
+}
+
+function compareNewestVideoFirst(a: VideoDoc, b: VideoDoc) {
+  return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
+}
+
+function compareNewestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDoc) {
+  return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
+}
+
+function compareOldestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDoc) {
+  return a.createdAt.getTime() - b.createdAt.getTime() || a._id.localeCompare(b._id);
 }
 
 function isDuplicateKeyError(error: unknown) {

@@ -4,11 +4,13 @@ import type { TagRead } from "./types.js";
 
 export async function listTags() {
   await connectMongo();
-  const tags = await TagModel.find().sort({ name: 1 }).lean().exec();
-  return tags.map<TagRead>((tag) => ({
-    id: tag._id,
-    name: tag.name,
-  }));
+  const tags = await TagModel.find().lean().exec();
+  return tags
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map<TagRead>((tag) => ({
+      id: tag._id,
+      name: tag.name,
+    }));
 }
 
 export async function createTag(name: string) {
