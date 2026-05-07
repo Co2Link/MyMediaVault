@@ -1,11 +1,15 @@
 sandbox_mode="danger-full-access"
 approval_policy="on-request"
 hide_agent_reasoning=true
-model_reasoning_summary="detailed"
+model_reasoning_summary="auto"
+
+[sandbox_workspace_write]
+network_access = true
 
 [features]
 memories=true
 goals=true
+undo=true
 
 [tui]
-status_line = ["model-with-reasoning", "current-dir", "git-branch", "context-remaining", "five-hour-limit", "context-window-size", "total-input-tokens", "total-output-tokens", "run-state"]
+status_line = ["model-with-reasoning", "current-dir", "git-branch", "context-remaining", "five-hour-limit", "weekly-limit","context-window-size", "used-tokens"]

@@ -8,19 +8,12 @@ testing, or workflow behavior changes.
 
 - [Architecture](architecture.md): system components, request flow, and deployed topology.
 - [Application Features](features.md): current user-facing and admin capabilities.
-- [Frontend Design](frontend-design.md): active Next.js application structure, auth flow, and UI behavior.
+- [Web App Architecture](web-app-architecture.md): Next.js app structure, auth flow, route handlers, worker, and UI behavior.
 - [Data Model](data-model.md): persisted entities, relationships, constraints, and metadata states.
 
 ## Operations
 
 - [Local Development](local-development.md): environment setup and local run commands.
-- [Testing Strategy](testing.md): backend, web, e2e, and CI checks.
+- [Testing Strategy](testing.md): Next.js app, e2e, and CI checks.
 - [Deployment](deployment.md): dev deployment flow and Azure resources.
 - [Branching Strategy](branching-strategy.md): branch rules and release boundaries.
-
-## Decisions
-
-- [001: Canonical Torrent Reuse](decisions/001-canonical-torrent-reuse.md)
-- [002: API Contract Validation](decisions/002-api-contract-validation.md)
-- [003: Authentication Configuration](decisions/003-authentication-configuration.md)
-- [004: Torrent Metadata Provider](decisions/004-torrent-metadata-provider.md)

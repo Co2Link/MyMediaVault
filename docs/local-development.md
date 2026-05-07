@@ -17,6 +17,11 @@ Copy `apps/web/.env.local.example` to `apps/web/.env.local` and fill in the
 Entra credentials, `AUTH_SECRET`, and any optional `MMV_*` overrides. The local
 default `DATABASE_URL` targets SQL Server on `localhost:1433`.
 
+The worker uses the fake torrent metadata provider by default. Set
+`MMV_TORRENT_PROVIDER=http` and provide `MMV_TORRENT_RESOLVER_URLS` as a JSON
+array of base URLs or `{info_hash}` templates only when you want to exercise a
+real resolver during local development.
+
 Microsoft's current SQL Server Linux container images support only Intel/AMD
 x86-64 hosts. On ARM64 devcontainer hosts, do not expect `.devcontainer` to
 start a local SQL Server container. Point `DATABASE_URL` at an external SQL
