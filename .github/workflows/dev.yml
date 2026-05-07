@@ -46,8 +46,6 @@ jobs:
     needs: changes
     permissions:
       contents: read
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -108,10 +106,16 @@ jobs:
         if: ${{ needs.changes.outputs.web == 'true' }}
         shell: bash
         run: |
+          repo="${IMAGE_REPOSITORY}"
+          if [[ "${repo##*/}" == *:* ]]; then
+            repo="${repo%:*}"
+          fi
           {
-            echo "TF_VAR_app_image=${{ needs.image.outputs.image }}"
-            echo "TF_VAR_app_commit_sha=${{ github.event.workflow_run.head_sha }}"
+            echo "TF_VAR_app_image=${repo}:${HEAD_SHA}"
+            echo "TF_VAR_app_commit_sha=${HEAD_SHA}"
           } >> "$GITHUB_ENV"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
 
       - name: Use current deployed image
         if: ${{ needs.changes.outputs.web != 'true' }}
@@ -174,12 +178,21 @@ jobs:
 
       - name: Deploy image
         if: ${{ needs.changes.outputs.terraform != 'true' }}
+        shell: bash
         run: |
+          repo="${IMAGE_REPOSITORY}"
+          if [[ "${repo##*/}" == *:* ]]; then
+            repo="${repo%:*}"
+          fi
+          image="${repo}:${HEAD_SHA}"
+
           az containerapp update \
             --resource-group rg-mmv-dev \
             --name mmv-dev-web \
-            --image "${{ needs.image.outputs.image }}" \
-            --set-env-vars "MMV_COMMIT_SHA=${{ github.event.workflow_run.head_sha }}"
+            --image "$image" \
+            --set-env-vars "MMV_COMMIT_SHA=${HEAD_SHA}"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
 
       - name: Terraform deployed image
         if: ${{ needs.changes.outputs.terraform == 'true' }}
