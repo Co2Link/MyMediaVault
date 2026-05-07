@@ -294,8 +294,6 @@ resource "azurerm_function_app_flex_consumption" "torrent_metadata" {
     APPLICATIONINSIGHTS_CONNECTION_STRING      = azurerm_application_insights.functions.connection_string
     ApplicationInsightsAgent_EXTENSION_VERSION = "~3"
     FUNCTIONS_EXTENSION_VERSION                = "~4"
-    SCM_DO_BUILD_DURING_DEPLOYMENT             = "false"
-    WEBSITE_RUN_FROM_PACKAGE                   = "1"
   }
 
   site_config {
