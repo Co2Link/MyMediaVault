@@ -1,0 +1,73 @@
+{
+  "name": "@mymediavault/core",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./db": {
+      "types": "./dist/db.d.ts",
+      "default": "./dist/db.js"
+    },
+    "./auth-adapter": {
+      "types": "./dist/auth-adapter.d.ts",
+      "default": "./dist/auth-adapter.js"
+    },
+    "./env": {
+      "types": "./dist/env.d.ts",
+      "default": "./dist/env.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "default": "./dist/errors.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "default": "./dist/storage.js"
+    },
+    "./tags": {
+      "types": "./dist/tags.d.ts",
+      "default": "./dist/tags.js"
+    },
+    "./torrent-provider": {
+      "types": "./dist/torrent-provider.d.ts",
+      "default": "./dist/torrent-provider.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    },
+    "./validation": {
+      "types": "./dist/validation.d.ts",
+      "default": "./dist/validation.js"
+    },
+    "./videos": {
+      "types": "./dist/videos.d.ts",
+      "default": "./dist/videos.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "db:init": "node dist/db.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@auth/core": "^0.41.0",
+    "@azure/storage-blob": "^12.31.0",
+    "@azure/storage-queue": "^12.29.0",
+    "bencode": "^4.0.0",
+    "mongoose": "^8.20.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bencode": "^2.0.4",
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^4.1.5"
+  }
+}

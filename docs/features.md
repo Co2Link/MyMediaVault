@@ -6,8 +6,8 @@ management backed by shared torrent metadata.
 ## Authentication
 
 Users sign in through Entra ID using Auth.js. The app stores server-side
-sessions in SQL Server, persists the local user row, and records admin access
-from configured Entra object IDs or group membership.
+sessions in Cosmos DB through Mongoose, persists the local user document, and
+records admin access from configured Entra object IDs or group membership.
 
 ## Personal Video Collection
 
@@ -20,7 +20,7 @@ shared even when multiple users reference the same torrent.
 Torrent records are reused by normalized info hash. Metadata processing stores
 shared torrent name, size, file list, raw torrent blob key, status, attempts, and
 errors. Creating a video enqueues metadata processing and returns immediately; the
-worker resolves the raw `.torrent` payload asynchronously, stores only that
+Functions worker resolves the raw `.torrent` payload asynchronously, stores only that
 payload, and derives shared metadata from it. The provider interface supports
 deterministic local fixtures or a production HTTP resolver source.
 
@@ -41,5 +41,5 @@ assignment controls.
 ## End-to-End Coverage
 
 Playwright tests cover the authenticated header/account menu, add-video,
-collection search, and admin tag flows against a local stack using a real Entra
-test account.
+collection search, admin tag flows, and the queue/worker smoke path against a
+local stack using a real Entra test account.

@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "MONGODB_URI": "mongodb://127.0.0.1:27017/mymediavault",
+    "MMV_MONGODB_DB_NAME": "mymediavault",
+    "MMV_AZURE_BLOB_CONTAINER": "torrent-raw",
+    "MMV_TORRENT_METADATA_QUEUE": "torrent-metadata-jobs",
+    "MMV_TORRENT_PROVIDER": "fake",
+    "MMV_TORRENT_RESOLVER_URLS": "[]",
+    "MMV_TORRENT_FETCH_TIMEOUT_SECONDS": "20"
+  }
+}

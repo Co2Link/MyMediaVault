@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 E2E_DIR="$ROOT_DIR/apps/e2e"
 WEB_DIR="$ROOT_DIR/apps/web"
+FUNCTIONS_DIR="$ROOT_DIR/apps/functions"
 LOG_DIR="$E2E_DIR/.logs"
-SQL_PASSWORD="${SQL_PASSWORD:-Password123!}"
 
 mkdir -p "$LOG_DIR"
 
@@ -45,11 +45,11 @@ wait_for_http() {
 }
 
 stop_existing_local_stack() {
-  log "Stopping any existing local Next.js dev server and worker processes."
+  log "Stopping any existing local Next.js dev server and Functions worker processes."
   pkill -f "/workspaces/MyMediaVault/apps/web/node_modules/.bin/next dev" >/dev/null 2>&1 || true
   pkill -f "next dev --hostname localhost --port 3000" >/dev/null 2>&1 || true
-  pkill -f "/workspaces/MyMediaVault/apps/web/node_modules/.bin/tsx src/worker/index.ts" >/dev/null 2>&1 || true
-  pkill -f "tsx src/worker/index.ts" >/dev/null 2>&1 || true
+  pkill -f "[f]unc start" >/dev/null 2>&1 || true
+  pkill -9 -f "[m]anual-worker.js" >/dev/null 2>&1 || true
 }
 
 stop_managed_process() {
@@ -85,11 +85,12 @@ cleanup() {
     log "Leaving existing Next.js dev server running because this run did not start it."
   fi
   if [[ -n "${WORKER_PID:-}" ]]; then
-    log "Stopping worker started by this run (process group $WORKER_PID)."
-    stop_managed_process "$WORKER_PID" "Torrent worker"
+    log "Stopping Functions worker started by this run (process group $WORKER_PID)."
+    stop_managed_process "$WORKER_PID" "Functions worker"
     wait "$WORKER_PID" >/dev/null 2>&1 || true
+    pkill -9 -f "[m]anual-worker.js" >/dev/null 2>&1 || true
   else
-    log "Leaving existing worker running because this run did not start it."
+    log "Leaving existing Functions worker running because this run did not start it."
   fi
   log "run-local.sh exiting with code $exit_code."
   exit "$exit_code"
@@ -105,10 +106,19 @@ source_required_file "$E2E_DIR/.env.local"
 : "${E2E_ADMIN_USERNAME:?Missing E2E_ADMIN_USERNAME in apps/e2e/.env.local}"
 : "${E2E_ADMIN_PASSWORD:?Missing E2E_ADMIN_PASSWORD in apps/e2e/.env.local}"
 
-export DATABASE_URL="${DATABASE_URL:-sqlserver://localhost:1433;database=mymediavault;user=sa;password=$SQL_PASSWORD;trustServerCertificate=true}"
+export MONGODB_URI="${MONGODB_URI:-mongodb://127.0.0.1:27017/mymediavault}"
+export MMV_MONGODB_DB_NAME="${MMV_MONGODB_DB_NAME:-mymediavault}"
+export AzureWebJobsStorage="${AzureWebJobsStorage:-UseDevelopmentStorage=true}"
+export MMV_AZURE_STORAGE_CONNECTION_STRING="${MMV_AZURE_STORAGE_CONNECTION_STRING:-$AzureWebJobsStorage}"
 export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:3000}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:3000/api/health}"
 PLAYWRIGHT_ARGS=("$@")
+RUN_ID="${RUN_ID:-$(date +%s)-$$}"
+GENERATED_TORRENT_METADATA_QUEUE=0
+if [[ -z "${MMV_TORRENT_METADATA_QUEUE:-}" ]]; then
+  export MMV_TORRENT_METADATA_QUEUE="torrent-metadata-jobs-${RUN_ID}"
+  GENERATED_TORRENT_METADATA_QUEUE=1
+fi
 
 if [[ "${E2E_INCLUDE_MANUAL_TORRENT_TESTS:-}" != "1" ]]; then
   PLAYWRIGHT_ARGS+=(--grep-invert "@manual-torrent")
@@ -117,6 +127,8 @@ fi
 if [[ "${E2E_REQUIRE_HTTP_TORRENT_PROVIDER:-}" == "1" ]]; then
   log "Manual torrent mode requested. Forcing MMV_TORRENT_PROVIDER=http."
   export MMV_TORRENT_PROVIDER="http"
+else
+  export MMV_TORRENT_PROVIDER="fake"
 fi
 
 if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
@@ -125,11 +137,10 @@ if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
   rm -rf "$E2E_DIR/.auth"
 fi
 
-log "Running prisma db push. Logs: $LOG_DIR/prisma.log"
-(
-  cd "$WEB_DIR"
-  npx prisma db push --accept-data-loss
-) >"$LOG_DIR/prisma.log" 2>&1
+if [[ "$GENERATED_TORRENT_METADATA_QUEUE" == "1" ]]; then
+  log "Using isolated queue $MMV_TORRENT_METADATA_QUEUE. Existing local worker processes will be restarted."
+  pkill -9 -f "[m]anual-worker.js" >/dev/null 2>&1 || true
+fi
 
 log "Resetting Playwright user data and orphaned torrent state. Logs: $LOG_DIR/reset.log"
 (
@@ -149,16 +160,17 @@ else
   log "Reusing existing Next.js dev server at $E2E_BASE_URL."
 fi
 
-if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! pgrep -f "tsx src/worker/index.ts" >/dev/null 2>&1; then
-  log "Starting torrent worker. Logs: $LOG_DIR/worker.log"
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || [[ "$GENERATED_TORRENT_METADATA_QUEUE" == "1" ]] || ! pgrep -f "manual-worker.js" >/dev/null 2>&1; then
+  log "Starting Functions worker. Logs: $LOG_DIR/worker.log"
   (
-    cd "$WEB_DIR"
-    exec setsid npm run worker
+    cd "$FUNCTIONS_DIR"
+    npm run build
+    exec setsid npm run manual-worker
   ) >"$LOG_DIR/worker.log" 2>&1 &
   WORKER_PID=$!
-  log "Started torrent worker with pid $WORKER_PID."
+  log "Started Functions worker with pid $WORKER_PID."
 else
-  log "Reusing existing torrent worker process."
+  log "Reusing existing Functions worker process."
 fi
 
 log "Waiting for frontend at $E2E_BASE_URL."

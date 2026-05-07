@@ -21,14 +21,28 @@ skip_section() {
   printf '\n[skip] %s\n' "$label"
 }
 
-if has_staged_changes_in "apps/web"; then
+if has_staged_changes_in "packages/core"; then
+  run_in packages/core npm run build
+  run_in packages/core npm run test
+else
+  skip_section "core checks"
+fi
+
+if has_staged_changes_in "apps/web" || has_staged_changes_in "packages/core"; then
   run_in apps/web npm run build
   run_in apps/web npm run test
 else
   skip_section "web checks"
 fi
 
-if has_staged_changes_in "apps/web" || has_staged_changes_in "apps/e2e"; then
+if has_staged_changes_in "apps/functions" || has_staged_changes_in "packages/core"; then
+  run_in apps/functions npm run build
+  run_in apps/functions npm run test
+else
+  skip_section "functions checks"
+fi
+
+if has_staged_changes_in "apps/web" || has_staged_changes_in "apps/functions" || has_staged_changes_in "apps/e2e" || has_staged_changes_in "packages/core"; then
   run_in apps/e2e npm run test:local
 else
   skip_section "e2e checks"

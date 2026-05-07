@@ -19,7 +19,10 @@ export default async function AdminTagsPage() {
     );
   }
 
-  const tags = await listTags();
+  const tags = ((await listTags()) as unknown as Array<{ id?: string; _id?: string; name: string }>).map((tag) => ({
+    id: tag.id ?? tag._id ?? "",
+    name: tag.name,
+  }));
 
   return (
     <main className="workspace">

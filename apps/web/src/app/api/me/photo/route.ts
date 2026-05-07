@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { db } from "@/lib/db";
+import { getAccountAccessToken } from "@/lib/db";
 
 export async function GET() {
   const session = await auth();
@@ -7,17 +7,14 @@ export async function GET() {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const account = await db.account.findFirst({
-    where: { userId: session.user.id, provider: "microsoft-entra-id" },
-    select: { access_token: true },
-  });
-  if (!account?.access_token) {
+  const accessToken = await getAccountAccessToken(session.user.id, "microsoft-entra-id");
+  if (!accessToken) {
     return new Response("Not found", { status: 404 });
   }
 
   const response = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
     headers: {
-      Authorization: `Bearer ${account.access_token}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     cache: "no-store",
   });

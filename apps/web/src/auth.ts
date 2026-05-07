@@ -1,13 +1,13 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import NextAuth from "next-auth";
-import { db } from "@/lib/db";
+import { MongooseAuthAdapter } from "@mymediavault/core/auth-adapter";
+import { updateUserProfile } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 
 const env = getEnv();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(db),
+  adapter: MongooseAuthAdapter(),
   session: {
     strategy: "database",
   },
@@ -80,16 +80,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const entraOid = entraProfile?.oid ?? entraProfile?.sub ?? null;
       const email = entraProfile?.preferred_username ?? entraProfile?.email ?? user.email;
       const isAdmin = await resolveAdminStatus(entraOid, entraProfile?.groups ?? [], account?.access_token ?? null);
+      const userId = user.id ?? user.email;
+      if (!userId) {
+        throw new Error("Authenticated user is missing an identifier.");
+      }
 
-      await db.user.update({
-        where: { id: user.id },
-        data: {
-          entraOid,
-          isAdmin,
-          name: entraProfile?.name ?? user.name,
-          email,
-          image: user.image,
-        },
+      await updateUserProfile(userId, {
+        entraOid,
+        isAdmin,
+        name: entraProfile?.name ?? user.name ?? null,
+        email: email ?? null,
+        image: user.image ?? null,
       });
     },
   },

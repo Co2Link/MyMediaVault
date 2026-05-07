@@ -44,7 +44,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: apps/web
+          context: .
           file: apps/web/Dockerfile
           platforms: linux/amd64
           push: true
@@ -59,7 +59,6 @@ jobs:
         working-directory: infra/terraform/envs/dev
     env:
       TF_VAR_app_commit_sha: ${{ github.event.workflow_run.head_sha }}
-      TF_VAR_database_admin_password: ${{ secrets.TF_VAR_DATABASE_ADMIN_PASSWORD }}
       TF_VAR_auth_secret: ${{ secrets.AUTH_SECRET }}
       TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT }}
       TF_VAR_auth_entra_client_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_ID }}
@@ -68,7 +67,7 @@ jobs:
       TF_VAR_admin_group_object_ids: ${{ vars.TF_VAR_ADMIN_GROUP_OBJECT_IDS || '[]' }}
     outputs:
       web_url: ${{ steps.outputs.outputs.web_url }}
-      worker_name: ${{ steps.outputs.outputs.worker_name }}
+      function_app_name: ${{ steps.outputs.outputs.function_app_name }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -119,8 +118,30 @@ jobs:
         run: |
           {
             echo "web_url=$(terraform output -raw web_url)"
-            echo "worker_name=$(terraform output -raw worker_name)"
+            echo "function_app_name=$(terraform output -raw function_app_name)"
           } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/functions/package-lock.json
+
+      - name: Build function package
+        working-directory: apps/functions
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+          zip -r function.zip dist host.json package.json node_modules
+
+      - name: Deploy function package
+        working-directory: apps/functions
+        run: |
+          az functionapp deployment source config-zip \
+            --resource-group rg-mmv-dev \
+            --name "${{ steps.outputs.outputs.function_app_name }}" \
+            --src function.zip
 
   smoke:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
@@ -151,10 +172,10 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Worker revision
+      - name: Function App presence
         run: |
-          az containerapp show \
+          az functionapp show \
             --resource-group rg-mmv-dev \
-            --name "${{ needs.terraform.outputs.worker_name }}" \
-            --query "properties.latestRevisionName" \
+            --name "${{ needs.terraform.outputs.function_app_name }}" \
+            --query "name" \
             --output tsv

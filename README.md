@@ -10,7 +10,9 @@ description, and rating.
 
 ```text
 apps/web          Next.js full-stack app
+apps/functions    Azure Functions queue worker
 apps/e2e          Playwright tests
+packages/core     Shared Mongoose/domain/storage/torrent logic
 docs              Project decisions and workflow guidance
 infra/terraform   Azure infrastructure
 ```
@@ -31,8 +33,8 @@ Enable the tracked pre-commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook runs the web and Terraform checks that mirror CI.
-It also runs the local authenticated Playwright browser suite through
+The hook runs core, web, Functions, e2e, and Terraform checks selectively based
+on staged paths. The local authenticated Playwright browser suite uses
 `apps/e2e/.env.local`, so Entra test-user credentials must be available there.
 
 ## Web
@@ -40,7 +42,6 @@ It also runs the local authenticated Playwright browser suite through
 ```bash
 cd apps/web
 npm install
-npx prisma generate
 npm run build
 npm run test
 ```
@@ -49,7 +50,9 @@ Run locally:
 
 ```bash
 npm run dev
-npm run worker
+cd ../functions
+npm ci
+npm run start
 ```
 
 ## End-to-End Tests
@@ -60,11 +63,12 @@ npm install
 npm run test:local
 ```
 
-`npm run test:local` expects a reachable SQL Server database, starts the
-Next.js app and torrent worker automatically when needed, loads env from
-`apps/web/.env.local` and `apps/e2e/.env.local`, cleans rows owned by the
+`npm run test:local` expects a reachable MongoDB database, starts the Next.js
+app and local queue worker automatically when needed, loads env from
+`apps/web/.env.local` and `apps/e2e/.env.local`, cleans documents owned by the
 Playwright test users, performs real Entra login, and runs the browser suite
-against the local stack.
+against the local stack. `npm run test:smoke:local` runs the focused
+web -> Cosmos DB -> queue -> worker smoke.
 
 ## Infrastructure
 
@@ -89,5 +93,5 @@ terraform plan
 ```
 
 The dev Terraform backend lives in the Azure Blob storage account managed by
-this repository. The dev environment also provisions its own Azure SQL
-database.
+this repository. The dev environment also provisions its own Azure Cosmos DB
+for MongoDB account.

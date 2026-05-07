@@ -34,6 +34,8 @@ playwright-report/
 test-results/
 apps/e2e/.auth/
 apps/e2e/.logs/
+apps/functions/local.settings.json
+packages/core/src/generated/prisma/
 
 # Terraform
 .terraform/

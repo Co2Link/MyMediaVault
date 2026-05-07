@@ -8,7 +8,7 @@ testing, or workflow behavior changes.
 
 - [Architecture](architecture.md): system components, request flow, and deployed topology.
 - [Application Features](features.md): current user-facing and admin capabilities.
-- [Web App Architecture](web-app-architecture.md): Next.js app structure, auth flow, route handlers, worker, and UI behavior.
+- [Web App Architecture](web-app-architecture.md): Next.js app structure, auth flow, route handlers, Functions worker, and UI behavior.
 - [Data Model](data-model.md): persisted entities, relationships, constraints, and metadata states.
 
 ## Operations

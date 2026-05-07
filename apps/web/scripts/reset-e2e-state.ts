@@ -1,21 +1,9 @@
 import "../load-env";
 import { BlobServiceClient } from "@azure/storage-blob";
+import { resetE2EState, db } from "@mymediavault/core/db";
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { db } from "../src/lib/db";
 import { getEnv } from "../src/lib/env";
-
-type TargetUser = {
-  id: string;
-  videos: Array<{
-    torrentId: string;
-  }>;
-};
-
-type OrphanedTorrent = {
-  id: string;
-  rawBlobKey: string | null;
-};
 
 async function main() {
   const usernames = [process.env.E2E_USER_USERNAME, process.env.E2E_ADMIN_USERNAME].filter(
@@ -24,83 +12,9 @@ async function main() {
   if (usernames.length === 0) {
     throw new Error("Missing required environment variables: E2E_USER_USERNAME and E2E_ADMIN_USERNAME");
   }
-  const displayNames = usernames.map((username) => username.split("@")[0] ?? username);
 
-  const targetUsers: TargetUser[] = await db.user.findMany({
-    where: {
-      OR: [
-        { email: { in: usernames } },
-        ...displayNames.map((displayName) => ({
-          name: displayName,
-          accounts: {
-            some: {
-              provider: "microsoft-entra-id",
-            },
-          },
-        })),
-      ],
-    },
-    include: {
-      videos: {
-        select: {
-          torrentId: true,
-        },
-      },
-    },
-  });
-
-  const candidateTorrentIds = new Set(targetUsers.flatMap((user) => user.videos.map((video) => video.torrentId)));
-
-  await db.tag.deleteMany({
-    where: {
-      name: {
-        startsWith: "e2e-tag-",
-      },
-    },
-  });
-
-  if (targetUsers.length > 0) {
-    await db.user.deleteMany({
-      where: {
-        id: {
-          in: targetUsers.map((user) => user.id),
-        },
-      },
-    });
-  }
-
-  if (candidateTorrentIds.size === 0) {
-    return;
-  }
-
-  const orphanedTorrents: OrphanedTorrent[] = await db.torrent.findMany({
-    where: {
-      id: {
-        in: [...candidateTorrentIds],
-      },
-      videos: {
-        none: {},
-      },
-    },
-    select: {
-      id: true,
-      rawBlobKey: true,
-    },
-  });
-
-  if (orphanedTorrents.length === 0) {
-    return;
-  }
-
-  await deleteRawBlobs(orphanedTorrents.map((torrent) => torrent.rawBlobKey).filter((key): key is string => Boolean(key)));
-
-  await db.torrent.deleteMany({
-    where: {
-      id: {
-        in: orphanedTorrents.map((torrent) => torrent.id),
-      },
-    },
-  });
+  const { rawBlobKeys } = await resetE2EState(usernames);
+  await deleteRawBlobs(rawBlobKeys);
 }
 
 async function deleteRawBlobs(keys: string[]) {
@@ -127,5 +41,5 @@ void main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await db.$disconnect();
+    await db.disconnect();
   });

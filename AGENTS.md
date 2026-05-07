@@ -2,6 +2,9 @@
 
 - az cli and github cli are available, ask user to run `az login` or `gh auth login` when needed.
 - Prefer the best practice when deciding on infrastructure, architecture, code structure, and implementation, even if it requires more effort, unless the user specifies otherwise. If you are unsure about the best practice, ask the user for clarification or suggest a few options with pros and cons.
+- Run e2e tests at the end of the change to verify the overall behavior, ask user to setup the required environment if needed.
+- Currently the project is set to use a remote Azure SQL database for local testing and development. It could be a serverless database that have a cold start.
+- You are in a devcontainer environment, ask user to rebuild the container if you update devcontainer configuration or Dockerfile.
 
 <!-- BEGIN:nextjs-agent-rules -->
  

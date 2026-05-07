@@ -1,0 +1,27 @@
+{
+  "name": "functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "prebuild": "npm --prefix ../../packages/core run build",
+    "build": "tsc -p tsconfig.json",
+    "prestart": "npm run build",
+    "start": "func start --port ${FUNCTIONS_PORT:-7071}",
+    "manual-worker": "node dist/manual-worker.js",
+    "pretest": "npm --prefix ../../packages/core run build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.8.0",
+    "@azure/storage-queue": "^12.29.0",
+    "@mymediavault/core": "file:../../packages/core",
+    "mongoose": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^4.1.5"
+  }
+}
