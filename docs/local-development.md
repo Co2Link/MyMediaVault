@@ -56,8 +56,11 @@ Playwright. The database must already be reachable via `MONGODB_URI`.
 `apps/e2e/.env.local` must define `E2E_USER_USERNAME`, `E2E_USER_PASSWORD`,
 `E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use
 `apps/e2e/.env.local.example` as the template.
-`npm run test:smoke:local` runs a focused smoke that verifies the web app,
-Cosmos DB, queue, and worker path end to end.
+
+To verify the deployed dev environment after GitHub `CI` and `Dev` workflows
+pass, run `npm run test:smoke:dev` from `apps/e2e` with `E2E_BASE_URL` set to the
+dev web URL and dev Cosmos DB/Azure Storage settings available in
+`apps/web/.env.local`.
 
 ## Dev Terraform
 

@@ -1,20 +1,31 @@
-import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { connectMongo, disconnectMongo, TorrentMetadataJobModel, TorrentModel, UserModel, VideoModel } from "@mymediavault/core/db";
+import {
+  connectMongo,
+  disconnectMongo,
+  TorrentMetadataJobModel,
+  TorrentModel,
+  UserModel,
+  VideoModel,
+} from "@mymediavault/core/db";
 import { buildBlobStore } from "@mymediavault/core/storage";
+import { liveResolverInfoHash } from "../fixtures/torrents";
 import { requireEnv } from "./auth-helpers";
+
+test.skip(process.env.E2E_DEV_SMOKE !== "1", "Dev smoke runs only through npm run test:smoke:dev.");
 
 test.afterAll(async () => {
   await disconnectMongo();
 });
 
-test("smoke verifies web, Cosmos DB, queue, and worker metadata processing", async ({ page }) => {
-  test.setTimeout(180_000);
+test("dev smoke verifies web, Cosmos DB, Function worker, blob storage, and ready metadata", async ({ page }) => {
+  test.setTimeout(240_000);
 
   const userEmail = requireEnv("E2E_USER_USERNAME");
   const userName = userEmail.split("@")[0] ?? userEmail;
-  const infoHash = randomBytes(20).toString("hex");
-  const title = `Smoke ${Date.now()} ${infoHash.slice(0, 8)}`;
+  const infoHash = (process.env.E2E_DEV_SMOKE_INFO_HASH ?? liveResolverInfoHash).toLowerCase();
+  const title = `Dev Smoke ${Date.now()} ${infoHash.slice(0, 8)}`;
+
+  await resetSmokeTorrentForUser(userEmail, userName, infoHash);
 
   await page.goto("/add");
   await page.getByLabel("Info hash").fill(infoHash);
@@ -56,10 +67,9 @@ test("smoke verifies web, Cosmos DB, queue, and worker metadata processing", asy
       return current?.metadataStatus === "succeeded" ? current : null;
     },
     `torrent ${torrent._id} to finish processing`,
-    { timeoutMs: 120_000 },
+    { timeoutMs: 150_000 },
   );
 
-  expect(finishedTorrent.metadataStatus).toBe("succeeded");
   expect(finishedTorrent.rawBlobKey).toBeTruthy();
   expect(finishedTorrent.files.length).toBeGreaterThan(0);
 
@@ -72,19 +82,47 @@ test("smoke verifies web, Cosmos DB, queue, and worker metadata processing", asy
       return current?.status === "succeeded" ? current : null;
     },
     `torrent metadata job ${queuedJob._id} to finish processing`,
-    { timeoutMs: 120_000 },
+    { timeoutMs: 150_000 },
   );
 
-  expect(finishedJob.status).toBe("succeeded");
   expect(finishedJob.queueEnqueuedAt).not.toBeNull();
   expect(finishedJob.lastDequeuedAt).not.toBeNull();
   expect(finishedJob.startedAt).not.toBeNull();
   expect(finishedJob.finishedAt).not.toBeNull();
 
-  const blobStore = buildBlobStore();
-  const rawTorrentBytes = await blobStore.getBytes(finishedTorrent.rawBlobKey!);
+  const rawTorrentBytes = await buildBlobStore().getBytes(finishedTorrent.rawBlobKey!);
   expect(rawTorrentBytes.byteLength).toBeGreaterThan(0);
+
+  await page.reload();
+  await expect(page.getByRole("status")).toContainText("Metadata ready");
+  await expect(page.getByRole("heading", { name: "Torrent files" })).toBeVisible();
+  await expect(page.getByRole("listitem").first()).toBeVisible();
 });
+
+async function resetSmokeTorrentForUser(userEmail: string, userName: string, infoHash: string) {
+  await connectMongo();
+  const user = await UserModel.findOne({ $or: [{ email: userEmail }, { name: userName }] }).lean().exec();
+  const torrent = await TorrentModel.findOne({ infoHash }).lean().exec();
+  if (!torrent) {
+    return;
+  }
+
+  if (user) {
+    await VideoModel.deleteMany({ userId: user._id, torrentId: torrent._id }).exec();
+  }
+
+  const remainingVideos = await VideoModel.countDocuments({ torrentId: torrent._id }).exec();
+  if (remainingVideos > 0) {
+    throw new Error(
+      `Cannot reset dev smoke torrent ${infoHash}; ${remainingVideos} other video(s) still reference it. Set E2E_DEV_SMOKE_INFO_HASH to another resolvable torrent.`,
+    );
+  }
+
+  await Promise.all([
+    TorrentMetadataJobModel.deleteMany({ torrentId: torrent._id }).exec(),
+    TorrentModel.deleteOne({ _id: torrent._id }).exec(),
+  ]);
+}
 
 async function waitForDocument<T>(
   query: () => Promise<T | null | undefined>,

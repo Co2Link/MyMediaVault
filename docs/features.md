@@ -41,5 +41,7 @@ assignment controls.
 ## End-to-End Coverage
 
 Playwright tests cover the authenticated header/account menu, add-video,
-collection search, admin tag flows, and the queue/worker smoke path against a
-local stack using a real Entra test account.
+collection search, and admin tag flows against a local stack using a real Entra
+test account. A separate dev smoke verifies the deployed web app, Cosmos DB,
+Function worker, and Azure Blob Storage path after GitHub deployment workflows
+pass.

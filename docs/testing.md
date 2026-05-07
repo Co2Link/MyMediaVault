@@ -36,9 +36,7 @@ and torrent metadata processing. `apps/functions` owns Azure Functions trigger
 wiring for the queue, poison queue, and timer repair paths.
 
 `apps/e2e/scripts/run-local.sh` starts the Next.js app and local queue worker
-on top of the local MongoDB/Cosmos and Azurite stack. `npm run test:smoke:local`
-runs a focused smoke that verifies the full web -> Cosmos DB -> Azure Storage
-Queue -> worker path.
+on top of the local MongoDB/Cosmos and Azurite stack.
 
 ## End-to-End
 
@@ -48,13 +46,31 @@ npm run test:local
 ```
 
 Playwright tests cover the authenticated header/account menu, add-video,
-collection search, admin tag flows, and the queue/worker smoke path against the
-Next.js app plus local queue worker. Separate setup projects log in through
-Entra for the normal user and admin user and store browser state in
+collection search, and admin tag flows against the Next.js app plus local queue
+worker. Separate setup projects log in through Entra for the normal user and
+admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
 real test-user credentials in `apps/e2e/.env.local`. Before each local run, the
 harness deletes documents for both e2e users and cleans up any orphaned torrent
 records and raw blobs so repeated runs do not fail on duplicate data.
+
+## Dev Smoke
+
+```bash
+cd apps/e2e
+npm run test:smoke:dev
+```
+
+Run the dev smoke locally after the GitHub `CI` and `Dev` workflows pass for the
+current commit on `develop`. The script checks those workflow results with
+GitHub CLI before running Playwright against the deployed dev URL. It verifies
+the full user add-video path through the web app, Cosmos DB, Function worker,
+Azure Blob Storage, and the UI metadata-ready state.
+
+`apps/e2e/.env.local` must set the Entra test-user credentials and
+`E2E_BASE_URL` to the deployed dev web URL. Source values in `apps/web/.env.local`
+must point to the dev Cosmos DB and Azure Storage account so the smoke can verify
+database records and raw torrent blobs.
 
 ## Infrastructure Checks
 

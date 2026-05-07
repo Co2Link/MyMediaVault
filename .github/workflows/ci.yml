@@ -31,6 +31,21 @@ jobs:
             terraform:
               - '.github/workflows/**'
               - 'infra/terraform/**'
+      - name: Write dev deployment change flags
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+        run: |
+          mkdir -p dev-change-flags
+          {
+            echo "web=${{ steps.filter.outputs.web }}"
+            echo "functions=${{ steps.filter.outputs.functions }}"
+            echo "terraform=${{ steps.filter.outputs.terraform }}"
+          } > dev-change-flags/flags.env
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+        with:
+          name: dev-change-flags
+          path: dev-change-flags/flags.env
+          retention-days: 1
 
   web:
     needs: changes
@@ -114,3 +129,29 @@ jobs:
         run: terraform init -backend=false
       - name: Validate
         run: terraform validate
+
+  result:
+    if: ${{ always() }}
+    needs:
+      - changes
+      - web
+      - functions
+      - terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required results
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          WEB_RESULT: ${{ needs.web.result }}
+          FUNCTIONS_RESULT: ${{ needs.functions.result }}
+          TERRAFORM_RESULT: ${{ needs.terraform.result }}
+        run: |
+          test "$CHANGES_RESULT" = "success"
+
+          for result in "$WEB_RESULT" "$FUNCTIONS_RESULT" "$TERRAFORM_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

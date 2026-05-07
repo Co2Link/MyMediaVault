@@ -28,6 +28,7 @@ export async function authenticateWithEntra(page: Page, username: string, passwo
 }
 
 async function completeEntraLogin(page: Page, username: string, password: string) {
+  const appOrigin = new URL(process.env.E2E_BASE_URL ?? "http://localhost:3000").origin;
   const collectionHeading = page.getByRole("heading", { name: "Your media vault" });
   const addVideoLink = page.getByRole("link", { name: "Add video" });
   const signInHeading = page.getByRole("heading", { name: "Sign in" });
@@ -41,7 +42,7 @@ async function completeEntraLogin(page: Page, username: string, password: string
 
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (
-      page.url().startsWith("http://localhost:3000") &&
+      page.url().startsWith(appOrigin) &&
       ((await collectionHeading.isVisible().catch(() => false)) || (await addVideoLink.isVisible().catch(() => false)))
     ) {
       return;

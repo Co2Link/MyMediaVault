@@ -8,24 +8,40 @@ release workflows are intentionally out of scope until requested.
 `.github/workflows/ci.yml` runs on pull requests and pushes to `develop` or
 `main`. It uses path filters so the web and Functions jobs only run when the
 shared app/core code changes, and the Terraform job only runs when infrastructure
-changes.
+changes. Pushes to `develop` also publish the same path-filter results for the
+dev deployment workflow.
 
 - Web job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
 - Functions job: Node 22, `npm ci`, `npm run build`, and `npm run test`.
 - Terraform job: `terraform fmt -check -recursive ../..`,
   `terraform init -backend=false`, and `terraform validate`.
+- CI result job: verifies that every required or skipped validation job reached
+  an acceptable result, giving PRs and pushes one explicit aggregate status.
 
 ## Dev Workflow
 
 `.github/workflows/dev.yml` runs after `CI` succeeds on `develop`.
 
-1. It builds and pushes the web Docker image from `apps/web/Dockerfile`.
-2. It resolves the repo-owned Azure Blob backend key with Azure CLI, then runs
-   `terraform init -reconfigure`, `terraform plan`, and `terraform apply` in
-   `infra/terraform/envs/dev`.
-3. It builds and zip-deploys `apps/functions` to the Function App.
-4. It smoke-checks `GET /api/health` on the deployed web app and verifies that
-   the Function App exists.
+CI publishes its path-filter results as a short-lived artifact for successful
+`develop` pushes, and the dev workflow uses those flags to avoid unnecessary
+deployment work.
+
+1. It builds and pushes the web Docker image from `apps/web/Dockerfile` only
+   when the web app or shared core package changes.
+2. It runs `terraform init -reconfigure`, `terraform plan`, and
+   `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
+   workflows change. Infra-only runs query the currently deployed web image and
+   commit metadata inside the Terraform job instead of publishing a new app
+   revision.
+3. It deploys the Container App only when a new web image was pushed. If
+   Terraform also ran, Terraform applies the new image; otherwise Azure CLI
+   updates the Container App image and commit environment variable.
+4. It builds and zip-deploys `apps/functions` only when the Functions app or
+   shared core package changes.
+5. It smoke-checks `GET /api/health` on the deployed web app and verifies that
+   the Function App exists after successful CI and successful or skipped deploy
+   prerequisites. The smoke check validates the new commit only when a web image
+   was deployed.
 
 The dev Terraform stack uses repo-owned Azure Blob remote state:
 

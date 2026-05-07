@@ -31,7 +31,6 @@ WORKDIR /app/apps/web
 
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
 
 COPY --from=builder /app/apps/web/package.json ./package.json
 COPY --from=builder /app/apps/web/package-lock.json ./package-lock.json

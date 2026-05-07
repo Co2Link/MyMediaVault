@@ -14,11 +14,40 @@ env:
   IMAGE_REPOSITORY: ${{ vars.WEB_IMAGE }}
 
 jobs:
-  image:
+  changes:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
+    outputs:
+      web: ${{ steps.flags.outputs.web }}
+      functions: ${{ steps.flags.outputs.functions }}
+      terraform: ${{ steps.flags.outputs.terraform }}
+    steps:
+      - name: Download CI change flags
+        run: gh run download "$CI_RUN_ID" --name dev-change-flags --dir dev-change-flags
+        env:
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          GH_TOKEN: ${{ github.token }}
+
+      - id: flags
+        shell: bash
+        run: |
+          source dev-change-flags/flags.env
+          {
+            echo "web=${web}"
+            echo "functions=${functions}"
+            echo "terraform=${terraform}"
+          } >> "$GITHUB_OUTPUT"
+
+  image:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    needs: changes
+    permissions:
       contents: read
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -51,42 +80,59 @@ jobs:
           tags: ${{ steps.meta.outputs.image }}
 
   terraform:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.terraform == 'true' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
     runs-on: ubuntu-latest
-    needs: image
+    needs:
+      - changes
+      - image
     defaults:
       run:
         working-directory: infra/terraform/envs/dev
     env:
-      TF_VAR_app_commit_sha: ${{ github.event.workflow_run.head_sha }}
       TF_VAR_auth_secret: ${{ secrets.AUTH_SECRET }}
       TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT }}
       TF_VAR_auth_entra_client_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_ID }}
       TF_VAR_auth_entra_client_secret: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_SECRET }}
       TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS || '[]' }}
       TF_VAR_admin_group_object_ids: ${{ vars.TF_VAR_ADMIN_GROUP_OBJECT_IDS || '[]' }}
-    outputs:
-      web_url: ${{ steps.outputs.outputs.web_url }}
-      function_app_name: ${{ steps.outputs.outputs.function_app_name }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Compute image reference
-        shell: bash
-        run: |
-          repo="${IMAGE_REPOSITORY}"
-          if [[ "${repo##*/}" == *:* ]]; then
-            repo="${repo%:*}"
-          fi
-          echo "TF_VAR_app_image=${repo}:${HEAD_SHA}" >> "$GITHUB_ENV"
-        env:
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Use pushed image
+        if: ${{ needs.changes.outputs.web == 'true' }}
+        shell: bash
+        run: |
+          {
+            echo "TF_VAR_app_image=${{ needs.image.outputs.image }}"
+            echo "TF_VAR_app_commit_sha=${{ github.event.workflow_run.head_sha }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Use current deployed image
+        if: ${{ needs.changes.outputs.web != 'true' }}
+        shell: bash
+        run: |
+          {
+            echo "TF_VAR_app_image=$(
+              az containerapp show \
+                --resource-group rg-mmv-dev \
+                --name mmv-dev-web \
+                --query "properties.template.containers[?name=='web'].image | [0]" \
+                --output tsv
+            )"
+            echo "TF_VAR_app_commit_sha=$(
+              az containerapp show \
+                --resource-group rg-mmv-dev \
+                --name mmv-dev-web \
+                --query "properties.template.containers[?name=='web'].env[?name=='MMV_COMMIT_SHA'].value | [0]" \
+                --output tsv
+            )"
+          } >> "$GITHUB_ENV"
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -114,12 +160,45 @@ jobs:
       - name: Apply
         run: terraform apply -auto-approve tfplan
 
-      - id: outputs
+  container_app_deploy:
+    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' && needs.image.result == 'success' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - image
+      - terraform
+    steps:
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy image
+        if: ${{ needs.changes.outputs.terraform != 'true' }}
         run: |
-          {
-            echo "web_url=$(terraform output -raw web_url)"
-            echo "function_app_name=$(terraform output -raw function_app_name)"
-          } >> "$GITHUB_OUTPUT"
+          az containerapp update \
+            --resource-group rg-mmv-dev \
+            --name mmv-dev-web \
+            --image "${{ needs.image.outputs.image }}" \
+            --set-env-vars "MMV_COMMIT_SHA=${{ github.event.workflow_run.head_sha }}"
+
+      - name: Terraform deployed image
+        if: ${{ needs.changes.outputs.terraform == 'true' }}
+        run: echo "Terraform applied the new image and commit."
+
+  function_deploy:
+    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.functions == 'true' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - terraform
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - uses: actions/setup-node@v6
         with:
@@ -143,42 +222,71 @@ jobs:
         run: |
           az functionapp deployment source config-zip \
             --resource-group rg-mmv-dev \
-            --name "${{ steps.outputs.outputs.function_app_name }}" \
+            --name mmv-dev-functions \
             --src function.zip
 
   smoke:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && (needs.changes.outputs.web != 'true' || needs.image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.container_app_deploy.result == 'success' || needs.container_app_deploy.result == 'skipped') && (needs.function_deploy.result == 'success' || needs.function_deploy.result == 'skipped') }}
     runs-on: ubuntu-latest
-    needs: terraform
+    needs:
+      - changes
+      - image
+      - terraform
+      - container_app_deploy
+      - function_deploy
     steps:
-      - name: Web health
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - id: resources
         shell: bash
         run: |
-          expected_commit="${{ github.event.workflow_run.head_sha }}"
+          {
+            echo "web_url=https://$(
+              az containerapp show \
+                --resource-group rg-mmv-dev \
+                --name mmv-dev-web \
+                --query "properties.configuration.ingress.fqdn" \
+                --output tsv
+            )"
+            echo "function_app_name=$(
+              az functionapp show \
+                --resource-group rg-mmv-dev \
+                --name mmv-dev-functions \
+                --query "name" \
+                --output tsv
+            )"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Web health
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.changes.outputs.web == 'true' && github.event.workflow_run.head_sha || '' }}
+        run: |
           for attempt in $(seq 1 30); do
             if response="$(
               curl --fail --connect-timeout 10 --max-time 20 \
-                "${{ needs.terraform.outputs.web_url }}/api/health"
+                "${{ steps.resources.outputs.web_url }}/api/health"
             )"; then
               echo "$response"
-              if test "$(echo "$response" | jq -r .commit)" = "$expected_commit"; then
+              if test -z "$EXPECTED_COMMIT"; then
+                exit 0
+              fi
+              if test "$(echo "$response" | jq -r .commit)" = "$EXPECTED_COMMIT"; then
                 exit 0
               fi
             fi
             sleep 10
           done
 
-          echo "Web health never reported commit $expected_commit"
+          echo "Web health never reported commit $EXPECTED_COMMIT"
           exit 1
-
-      - uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Function App presence
         run: |
           az functionapp show \
             --resource-group rg-mmv-dev \
-            --name "${{ needs.terraform.outputs.function_app_name }}" \
+            --name "${{ steps.resources.outputs.function_app_name }}" \
             --query "name" \
             --output tsv

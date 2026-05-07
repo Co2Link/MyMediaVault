@@ -9,7 +9,7 @@
     "test:local": "bash ./scripts/run-local.sh",
     "test:local:headed": "bash ./scripts/run-local.sh --headed",
     "test:local:manual-torrent": "E2E_INCLUDE_MANUAL_TORRENT_TESTS=1 E2E_FORCE_STACK_RESTART=1 E2E_REQUIRE_HTTP_TORRENT_PROVIDER=1 bash ./scripts/run-local.sh --grep @manual-torrent",
-    "test:smoke:local": "E2E_FORCE_STACK_RESTART=1 bash ./scripts/run-local.sh tests/smoke-local.spec.ts"
+    "test:smoke:dev": "bash ./scripts/run-dev-smoke.sh"
   },
   "devDependencies": {
     "@mymediavault/core": "file:../../packages/core",

@@ -176,11 +176,6 @@ resource "azurerm_container_app" "web" {
       }
 
       env {
-        name  = "HOSTNAME"
-        value = "0.0.0.0"
-      }
-
-      env {
         name        = "AUTH_SECRET"
         secret_name = "auth-secret"
       }
