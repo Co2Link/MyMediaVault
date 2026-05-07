@@ -57,6 +57,8 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
 
 - Resource group: `rg-${prefix}`.
 - Web: public Azure Container Apps Node.js 24 runtime for the Next.js server.
+  Terraform sets `AUTH_URL` to the external Container App FQDN so Entra/Auth.js
+  redirects return to the deployed app instead of an internal runtime address.
 - Functions: Azure Functions Flex Consumption Node.js 22 app with one maximum
   instance, queue trigger, poison queue handler, and timer repair trigger.
 - Database: Azure Cosmos DB for MongoDB account created by this repository.

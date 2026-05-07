@@ -181,6 +181,11 @@ resource "azurerm_container_app" "web" {
       }
 
       env {
+        name  = "AUTH_URL"
+        value = "https://${var.prefix}-web.${azurerm_container_app_environment.main.default_domain}"
+      }
+
+      env {
         name  = "AUTH_MICROSOFT_ENTRA_ID_ID"
         value = var.auth_entra_client_id
       }
