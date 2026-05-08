@@ -5,6 +5,7 @@
 - Run e2e tests at the end of the change to verify the overall behavior, ask user to setup the required environment if needed.
 - Currently the project is set to use a remote Azure SQL database for local testing and development. It could be a serverless database that have a cold start.
 - You are in a devcontainer environment, ask user to rebuild the container if you update devcontainer configuration or Dockerfile.
+- Do not hardcode any secrets, ID, or credentials in the codebase.
 
 <!-- BEGIN:nextjs-agent-rules -->
  
