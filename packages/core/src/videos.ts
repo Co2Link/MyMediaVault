@@ -15,7 +15,7 @@ import { getEnv } from "./env.js";
 import { ConflictError, NotFoundError } from "./errors.js";
 import { buildBlobStore, buildQueueStore } from "./storage.js";
 import { buildTorrentProvider, type TorrentMetadata } from "./torrent-provider.js";
-import type { TagRead, TorrentFileRead, VideoDetail, VideoSummary } from "./types.js";
+import type { TagRead, TorrentFileRead, TorrentSummary, VideoDetail, VideoSummary } from "./types.js";
 import { normalizeInfoHash } from "./validation.js";
 
 type VideoRecord = {
@@ -49,6 +49,22 @@ export async function getVideoById(userId: string, videoId: string) {
     throw new NotFoundError("Video was not found.");
   }
   return toVideoDetail(await hydrateVideo(video));
+}
+
+export async function listTorrents() {
+  await connectMongo();
+  const torrents = (await TorrentModel.find().lean().exec()) as TorrentDoc[];
+  const torrentIds = torrents.map((torrent) => torrent._id);
+  const counts =
+    torrentIds.length > 0
+      ? ((await VideoModel.aggregate<{ _id: string; videoCount: number }>([
+          { $match: { torrentId: { $in: torrentIds } } },
+          { $group: { _id: "$torrentId", videoCount: { $sum: 1 } } },
+        ]).exec()) as Array<{ _id: string; videoCount: number }>)
+      : [];
+  const countsByTorrentId = new Map(counts.map((entry) => [entry._id, entry.videoCount]));
+
+  return torrents.sort(compareNewestTorrentFirst).map((torrent) => toTorrentSummary(torrent, countsByTorrentId.get(torrent._id) ?? 0));
 }
 
 export async function createVideo(
@@ -112,6 +128,38 @@ export async function updateVideo(
     throw new NotFoundError("Video was not found.");
   }
   return toVideoDetail(await hydrateVideo(updated));
+}
+
+export async function deleteVideo(userId: string, videoId: string) {
+  await connectMongo();
+  const video = await VideoModel.findOne({ _id: videoId, userId }).lean().exec();
+  if (!video) {
+    throw new NotFoundError("Video was not found.");
+  }
+
+  await Promise.all([
+    VideoTagModel.deleteMany({ videoId: video._id }).exec(),
+    VideoModel.deleteOne({ _id: video._id, userId }).exec(),
+  ]);
+
+  const remainingVideos = await VideoModel.countDocuments({ torrentId: video.torrentId }).exec();
+  if (remainingVideos === 0) {
+    const torrent = await TorrentModel.findById(video.torrentId).lean().exec();
+    if (torrent) {
+      await deleteTorrentRecord(torrent, []);
+    }
+  }
+}
+
+export async function deleteTorrent(torrentId: string) {
+  await connectMongo();
+  const torrent = await TorrentModel.findById(torrentId).lean().exec();
+  if (!torrent) {
+    throw new NotFoundError("Torrent was not found.");
+  }
+
+  const videos = (await VideoModel.find({ torrentId }).lean().exec()) as VideoDoc[];
+  await deleteTorrentRecord(torrent, videos.map((video) => video._id));
 }
 
 export async function enqueueTorrentMetadata(torrentId: string) {
@@ -411,6 +459,10 @@ function compareNewestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDo
   return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
 }
 
+function compareNewestTorrentFirst(a: TorrentDoc, b: TorrentDoc) {
+  return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
+}
+
 function compareOldestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDoc) {
   return a.createdAt.getTime() - b.createdAt.getTime() || a._id.localeCompare(b._id);
 }
@@ -450,9 +502,36 @@ function toVideoDetail(record: VideoRecord): VideoDetail {
   };
 }
 
+function toTorrentSummary(torrent: TorrentDoc, videoCount: number): TorrentSummary {
+  return {
+    id: torrent._id,
+    infoHash: torrent.infoHash,
+    name: torrent.name,
+    sizeBytes: torrent.sizeBytes,
+    metadataStatus: torrent.metadataStatus,
+    metadataError: torrent.metadataError,
+    videoCount,
+    createdAt: torrent.createdAt.toISOString(),
+    updatedAt: torrent.updatedAt.toISOString(),
+  };
+}
+
 function toTags(record: VideoRecord): TagRead[] {
   return record.tags.map((tag) => ({
     id: tag._id,
     name: tag.name,
   }));
+}
+
+async function deleteTorrentRecord(torrent: TorrentDoc, videoIds: string[]) {
+  await Promise.all([
+    videoIds.length > 0 ? VideoTagModel.deleteMany({ videoId: { $in: videoIds } }).exec() : Promise.resolve(),
+    videoIds.length > 0 ? VideoModel.deleteMany({ _id: { $in: videoIds } }).exec() : Promise.resolve(),
+    TorrentMetadataJobModel.deleteMany({ torrentId: torrent._id }).exec(),
+    TorrentModel.deleteOne({ _id: torrent._id }).exec(),
+  ]);
+
+  if (torrent.rawBlobKey) {
+    await buildBlobStore().deleteIfExists(torrent.rawBlobKey);
+  }
 }

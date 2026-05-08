@@ -27,6 +27,18 @@ export type VideoSummary = {
   updatedAt: string;
 };
 
+export type TorrentSummary = {
+  id: string;
+  infoHash: string;
+  name: string | null;
+  sizeBytes: number | null;
+  metadataStatus: MetadataStatus;
+  metadataError: string | null;
+  videoCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type VideoDetail = VideoSummary & {
   description: string | null;
   sizeBytes: number | null;

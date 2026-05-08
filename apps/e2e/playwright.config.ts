@@ -24,7 +24,7 @@ export default defineConfig({
     {
       name: "user-chromium",
       dependencies: ["setup"],
-      testIgnore: [/auth\..*\.setup\.ts/, /admin-tags-admin\.spec\.ts/, /header\.spec\.ts/],
+      testIgnore: [/auth\..*\.setup\.ts/, /admin-tags-admin\.spec\.ts/, /admin-torrents-admin\.spec\.ts/, /header\.spec\.ts/],
       use: {
         ...devices["Desktop Chrome"],
         storageState: userAuthFile,
@@ -42,7 +42,7 @@ export default defineConfig({
     {
       name: "admin-chromium",
       dependencies: ["setup"],
-      testMatch: /admin-tags-admin\.spec\.ts/,
+      testMatch: /admin-(tags-admin|torrents-admin)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: adminAuthFile,

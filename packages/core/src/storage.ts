@@ -1,12 +1,13 @@
 import { BlobServiceClient } from "@azure/storage-blob";
 import { QueueClient } from "@azure/storage-queue";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getEnv } from "./env.js";
 
 export interface BlobStore {
   putBytes(key: string, data: Uint8Array): Promise<string>;
   getBytes(key: string): Promise<Uint8Array>;
+  deleteIfExists(key: string): Promise<void>;
 }
 
 export interface QueueStore {
@@ -25,6 +26,10 @@ class FileSystemBlobStore implements BlobStore {
 
   async getBytes(key: string) {
     return readFile(path.join(this.root, key));
+  }
+
+  async deleteIfExists(key: string) {
+    await rm(path.join(this.root, key), { force: true });
   }
 }
 
@@ -47,6 +52,10 @@ class AzureBlobStore implements BlobStore {
   async getBytes(key: string) {
     const result = await this.container.getBlobClient(key).downloadToBuffer();
     return new Uint8Array(result);
+  }
+
+  async deleteIfExists(key: string) {
+    await this.container.deleteBlob(key).catch(() => undefined);
   }
 }
 

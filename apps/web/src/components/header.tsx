@@ -23,6 +23,7 @@ export async function Header({ session }: { session: AppSession | null }) {
             <Link href="/">Collection</Link>
             <Link href="/add">Add video</Link>
             <Link href="/admin/tags">Tags</Link>
+            {session.user.isAdmin ? <Link href="/admin/torrents">Torrents</Link> : null}
           </nav>
           <UserMenu
             email={session.user.email}

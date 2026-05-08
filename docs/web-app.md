@@ -12,7 +12,7 @@ application.
 
 ## Structure
 
-- `src/app`: collection, add-video, detail, admin-tags, sign-in, and route
+- `src/app`: collection, add-video, detail, admin-tags, admin-torrents, sign-in, and route
   handler segments.
 - `src/components`: shared UI for the header, avatar, user menu, search form,
   video cards, and metadata status.
@@ -25,8 +25,9 @@ application.
 
 - `/`: the signed-in user collection with search.
 - `/add`: add a video by torrent info hash.
-- `/videos/[id]`: view and edit private video details.
+- `/videos/[id]`: view, edit, and delete private video details.
 - `/admin/tags`: admin-only tag management.
+- `/admin/torrents`: admin-only torrent management and deletion.
 - `/auth/sign-in`: explicit sign-in page.
 - `/api/auth/[...nextauth]`: Auth.js handler.
 - `/api/health`: deployment health check.
@@ -39,6 +40,10 @@ application.
 - Adding a video normalizes the info hash, reuses or creates the canonical
   torrent, creates the user-owned video, and enqueues a Storage Queue-backed
   metadata job.
+- Deleting a video removes its private tags and, when it was the last video
+  referencing the canonical torrent, deletes the torrent metadata and raw blob.
+- Admin torrent deletion removes the torrent, its dependent videos and video
+  tags, the metadata job records, and the stored raw blob.
 - Detail and admin changes revalidate the affected routes so the server-rendered
   views stay current.
 

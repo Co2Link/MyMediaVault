@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import type { VideoDetail } from "@/lib/types";
-import { updateVideoAction } from "@/app/videos/[id]/actions";
+import { deleteVideoAction, updateVideoAction } from "@/app/videos/[id]/actions";
 
 export function VideoDetailForm({ video }: { video: VideoDetail }) {
   const boundAction = updateVideoAction.bind(null, video.id);
@@ -10,33 +10,45 @@ export function VideoDetailForm({ video }: { video: VideoDetail }) {
     error: null,
     success: null,
   });
+  const deleteBoundAction = deleteVideoAction.bind(null, video.id);
+  const [deleteState, deleteAction, deletePending] = useActionState(deleteBoundAction, { error: null });
 
   return (
-    <form action={action} className="form-grid">
-      <label>
-        Title
-        <input defaultValue={video.title ?? ""} name="title" />
-      </label>
-      <label>
-        Description
-        <textarea defaultValue={video.description ?? ""} name="description" rows={6} />
-      </label>
-      <label>
-        Rating
-        <select defaultValue={video.rating?.toString() ?? ""} name="rating">
-          <option value="">Unrated</option>
-          {[1, 2, 3, 4, 5].map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-      </label>
-      {state.error ? <p className="error-copy">{state.error}</p> : null}
-      {state.success ? <p className="success-copy">{state.success}</p> : null}
-      <button className="primary-button" disabled={pending} type="submit">
-        {pending ? "Saving" : "Save details"}
-      </button>
-    </form>
+    <div className="form-grid">
+      <form action={action} className="form-grid">
+        <label>
+          Title
+          <input defaultValue={video.title ?? ""} name="title" />
+        </label>
+        <label>
+          Description
+          <textarea defaultValue={video.description ?? ""} name="description" rows={6} />
+        </label>
+        <label>
+          Rating
+          <select defaultValue={video.rating?.toString() ?? ""} name="rating">
+            <option value="">Unrated</option>
+            {[1, 2, 3, 4, 5].map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+        {state.error ? <p className="error-copy">{state.error}</p> : null}
+        {state.success ? <p className="success-copy">{state.success}</p> : null}
+        <button className="primary-button" disabled={pending} type="submit">
+          {pending ? "Saving" : "Save details"}
+        </button>
+      </form>
+      <div className="form-grid">
+        {deleteState.error ? <p className="error-copy">{deleteState.error}</p> : null}
+        <form action={deleteAction}>
+          <button className="ghost-button danger-button" disabled={deletePending} type="submit">
+            {deletePending ? "Deleting" : "Delete video"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

@@ -36,6 +36,10 @@ erDiagram
 Canonical torrent reuse is enforced by `torrents.infoHash`. User isolation is
 enforced by querying videos with both `video._id` and `video.userId`; multiple
 users may reference the same torrent while keeping private video fields.
+Deleting the last video that references a torrent removes the orphan torrent
+record, its metadata job history, and the stored raw blob. Admin torrent
+deletion cascades through dependent videos and their tag links before removing
+the torrent blob.
 
 Rating is optional and constrained to 1 through 5 in validation code before
 write operations. Tag names are trimmed, whitespace-normalized, non-empty, and
