@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import type { VideoDetail } from "@/lib/types";
+import type { TagRead, VideoDetail } from "@/lib/types";
 import { deleteVideoAction, updateVideoAction } from "@/app/videos/[id]/actions";
+import { VideoTagPicker } from "@/components/video-tag-picker";
 
-export function VideoDetailForm({ video }: { video: VideoDetail }) {
+export function VideoDetailForm({ video, tags }: { video: VideoDetail; tags: TagRead[] }) {
   const boundAction = updateVideoAction.bind(null, video.id);
   const [state, action, pending] = useActionState(boundAction, {
     error: null,
@@ -35,6 +36,7 @@ export function VideoDetailForm({ video }: { video: VideoDetail }) {
             ))}
           </select>
         </label>
+        <VideoTagPicker tags={tags} selectedTagIds={video.tags.map((tag) => tag.id)} />
         {state.error ? <p className="error-copy">{state.error}</p> : null}
         {state.success ? <p className="success-copy">{state.success}</p> : null}
         <button className="primary-button" disabled={pending} type="submit">

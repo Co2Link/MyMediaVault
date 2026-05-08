@@ -45,10 +45,10 @@ cd apps/e2e
 npm run test:local
 ```
 
-Playwright tests cover the authenticated header/account menu, add-video,
-collection search, and admin tag flows against the Next.js app plus local queue
-worker. Separate setup projects log in through Entra for the normal user and
-admin user and store browser state in
+Playwright tests cover the authenticated header/account menu, add-video with
+tag selection, detail-page tag editing, collection search, and admin tag flows
+against the Next.js app plus local queue worker. Separate setup projects log in
+through Entra for the normal user and admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
 real test-user credentials in `apps/e2e/.env.local`. Before each local run, the
 harness deletes documents for both e2e users and cleans up any orphaned torrent

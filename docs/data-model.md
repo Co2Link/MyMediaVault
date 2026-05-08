@@ -27,7 +27,8 @@ erDiagram
 - `videos`: user-owned collection item with private title, description, and
   rating; unique by `(userId, torrentId)`.
 - `tags`: global tag catalog keyed by unique tag name.
-- `video_tags`: many-to-many links between videos and tags.
+- `video_tags`: many-to-many links between videos and tags, replaced from the
+  add and detail forms when a user saves tag selections.
 - `torrent_metadata_jobs`: audit records for Storage Queue-backed metadata
   processing attempts.
 
@@ -39,7 +40,9 @@ users may reference the same torrent while keeping private video fields.
 Deleting the last video that references a torrent removes the orphan torrent
 record, its metadata job history, and the stored raw blob. Admin torrent
 deletion cascades through dependent videos and their tag links before removing
-the torrent blob.
+the torrent blob. Tag selections are validated against the global `tags`
+catalog before write operations, so the add/detail forms can only attach tags
+that already exist.
 
 Rating is optional and constrained to 1 through 5 in validation code before
 write operations. Tag names are trimmed, whitespace-normalized, non-empty, and

@@ -24,8 +24,8 @@ application.
 ## Routes
 
 - `/`: the signed-in user collection with search.
-- `/add`: add a video by torrent info hash.
-- `/videos/[id]`: view, edit, and delete private video details.
+- `/add`: add a video by torrent info hash and assign existing tags.
+- `/videos/[id]`: view, edit, tag, and delete private video details.
 - `/admin/tags`: admin-only tag management.
 - `/admin/torrents`: admin-only torrent management and deletion.
 - `/auth/sign-in`: explicit sign-in page.
@@ -38,8 +38,10 @@ application.
 - Sign-in upserts the local `users` document with the Entra object ID, admin
   flag, name, email, and image.
 - Adding a video normalizes the info hash, reuses or creates the canonical
-  torrent, creates the user-owned video, and enqueues a Storage Queue-backed
-  metadata job.
+  torrent, creates the user-owned video, attaches any selected tags, and
+  enqueues a Storage Queue-backed metadata job.
+- Updating a video detail view can change the private fields and replace the
+  video's existing tag links with the selected catalog tags.
 - Deleting a video removes its private tags and, when it was the last video
   referencing the canonical torrent, deletes the torrent metadata and raw blob.
 - Admin torrent deletion removes the torrent, its dependent videos and video

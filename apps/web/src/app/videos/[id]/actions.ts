@@ -27,11 +27,13 @@ export async function updateVideoAction(
       title: formData.get("title"),
       description: formData.get("description"),
       rating: formData.get("rating"),
+      tagIds: formData.getAll("tagIds"),
     });
     await updateVideo(session.user.id, videoId, {
       title: normalizeOptionalText(parsed.title),
       description: normalizeOptionalText(parsed.description),
       rating: normalizeRating(parsed.rating),
+      tagIds: parsed.tagIds,
     });
     revalidatePath("/");
     revalidatePath(`/videos/${videoId}`);

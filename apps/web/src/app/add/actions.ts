@@ -20,12 +20,14 @@ export async function addVideoAction(_: AddVideoActionState, formData: FormData)
       title: formData.get("title"),
       description: formData.get("description"),
       rating: formData.get("rating"),
+      tagIds: formData.getAll("tagIds"),
     });
     const video = await createVideo(session.user.id, {
       infoHash: parsed.infoHash,
       title: normalizeOptionalText(parsed.title),
       description: normalizeOptionalText(parsed.description),
       rating: normalizeRating(parsed.rating),
+      tagIds: parsed.tagIds,
     });
     videoId = video.id;
     revalidatePath("/");

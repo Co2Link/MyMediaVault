@@ -362,6 +362,44 @@ h2 {
   flex: 1;
 }
 
+.tag-picker {
+  border: 1px solid rgba(21, 32, 39, 0.12);
+  border-radius: 22px;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 18px;
+}
+
+.tag-picker legend {
+  color: var(--muted);
+  font-size: 0.95rem;
+  padding: 0 6px;
+}
+
+.tag-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tag-option {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(21, 32, 39, 0.12);
+  border-radius: 999px;
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.tag-option input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
 .stretch-field {
   min-width: 0;
 }

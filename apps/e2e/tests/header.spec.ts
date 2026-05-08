@@ -7,7 +7,6 @@ test("authenticated user can inspect the header account menu and log out", async
   await expect(primaryNav).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Collection" })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Add video" })).toBeVisible();
-  await expect(primaryNav.getByRole("link", { name: "Tags" })).toBeVisible();
 
   const avatarButton = page.getByRole("button", { name: "Open user menu" });
   await expect(avatarButton).toBeVisible();

@@ -1,9 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
+import type { TagRead } from "@/lib/types";
 import { addVideoAction } from "@/app/add/actions";
+import { VideoTagPicker } from "@/components/video-tag-picker";
 
-export function AddVideoForm() {
+export function AddVideoForm({ tags }: { tags: TagRead[] }) {
   const [state, action, pending] = useActionState(addVideoAction, { error: null });
 
   return (
@@ -35,6 +37,7 @@ export function AddVideoForm() {
           ))}
         </select>
       </label>
+      <VideoTagPicker tags={tags} />
       {state.error ? <p className="error-copy">{state.error}</p> : null}
       <button className="primary-button" disabled={pending} type="submit">
         {pending ? "Adding" : "Add video"}

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AddVideoForm } from "@/app/add/add-video-form";
+import { listTags } from "@/lib/tags";
 
 export default async function AddPage() {
   const session = await auth();
@@ -8,9 +9,11 @@ export default async function AddPage() {
     redirect("/auth/sign-in");
   }
 
+  const tags = await listTags();
+
   return (
     <main className="workspace">
-      <AddVideoForm />
+      <AddVideoForm tags={tags} />
     </main>
   );
 }

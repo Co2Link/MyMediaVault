@@ -69,7 +69,7 @@ export async function listTorrents() {
 
 export async function createVideo(
   userId: string,
-  input: { infoHash: string; title: string | null; description: string | null; rating: number | null },
+  input: { infoHash: string; title: string | null; description: string | null; rating: number | null; tagIds: string[] },
 ) {
   await connectMongo();
   const infoHash = normalizeInfoHash(input.infoHash);
@@ -86,6 +86,8 @@ export async function createVideo(
     throw new ConflictError("This video is already in your collection.");
   }
 
+  const tagIds = await resolveTagIds(input.tagIds);
+
   try {
     const created = await VideoModel.create({
       userId,
@@ -94,6 +96,7 @@ export async function createVideo(
       description: input.description,
       rating: input.rating,
     });
+    await syncVideoTags(created._id, tagIds);
     await enqueueTorrentMetadata(torrent._id);
     return toVideoDetail(await hydrateVideo(created.toObject()));
   } catch (error) {
@@ -108,9 +111,10 @@ export async function createVideo(
 export async function updateVideo(
   userId: string,
   videoId: string,
-  input: { title: string | null; description: string | null; rating: number | null },
+  input: { title: string | null; description: string | null; rating: number | null; tagIds: string[] },
 ) {
   await connectMongo();
+  const tagIds = await resolveTagIds(input.tagIds);
   const updated = await VideoModel.findOneAndUpdate(
     { _id: videoId, userId },
     {
@@ -127,6 +131,7 @@ export async function updateVideo(
   if (!updated) {
     throw new NotFoundError("Video was not found.");
   }
+  await syncVideoTags(updated._id, tagIds);
   return toVideoDetail(await hydrateVideo(updated));
 }
 
@@ -435,6 +440,29 @@ async function hydrateVideo(video: VideoDoc) {
     throw new NotFoundError("Video was not found.");
   }
   return record;
+}
+
+async function resolveTagIds(tagIds: string[]) {
+  const uniqueTagIds = [...new Set(tagIds.map((tagId) => tagId.trim()).filter(Boolean))];
+  if (uniqueTagIds.length === 0) {
+    return [];
+  }
+
+  const tags = await TagModel.find({ _id: { $in: uniqueTagIds } }).select({ _id: 1 }).lean().exec();
+  if (tags.length !== uniqueTagIds.length) {
+    throw new NotFoundError("One or more tags were not found.");
+  }
+
+  return uniqueTagIds;
+}
+
+async function syncVideoTags(videoId: string, tagIds: string[]) {
+  await VideoTagModel.deleteMany({ videoId }).exec();
+  if (tagIds.length === 0) {
+    return;
+  }
+
+  await VideoTagModel.create(tagIds.map((tagId) => ({ videoId, tagId })));
 }
 
 function groupVideoTags(videoTags: VideoTagDoc[]) {

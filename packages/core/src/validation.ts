@@ -5,12 +5,14 @@ export const videoCreateSchema = z.object({
   title: z.string().trim().max(300).optional().or(z.literal("")),
   description: z.string().trim().max(5000).optional().or(z.literal("")),
   rating: z.union([z.literal(""), z.coerce.number().int().min(1).max(5)]).optional(),
+  tagIds: z.array(z.string().trim().min(1)),
 });
 
 export const videoUpdateSchema = z.object({
   title: z.string().trim().max(300).optional().or(z.literal("")),
   description: z.string().trim().max(5000).optional().or(z.literal("")),
   rating: z.union([z.literal(""), z.coerce.number().int().min(1).max(5)]).optional(),
+  tagIds: z.array(z.string().trim().min(1)),
 });
 
 export const tagSchema = z.object({

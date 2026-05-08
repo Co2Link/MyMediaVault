@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { MetadataStatusBadge } from "@/components/metadata-status";
 import { getVideoById } from "@/lib/videos";
 import { VideoDetailForm } from "@/app/videos/[id]/video-detail-form";
+import { listTags } from "@/lib/tags";
 
 export default async function VideoDetailPage({
   params,
@@ -17,7 +18,7 @@ export default async function VideoDetailPage({
   }
 
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const video = await getVideoById(session.user.id, id);
+  const [video, tags] = await Promise.all([getVideoById(session.user.id, id), listTags()]);
 
   return (
     <main className="workspace detail-layout">
@@ -31,7 +32,7 @@ export default async function VideoDetailPage({
           <MetadataStatusBadge error={video.metadataError} status={video.metadataStatus} />
         </div>
         {query.created === "1" ? <p className="success-copy">Video added. Metadata processing has been queued.</p> : null}
-        <VideoDetailForm video={video} />
+        <VideoDetailForm tags={tags} video={video} />
       </section>
       <aside className="editor-card">
         <h2>Torrent files</h2>
