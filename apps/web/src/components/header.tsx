@@ -22,8 +22,12 @@ export async function Header({ session }: { session: AppSession | null }) {
           <nav aria-label="Primary" className="primary-nav">
             <Link href="/">Collection</Link>
             <Link href="/add">Add video</Link>
-            <Link href="/admin/tags">Tags</Link>
-            {session.user.isAdmin ? <Link href="/admin/torrents">Torrents</Link> : null}
+            {session.user.isAdmin ? (
+              <>
+                <Link href="/admin/tags">Tags</Link>
+                <Link href="/admin/torrents">Torrents</Link>
+              </>
+            ) : null}
           </nav>
           <UserMenu
             email={session.user.email}
