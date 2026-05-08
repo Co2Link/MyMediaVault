@@ -43,7 +43,8 @@
 		"vscode": {
 			"extensions": [
 				"ms-mssql.mssql",
-				"bierner.markdown-mermaid"
+				"bierner.markdown-mermaid",
+				"mongodb.mongodb-vscode"
 			]
 		}
 	}

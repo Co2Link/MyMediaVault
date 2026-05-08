@@ -49,7 +49,9 @@ Web tests use Vitest and Testing Library with `*.test.tsx` or `*.test.ts` naming
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short imperative subjects, for example `Fix CI checks and gate dev deploys` or `Add local authenticated e2e flow`. Branch from `develop` and merge back by pull request. PRs should summarize behavior changes, list checks run, link related issues or docs, and include screenshots for visible UI changes.
+- Commit messages should be concise and use a bulleted list.
+- Branch from `develop` and merge back by pull request.
+- PRs should summarize behavior changes, list checks run, link related issues or docs, and include screenshots for visible UI changes.
 
 ## Security & Configuration Tips
 

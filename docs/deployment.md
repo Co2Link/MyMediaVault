@@ -59,15 +59,19 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
 - Web: public Azure Container Apps Node.js 24 runtime for the Next.js server.
   Terraform sets `AUTH_URL` to the external Container App FQDN so Entra/Auth.js
   redirects return to the deployed app instead of an internal runtime address.
+  The app can scale to zero and now uses a 300-second scale-in cooldown so it
+  stops billing idle replicas sooner.
 - Functions: Azure Functions Flex Consumption Node.js 22 app with one maximum
-  instance, queue trigger, poison queue handler, and timer repair trigger.
+  instance, 512 MB instance memory, queue trigger, poison queue handler, and
+  timer repair trigger.
   It receives the same auth settings as the web app because the shared core
   environment loader is used by both HTTP and worker code paths.
 - Database: Azure Cosmos DB for MongoDB account created by this repository,
   configured for MongoDB 4.2 compatibility so the Node MongoDB driver can
   connect through Mongoose.
-- Storage: Standard LRS storage account with private `torrent-raw` and
-  `function-packages` containers plus the `torrent-metadata-jobs` queue.
+- Storage: Standard LRS storage account in the same region as the dev compute
+  resources, with private `torrent-raw` and `function-packages` containers plus
+  the `torrent-metadata-jobs` queue.
 - Observability: Log Analytics workspace with 30-day retention and
   workspace-based Application Insights for the Function App.
 

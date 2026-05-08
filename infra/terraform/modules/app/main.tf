@@ -155,7 +155,7 @@ resource "azurerm_container_app" "web" {
 
   template {
     min_replicas               = 0
-    cooldown_period_in_seconds = 600
+    cooldown_period_in_seconds = 300
 
     container {
       name    = "web"
@@ -278,7 +278,7 @@ resource "azurerm_function_app_flex_consumption" "torrent_metadata" {
   storage_authentication_type   = "StorageAccountConnectionString"
   storage_access_key            = var.azure_storage_access_key
   maximum_instance_count        = 1
-  instance_memory_in_mb         = 2048
+  instance_memory_in_mb         = 512
   public_network_access_enabled = true
 
   app_settings = {

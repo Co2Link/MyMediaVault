@@ -10,12 +10,6 @@ variable "resource_group_location" {
   description = "Existing resource group metadata location."
 }
 
-variable "storage_location" {
-  type        = string
-  default     = "eastus2"
-  description = "Region for the dev storage account."
-}
-
 variable "prefix" {
   type    = string
   default = "mmv-dev"
@@ -90,7 +84,7 @@ module "database" {
 module "storage" {
   source              = "../../modules/storage"
   prefix              = var.prefix
-  location            = var.storage_location
+  location            = var.location
   resource_group_name = azurerm_resource_group.main.name
 }
 
