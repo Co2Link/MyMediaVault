@@ -4,16 +4,19 @@ This directory is the project documentation source of truth. Coding agents must
 update these documents when implementation, architecture, deployment, data model,
 testing, or workflow behavior changes.
 
-## Core Design
+## Project Map
 
-- [Architecture](architecture.md): system components, request flow, and deployed topology.
-- [Application Features](features.md): current user-facing and admin capabilities.
-- [Web App Architecture](web-app-architecture.md): Next.js app structure, auth flow, route handlers, Functions worker, and UI behavior.
-- [Data Model](data-model.md): persisted entities, relationships, constraints, and metadata states.
+- [Overview](overview.md): product summary, runtime shape, and request flow.
+- [Web App](web-app.md): Next.js routes, auth, and UI responsibilities.
+- [Worker](worker.md): Azure Functions queue processing and runtime config.
+- [Data Model](data-model.md): persisted entities, relationships, constraints,
+  and metadata states.
 
-## Operations
+## Workflows
 
-- [Local Development](local-development.md): environment setup and local run commands.
-- [Testing Strategy](testing.md): Next.js app, e2e, and CI checks.
+- [Local Development](local-development.md): environment setup and local run
+  commands.
+- [Testing Strategy](testing.md): web, core, e2e, dev smoke, and CI checks.
 - [Deployment](deployment.md): dev deployment flow and Azure resources.
-- [Branching Strategy](branching-strategy.md): branch rules and release boundaries.
+- [Branching Strategy](branching-strategy.md): branch rules and release
+  boundaries.

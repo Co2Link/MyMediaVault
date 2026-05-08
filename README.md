@@ -13,7 +13,7 @@ apps/web          Next.js full-stack app
 apps/functions    Azure Functions queue worker
 apps/e2e          Playwright tests
 packages/core     Shared Mongoose/domain/storage/torrent logic
-docs              Project decisions and workflow guidance
+docs              Project docs
 infra/terraform   Azure infrastructure
 ```
 
@@ -67,8 +67,8 @@ npm run test:local
 app and local queue worker automatically when needed, loads env from
 `apps/web/.env.local` and `apps/e2e/.env.local`, cleans documents owned by the
 Playwright test users, performs real Entra login, and runs the browser suite
-against the local stack. `npm run test:smoke:local` runs the focused
-web -> Cosmos DB -> queue -> worker smoke.
+against the local stack. To verify the deployed dev environment after GitHub
+`CI` and `Dev` pass, run `npm run test:smoke:dev` from `apps/e2e`.
 
 ## Infrastructure
 

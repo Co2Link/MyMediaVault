@@ -61,16 +61,47 @@ cd apps/e2e
 npm run test:smoke:dev
 ```
 
-Run the dev smoke locally after the GitHub `CI` and `Dev` workflows pass for the
-current commit on `develop`. The script checks those workflow results with
+Run the dev smoke locally after the GitHub `CI` and `Dev` workflows pass for
+the current commit on `develop`. The script checks those workflow results with
 GitHub CLI before running Playwright against the deployed dev URL. It verifies
 the full user add-video path through the web app, Cosmos DB, Function worker,
 Azure Blob Storage, and the UI metadata-ready state.
 
-`apps/e2e/.env.local` must set the Entra test-user credentials and
-`E2E_BASE_URL` to the deployed dev web URL. Source values in `apps/web/.env.local`
-must point to the dev Cosmos DB and Azure Storage account so the smoke can verify
-database records and raw torrent blobs.
+`apps/e2e/.env.local` must set the Entra test-user credentials and `E2E_BASE_URL`
+to the deployed dev web URL. Source values in `apps/web/.env.local` must point
+to the dev Cosmos DB and Azure Storage account so the smoke can verify database
+records and raw torrent blobs.
+
+## Environment Variables
+
+The local and deployed-dev test harnesses source `apps/web/.env.local` and
+`apps/e2e/.env.local`. The tables below list the test-specific variables; the
+web and worker variables documented in their own docs are also required when the
+harness talks to the live app or worker.
+
+| Variable | Purpose |
+| --- | --- |
+| `E2E_USER_USERNAME` | Normal test user username. |
+| `E2E_USER_PASSWORD` | Normal test user password. |
+| `E2E_ADMIN_USERNAME` | Admin test user username. |
+| `E2E_ADMIN_PASSWORD` | Admin test user password. |
+| `E2E_BASE_URL` | App under test base URL. Defaults to `http://localhost:3000` locally. |
+| `E2E_DEV_SMOKE` | Enables the deployed-dev smoke spec. |
+| `E2E_DEV_SMOKE_INFO_HASH` | Overrides the dev smoke torrent hash. |
+| `E2E_INCLUDE_MANUAL_TORRENT_TESTS` | Keeps the `@manual-torrent` cases in local runs. |
+| `E2E_FORCE_STACK_RESTART` | Restarts the local stack and clears auth state. |
+| `E2E_REQUIRE_HTTP_TORRENT_PROVIDER` | Forces `MMV_TORRENT_PROVIDER=http` locally. |
+| `DEV_SMOKE_COMMIT_SHA` | Commit SHA checked by the dev smoke script. |
+| `MONGODB_URI` | Database connection for local and dev-smoke runs. |
+| `MMV_AZURE_STORAGE_CONNECTION_STRING` | Storage connection for local and dev-smoke runs. |
+| `MMV_MONGODB_DB_NAME` | Local-stack database name. |
+| `AzureWebJobsStorage` | Local worker storage connection. |
+| `MMV_TORRENT_METADATA_QUEUE` | Local queue name. |
+| `MMV_TORRENT_PROVIDER` | Local torrent provider mode. |
+| `MMV_TORRENT_RESOLVER_URLS` | Local HTTP resolver URLs. |
+| `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | Local HTTP fetch timeout. |
+| `RUN_ID` | Optional suffix for an isolated local queue. |
+| `HEALTH_URL` | Optional local health-check URL. |
 
 ## Infrastructure Checks
 
