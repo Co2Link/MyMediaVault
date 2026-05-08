@@ -107,3 +107,37 @@ traces
 GitHub Actions expects Docker Hub credentials, Azure credentials, `AUTH_SECRET`,
 Entra client credentials, and optional admin object/group IDs. Keep all secrets
 in GitHub or local `.env` files; never commit them.
+
+## GitHub Actions Configuration Policy
+
+The dev workflows intentionally use a simple repo-level configuration model.
+Application configuration that is not sensitive is stored as GitHub repository
+variables, and sensitive application configuration is stored as GitHub
+repository secrets. Azure CLI is used only for operational deployment lookups,
+such as the current Container App image, Function App deployment, and smoke-test
+resource discovery.
+
+Keep these repository variables because the current workflows reference them:
+
+- `WEB_IMAGE`
+- `AUTH_MICROSOFT_ENTRA_ID_TENANT`
+- `AUTH_MICROSOFT_ENTRA_ID_ID`
+- `TF_VAR_ADMIN_OBJECT_IDS`
+- `TF_VAR_ADMIN_GROUP_OBJECT_IDS`
+
+Keep these repository secrets because the current workflows reference them:
+
+- `AZURE_CREDENTIALS`
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+- `AUTH_SECRET`
+- `AUTH_MICROSOFT_ENTRA_ID_SECRET`
+
+Do not duplicate Terraform-owned resource values in GitHub variables. Values
+created or owned by Terraform should flow through Terraform resources, data
+sources, outputs, or module inputs. Azure CLI lookups should stay limited to
+runtime deployment state that is outside Terraform's current graph.
+
+OIDC-based Azure login and Azure Key Vault-backed app secrets are preferred
+future hardening options, but they are not part of the current simple dev
+workflow.
