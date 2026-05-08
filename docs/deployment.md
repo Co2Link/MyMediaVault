@@ -20,7 +20,10 @@ dev deployment workflow.
 
 ## Dev Workflow
 
-`.github/workflows/dev.yml` runs after `CI` succeeds on `develop`.
+`.github/workflows/dev.yml` runs after `CI` succeeds on `develop`. It can also
+be started manually to apply Terraform with the current deployed image, which is
+useful after changing GitHub repository secrets or variables that Terraform
+passes into Azure runtime configuration.
 
 CI publishes its path-filter results as a short-lived artifact for successful
 `develop` pushes, and the dev workflow uses those flags to avoid unnecessary

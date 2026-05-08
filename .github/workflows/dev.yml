@@ -5,6 +5,13 @@ on:
     workflows: ["CI"]
     branches: [develop]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      force_terraform_apply:
+        description: Apply Terraform with the current deployed image.
+        required: true
+        type: boolean
+        default: true
 
 concurrency:
   group: dev
@@ -15,7 +22,7 @@ env:
 
 jobs:
   changes:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -25,12 +32,15 @@ jobs:
       terraform: ${{ steps.flags.outputs.terraform }}
     steps:
       - name: Download CI change flags
+        if: ${{ github.event_name == 'workflow_run' }}
         run: gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" --name dev-change-flags --dir dev-change-flags
         env:
           CI_RUN_ID: ${{ github.event.workflow_run.id }}
           GH_TOKEN: ${{ github.token }}
 
-      - id: flags
+      - name: Use CI change flags
+        id: ci-flags
+        if: ${{ github.event_name == 'workflow_run' }}
         shell: bash
         run: |
           source dev-change-flags/flags.env
@@ -40,8 +50,37 @@ jobs:
             echo "terraform=${terraform}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Use manual change flags
+        id: manual-flags
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          {
+            echo "web=false"
+            echo "functions=false"
+            echo "terraform=${FORCE_TERRAFORM_APPLY}"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          FORCE_TERRAFORM_APPLY: ${{ inputs.force_terraform_apply }}
+
+      - id: flags
+        shell: bash
+        run: |
+          {
+            echo "web=${CI_WEB:-${MANUAL_WEB}}"
+            echo "functions=${CI_FUNCTIONS:-${MANUAL_FUNCTIONS}}"
+            echo "terraform=${CI_TERRAFORM:-${MANUAL_TERRAFORM}}"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          CI_WEB: ${{ steps.ci-flags.outputs.web }}
+          CI_FUNCTIONS: ${{ steps.ci-flags.outputs.functions }}
+          CI_TERRAFORM: ${{ steps.ci-flags.outputs.terraform }}
+          MANUAL_WEB: ${{ steps.manual-flags.outputs.web }}
+          MANUAL_FUNCTIONS: ${{ steps.manual-flags.outputs.functions }}
+          MANUAL_TERRAFORM: ${{ steps.manual-flags.outputs.terraform }}
+
   image:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     needs: changes
     permissions:
@@ -78,7 +117,7 @@ jobs:
           tags: ${{ steps.meta.outputs.image }}
 
   terraform:
-    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.terraform == 'true' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && needs.changes.outputs.terraform == 'true' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - changes
@@ -96,7 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: azure/login@v2
         with:
@@ -174,7 +213,7 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
   container_app_deploy:
-    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' && needs.image.result == 'success' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
+    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' && needs.image.result == 'success' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - changes
@@ -208,7 +247,7 @@ jobs:
         run: echo "Terraform applied the new image and commit."
 
   function_deploy:
-    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.functions == 'true' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
+    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.functions == 'true' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - changes
@@ -248,7 +287,7 @@ jobs:
             --src function.zip
 
   smoke:
-    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && (needs.changes.outputs.web != 'true' || needs.image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.container_app_deploy.result == 'success' || needs.container_app_deploy.result == 'skipped') && (needs.function_deploy.result == 'success' || needs.function_deploy.result == 'skipped') }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && needs.changes.outputs.terraform == 'true') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) && (needs.changes.outputs.web != 'true' || needs.image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.container_app_deploy.result == 'success' || needs.container_app_deploy.result == 'skipped') && (needs.function_deploy.result == 'success' || needs.function_deploy.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - changes
