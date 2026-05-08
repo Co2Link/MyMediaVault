@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refresh File Dependencies"
+  short_description: "Fix stale local package installs"
+  default_prompt: "Use $refresh-file-dependencies to refresh stale file-based package installs in this monorepo."
