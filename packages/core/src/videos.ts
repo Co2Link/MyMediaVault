@@ -124,21 +124,38 @@ export async function enqueueTorrentMetadata(torrentId: string) {
     return null;
   }
 
-  let job = (
-    await TorrentMetadataJobModel.find({ torrentId, status: { $in: ["queued", "processing"] } }).lean().exec()
-  ).sort(compareNewestJobFirst)[0];
+  await TorrentModel.updateOne({ _id: torrentId }, { $set: { metadataStatus: "pending", metadataError: null } }).exec();
+
+  const jobId = torrentMetadataJobId(torrentId);
+  const now = new Date();
+  const job = await TorrentMetadataJobModel.findByIdAndUpdate(
+    jobId,
+    {
+      $set: {
+        torrentId,
+        status: "queued",
+        error: null,
+        finishedAt: null,
+      },
+      $setOnInsert: {
+        _id: jobId,
+        attempt: torrent.metadataAttempts + 1,
+        queueEnqueuedAt: null,
+        lastDequeuedAt: null,
+        startedAt: null,
+        createdAt: now,
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  )
+    .lean()
+    .exec();
 
   if (!job) {
-    await TorrentModel.updateOne({ _id: torrentId }, { $set: { metadataStatus: "pending", metadataError: null } }).exec();
-    const created = await TorrentMetadataJobModel.create({
-      torrentId,
-      status: "queued",
-      attempt: torrent.metadataAttempts + 1,
-    });
-    job = created.toObject();
+    throw new Error("Unable to enqueue torrent metadata job.");
   }
 
-  if (!job.queueEnqueuedAt) {
+  if (!job.queueEnqueuedAt || isFinalJobStatus(job.status)) {
     await sendTorrentMetadataQueueMessage(job._id);
   }
 
@@ -403,11 +420,11 @@ function isFinalJobStatus(status: string) {
   return status === "succeeded" || status === "failed" || status === "dead_lettered";
 }
 
-function compareNewestVideoFirst(a: VideoDoc, b: VideoDoc) {
-  return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
+function torrentMetadataJobId(torrentId: string) {
+  return `torrent-metadata:${torrentId}`;
 }
 
-function compareNewestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDoc) {
+function compareNewestVideoFirst(a: VideoDoc, b: VideoDoc) {
   return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
 }
 
