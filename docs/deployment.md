@@ -117,22 +117,6 @@ repository secrets. Azure CLI is used only for operational deployment lookups,
 such as the current Container App image, Function App deployment, and smoke-test
 resource discovery.
 
-Keep these repository variables because the current workflows reference them:
-
-- `WEB_IMAGE`
-- `AUTH_MICROSOFT_ENTRA_ID_TENANT`
-- `AUTH_MICROSOFT_ENTRA_ID_ID`
-- `TF_VAR_ADMIN_OBJECT_IDS`
-- `TF_VAR_ADMIN_GROUP_OBJECT_IDS`
-
-Keep these repository secrets because the current workflows reference them:
-
-- `AZURE_CREDENTIALS`
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-- `AUTH_SECRET`
-- `AUTH_MICROSOFT_ENTRA_ID_SECRET`
-
 Do not duplicate Terraform-owned resource values in GitHub variables. Values
 created or owned by Terraform should flow through Terraform resources, data
 sources, outputs, or module inputs. Azure CLI lookups should stay limited to
