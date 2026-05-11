@@ -31,6 +31,8 @@ deployment work.
 
 1. It builds and pushes the web Docker image from `apps/web/Dockerfile` only
    when the web app or shared core package changes.
+1. It builds and pushes the worker Docker image from `apps/functions/Dockerfile`
+   whenever the Dev workflow runs.
 2. It runs `terraform init -reconfigure`, `terraform plan`, and
    `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
    workflows change. Infra-only runs query the currently deployed web image and
@@ -39,12 +41,10 @@ deployment work.
 3. It deploys the Container App only when a new web image was pushed. If
    Terraform also ran, Terraform applies the new image; otherwise Azure CLI
    updates the Container App image and commit environment variable.
-4. It builds and zip-deploys `apps/functions` only when the Functions app or
-   shared core package changes.
-5. It smoke-checks `GET /api/health` on the deployed web app and verifies that
-   the Function App exists after successful CI and successful or skipped deploy
-   prerequisites. The smoke check validates the new commit only when a web image
-   was deployed.
+4. It smoke-checks `GET /api/health` on the deployed web app and verifies that
+   the scheduled worker job exists after successful CI and successful or
+   skipped deploy prerequisites. The smoke check validates the new commit only
+   when a web image was deployed.
 
 The dev Terraform stack uses Cloudflare R2-backed remote state:
 
@@ -66,19 +66,16 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   redirects return to the deployed app instead of an internal runtime address.
   The app can scale to zero and now uses a 300-second scale-in cooldown so it
   stops billing idle replicas sooner.
-- Functions: Azure Functions Flex Consumption Node.js 22 app with one maximum
-  instance, 512 MB instance memory, and a timer trigger that polls queued jobs
-  from MongoDB.
-  It receives the same auth settings as the web app because the shared core
-  environment loader is used by both HTTP and worker code paths.
+- Worker: scheduled Azure Container Apps job that runs the metadata poller on a
+  cron schedule. It uses the same auth settings as the web app because the
+  shared core environment loader is used by both HTTP and worker code paths.
 - Database: Azure Cosmos DB for MongoDB free-tier account created by this
   repository, configured for MongoDB 4.2 compatibility so the Node MongoDB
   driver can connect through Mongoose.
-- Storage: Azure Blob is only used for the Functions package deployment
-  container. Raw torrent blobs live in Cloudflare R2, and Terraform state uses
+- Storage: raw torrent blobs live in Cloudflare R2, and Terraform state uses
   the R2 backend.
 - Observability: Log Analytics workspace with 30-day retention and
-  workspace-based Application Insights for the Function App.
+  workspace-based Application Insights for the worker job and web app.
 
 ## Function KQL
 
@@ -119,8 +116,8 @@ The dev workflows intentionally use a simple repo-level configuration model.
 Application configuration that is not sensitive is stored as GitHub repository
 variables, and sensitive application configuration is stored as GitHub
 repository secrets. Azure CLI is used only for operational deployment lookups,
-such as the current Container App image, Function App deployment, and smoke-test
-resource discovery.
+such as the current Container App image, worker job, and smoke-test resource
+discovery.
 
 Do not duplicate Terraform-owned resource values in GitHub variables. Values
 created or owned by Terraform should flow through Terraform resources, data

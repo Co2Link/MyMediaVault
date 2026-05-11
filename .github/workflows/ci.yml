@@ -88,7 +88,6 @@ jobs:
     env:
       MONGODB_URI: mongodb://127.0.0.1:27017/mymediavault
       MMV_MONGODB_DB_NAME: mymediavault
-      AzureWebJobsStorage: UseDevelopmentStorage=true
       MMV_TORRENT_PROVIDER: fake
     steps:
       - uses: actions/checkout@v5

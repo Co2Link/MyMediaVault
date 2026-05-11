@@ -11,8 +11,8 @@ normalized info hash.
   write paths.
 - `packages/core`: shared models, validation, storage, torrent provider, and
   torrent metadata processing logic.
-- `apps/functions`: Azure Functions timer worker for torrent metadata polling
-  and processing.
+- `apps/functions`: scheduled worker code for torrent metadata polling and
+  processing.
 - `apps/e2e`: Playwright coverage for local-stack and deployed-dev verification.
 - `infra/terraform`: dev environment and Azure resource definitions.
 

@@ -17,7 +17,7 @@ test.afterAll(async () => {
   await disconnectMongo();
 });
 
-test("dev smoke verifies web, Cosmos DB, Function worker, blob storage, and ready metadata", async ({ page }) => {
+test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, and ready metadata", async ({ page }) => {
   test.setTimeout(240_000);
 
   const userEmail = requireEnv("E2E_USER_USERNAME");

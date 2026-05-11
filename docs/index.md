@@ -8,7 +8,7 @@ testing, or workflow behavior changes.
 
 - [Overview](overview.md): product summary, runtime shape, and request flow.
 - [Web App](web-app.md): Next.js routes, auth, and UI responsibilities.
-- [Worker](worker.md): Azure Functions timer processing and runtime config.
+- [Worker](worker.md): scheduled worker processing and runtime config.
 - [Data Model](data-model.md): persisted entities, relationships, constraints,
   and metadata states.
 

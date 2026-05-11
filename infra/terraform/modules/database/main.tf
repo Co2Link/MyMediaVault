@@ -15,43 +15,27 @@ variable "database_name" {
   default = "mymediavault"
 }
 
-resource "azurerm_cosmosdb_account" "main" {
-  name                 = "${var.prefix}-cosmos"
-  location             = var.location
-  resource_group_name  = var.resource_group_name
-  offer_type           = "Standard"
-  kind                 = "MongoDB"
-  mongo_server_version = "4.2"
+module "mongo_vcore" {
+  source = "/workspaces/shared-infra/modules/azure/mongo-vcore"
 
-  capabilities {
-    name = "EnableMongo"
-  }
-
-  capabilities {
-    name = "EnableServerless"
-  }
-
-  consistency_policy {
-    consistency_level = "Session"
-  }
-
-  geo_location {
-    location          = var.location
-    failover_priority = 0
-  }
-}
-
-resource "azurerm_cosmosdb_mongo_database" "main" {
-  name                = var.database_name
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
+  cluster_name           = "${var.prefix}-mongo"
+  location               = var.location
+  resource_group_name    = var.resource_group_name
+  compute_tier           = "Free"
+  high_availability_mode = "Disabled"
+  storage_size_in_gb     = 32
+  mongo_version          = "8.0"
 }
 
 output "database_name" {
-  value = azurerm_cosmosdb_mongo_database.main.name
+  value = var.database_name
 }
 
 output "mongodb_uri" {
-  value     = azurerm_cosmosdb_account.main.primary_mongodb_connection_string
+  value     = module.mongo_vcore.connection_string
   sensitive = true
+}
+
+output "mongo_cluster_name" {
+  value = module.mongo_vcore.cluster_name
 }

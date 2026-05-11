@@ -1,10 +1,9 @@
 # Local Development
 
 Use the dev container when available. The repository expects Node.js 24 for the
-web app and e2e packages, Node.js 22/Azure Functions Core Tools for
-`apps/functions`, access to MongoDB or Azure Cosmos DB for MongoDB, Cloudflare
-R2 credentials when you want to exercise remote blob storage, and Terraform for
-infrastructure validation.
+web app and e2e packages, Node.js 22 for `apps/functions`, access to MongoDB
+or Azure Cosmos DB for MongoDB, Cloudflare R2 credentials when you want to
+exercise remote blob storage, and Terraform for infrastructure validation.
 
 ## Web App
 
@@ -26,10 +25,10 @@ The Functions worker uses the fake torrent metadata provider by default. Set
 array of base URLs or `{info_hash}` templates only when you want to exercise a
 real resolver during local development.
 
-Run the Functions worker in a second terminal. Copy
+Run the worker in a second terminal. Copy
 `apps/functions/local.settings.json.example` to `apps/functions/local.settings.json`
-or export equivalent values; the example includes the `AzureWebJobsStorage`
-setting required by Functions Core Tools plus the optional R2 variables.
+or export equivalent values; the example includes the shared auth/database
+settings plus the optional R2 variables.
 
 ```bash
 cd apps/functions
@@ -39,8 +38,8 @@ npm run start
 
 For local e2e runs, the harness builds `apps/functions` and runs
 `npm run manual-worker`. That process polls MongoDB directly, which keeps the
-web -> database -> timer worker smoke reliable even when Azure Functions Core
-Tools is not part of the local test loop.
+web -> database -> worker smoke reliable even when the scheduled job runtime is
+not part of the local test loop.
 
 ## End-to-End Local Stack
 
@@ -52,8 +51,8 @@ npm run test:local
 
 `test:local` sources `apps/web/.env.local` and `apps/e2e/.env.local`, deletes
 the Playwright test users' existing documents plus any now-orphaned torrent
-metadata, starts the Next.js app and local queue worker, then executes
-Playwright. The database must already be reachable via `MONGODB_URI`.
+metadata, starts the Next.js app and local worker, then executes Playwright.
+The database must already be reachable via `MONGODB_URI`.
 `apps/e2e/.env.local` must define `E2E_USER_USERNAME`, `E2E_USER_PASSWORD`,
 `E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use
 `apps/e2e/.env.local.example` as the template.

@@ -1,9 +1,6 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
-    "FUNCTIONS_WORKER_RUNTIME": "node",
     "AUTH_SECRET": "replace-with-a-long-random-secret",
     "AUTH_MICROSOFT_ENTRA_ID_ID": "your-entra-client-id",
     "AUTH_MICROSOFT_ENTRA_ID_SECRET": "your-entra-client-secret",

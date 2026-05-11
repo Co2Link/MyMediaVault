@@ -108,8 +108,6 @@ source_required_file "$E2E_DIR/.env.local"
 
 export MONGODB_URI="${MONGODB_URI:-mongodb://127.0.0.1:27017/mymediavault}"
 export MMV_MONGODB_DB_NAME="${MMV_MONGODB_DB_NAME:-mymediavault}"
-export AzureWebJobsStorage="${AzureWebJobsStorage:-UseDevelopmentStorage=true}"
-export MMV_AZURE_STORAGE_CONNECTION_STRING="${MMV_AZURE_STORAGE_CONNECTION_STRING:-$AzureWebJobsStorage}"
 export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:3000}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:3000/api/health}"
 PLAYWRIGHT_ARGS=("$@")

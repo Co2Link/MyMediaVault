@@ -1,7 +1,8 @@
 # Worker
 
-The worker lives in `apps/functions` and runs as a Node.js 22 Azure Functions
-Flex Consumption app.
+The worker lives in `apps/functions` and is deployed as a scheduled Azure
+Container Apps job. Locally, the same code can run as a long-lived Node.js
+process for the e2e harness.
 
 ## Responsibilities
 
@@ -9,11 +10,12 @@ Flex Consumption app.
 - Fetch the raw `.torrent` payload through the configured provider.
 - Store the raw torrent in Cloudflare R2.
 - Write parsed torrent metadata and file lists back to the database.
-- Repair stale processing jobs with the timer trigger.
+- Repair stale processing jobs on each scheduled run.
 
 ## Triggers
 
-- Timer trigger for normal torrent metadata processing and stale-job repair.
+- Scheduled Container Apps job for normal torrent metadata processing and
+  stale-job repair.
 
 ## Environment Variables
 
@@ -33,9 +35,6 @@ them, even though the Functions host itself does not run Auth.js.
 | `MMV_COMMIT_SHA` | Commit label for logs and diagnostics. |
 | `MMV_ADMIN_OBJECT_IDS` | Shared admin object IDs. |
 | `MMV_ADMIN_GROUP_OBJECT_IDS` | Shared admin group IDs. |
-| `AzureWebJobsStorage` | Functions host storage account. |
-| `FUNCTIONS_WORKER_RUNTIME` | Node worker runtime. |
-| `AzureWebJobsFeatureFlags` | Core Tools worker indexing flag. |
 | `MMV_TORRENT_PROVIDER` | Torrent provider mode. |
 | `MMV_TORRENT_RESOLVER_URLS` | HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | HTTP torrent fetch timeout. |
@@ -46,11 +45,11 @@ them, even though the Functions host itself does not run Auth.js.
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |
 
-`apps/functions/local.settings.json.example` covers the local host settings used
-by Core Tools.
+`apps/functions/local.settings.json.example` covers the local environment used
+by the manual worker and local e2e harness.
 
 ## Local Notes
 
-For local e2e runs, `apps/e2e/scripts/run-local.sh` can start
-`npm run manual-worker` instead of Azure Functions Core Tools. That keeps the
-web -> database -> timer worker path reliable in local test runs.
+For local e2e runs, `apps/e2e/scripts/run-local.sh` starts
+`npm run manual-worker`. That keeps the web -> database -> worker path
+reliable in local test runs.

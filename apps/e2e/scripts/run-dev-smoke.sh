@@ -63,7 +63,6 @@ source_optional_file "$E2E_DIR/.env.local"
 : "${E2E_ADMIN_USERNAME:?Missing E2E_ADMIN_USERNAME in apps/e2e/.env.local.}"
 : "${E2E_ADMIN_PASSWORD:?Missing E2E_ADMIN_PASSWORD in apps/e2e/.env.local.}"
 : "${MONGODB_URI:?Missing MONGODB_URI for dev Cosmos DB verification.}"
-: "${MMV_AZURE_STORAGE_CONNECTION_STRING:?Missing MMV_AZURE_STORAGE_CONNECTION_STRING for dev blob verification.}"
 
 if [[ "$E2E_BASE_URL" == http://localhost:* || "$E2E_BASE_URL" == http://127.0.0.1:* ]]; then
   echo "E2E_BASE_URL must point to the deployed dev environment, not localhost." >&2

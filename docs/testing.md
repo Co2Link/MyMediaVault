@@ -32,8 +32,8 @@ npm run test
 ```
 
 `packages/core` owns shared domain logic, Mongoose access, job scheduling, and
-torrent metadata processing. `apps/functions` owns Azure Functions timer wiring
-for metadata polling and repair paths.
+torrent metadata processing. `apps/functions` owns the worker entrypoints for
+metadata polling and repair paths.
 
 `apps/e2e/scripts/run-local.sh` starts the Next.js app and local worker on top
 of the local MongoDB/Cosmos stack.
@@ -64,8 +64,8 @@ npm run test:smoke:dev
 Run the dev smoke locally after the GitHub `CI` and `Dev` workflows pass for
 the current commit on `develop`. The script checks those workflow results with
 GitHub CLI before running Playwright against the deployed dev URL. It verifies
-the full user add-video path through the web app, Cosmos DB, the Function
-worker, Cloudflare R2, and the UI metadata-ready state.
+the full user add-video path through the web app, Cosmos DB, the worker job,
+Cloudflare R2, and the UI metadata-ready state.
 
 `apps/e2e/.env.local` must set the Entra test-user credentials and `E2E_BASE_URL`
 to the deployed dev web URL. Source values in `apps/web/.env.local` must point
@@ -94,7 +94,6 @@ harness talks to the live app or worker.
 | `DEV_SMOKE_COMMIT_SHA` | Commit SHA checked by the dev smoke script. |
 | `MONGODB_URI` | Database connection for local and dev-smoke runs. |
 | `MMV_MONGODB_DB_NAME` | Local-stack database name. |
-| `AzureWebJobsStorage` | Local worker storage connection. |
 | `MMV_TORRENT_PROVIDER` | Local torrent provider mode. |
 | `MMV_TORRENT_RESOLVER_URLS` | Local HTTP resolver URLs. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | Local HTTP fetch timeout. |
