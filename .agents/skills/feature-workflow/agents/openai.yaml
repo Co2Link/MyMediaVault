@@ -1,4 +1,0 @@
-interface:
-  display_name: "Feature Workflow"
-  short_description: "Implement or modify features in this repo"
-  default_prompt: "Use this skill when a user asks to add or change application behavior. Clarify requirements only if needed, then make the code change, add or update tests as needed, run relevant verification, and commit the result."
