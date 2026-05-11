@@ -161,6 +161,7 @@ jobs:
     needs:
       - changes
       - image
+      - worker_image
     defaults:
       run:
         working-directory: infra/terraform/envs/dev
