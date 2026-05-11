@@ -271,6 +271,26 @@ resource "azurerm_container_app_job" "torrent_metadata" {
   replica_timeout_in_seconds   = 3600
   replica_retry_limit          = 1
 
+  secret {
+    name  = "auth-secret"
+    value = var.auth_secret
+  }
+
+  secret {
+    name  = "entra-client-secret"
+    value = var.auth_entra_client_secret
+  }
+
+  secret {
+    name  = "mongodb-uri"
+    value = var.mongodb_uri
+  }
+
+  secret {
+    name  = "r2-secret-access-key"
+    value = var.r2_secret_access_key
+  }
+
   schedule_trigger_config {
     cron_expression          = "*/1 * * * *"
     parallelism              = 1
