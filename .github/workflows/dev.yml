@@ -133,7 +133,7 @@ jobs:
       TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS || '[]' }}
       TF_VAR_admin_group_object_ids: ${{ vars.TF_VAR_ADMIN_GROUP_OBJECT_IDS || '[]' }}
       TF_VAR_r2_endpoint: ${{ vars.R2_ENDPOINT }}
-      TF_VAR_r2_access_key_id: ${{ vars.R2_ACCESS_KEY_ID }}
+      TF_VAR_r2_access_key_id: ${{ vars.R2_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
       TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       TF_VAR_r2_bucket_name: ${{ vars.R2_BUCKET_NAME || 'torrent-raw' }}
     steps:
@@ -210,7 +210,7 @@ jobs:
             -backend-config="force_path_style=true"
         env:
           R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
-          R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID }}
+          R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
       - name: Validate
