@@ -272,7 +272,7 @@ resource "azurerm_container_app_job" "torrent_metadata" {
   replica_retry_limit          = 1
 
   schedule_trigger_config {
-    cron_expression          = "0 * * * * *"
+    cron_expression          = "*/1 * * * *"
     parallelism              = 1
     replica_completion_count = 1
   }
