@@ -2,8 +2,9 @@
 
 Use the dev container when available. The repository expects Node.js 24 for the
 web app and e2e packages, Node.js 22/Azure Functions Core Tools for
-`apps/functions`, access to MongoDB or Azure Cosmos DB for MongoDB, Azurite for
-local queues/blobs, and Terraform for infrastructure validation.
+`apps/functions`, access to MongoDB or Azure Cosmos DB for MongoDB, Cloudflare
+R2 credentials when you want to exercise remote blob storage, and Terraform for
+infrastructure validation.
 
 ## Web App
 
@@ -16,9 +17,9 @@ npm run dev
 Copy `apps/web/.env.local.example` to `apps/web/.env.local` and fill in the
 Entra credentials, `AUTH_SECRET`, and any optional `MMV_*` overrides. Set
 `MONGODB_URI` and `MMV_MONGODB_DB_NAME` to the local MongoDB or Cosmos values
-you want to use. For local queue enqueueing, set
-`MMV_AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true` or
-`AzureWebJobsStorage=UseDevelopmentStorage=true` while Azurite is running.
+you want to use. Set `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+and `R2_BUCKET_NAME` when you want blob reads and writes to go through
+Cloudflare R2 instead of the local filesystem fallback.
 
 The Functions worker uses the fake torrent metadata provider by default. Set
 `MMV_TORRENT_PROVIDER=http` and provide `MMV_TORRENT_RESOLVER_URLS` as a JSON
@@ -27,8 +28,8 @@ real resolver during local development.
 
 Run the Functions worker in a second terminal. Copy
 `apps/functions/local.settings.json.example` to `apps/functions/local.settings.json`
-or export equivalent values; the example uses `AzureWebJobsStorage=UseDevelopmentStorage=true`
-for Azurite.
+or export equivalent values; the example includes the `AzureWebJobsStorage`
+setting required by Functions Core Tools plus the optional R2 variables.
 
 ```bash
 cd apps/functions
@@ -37,9 +38,9 @@ npm run start
 ```
 
 For local e2e runs, the harness builds `apps/functions` and runs
-`npm run manual-worker`. That process polls the configured Azure Storage Queue
-directly, which keeps the web -> database -> queue -> worker smoke reliable even
-when Azure Functions Core Tools is not part of the local test loop.
+`npm run manual-worker`. That process polls MongoDB directly, which keeps the
+web -> database -> timer worker smoke reliable even when Azure Functions Core
+Tools is not part of the local test loop.
 
 ## End-to-End Local Stack
 
@@ -62,18 +63,29 @@ Deployed dev verification lives in [Testing Strategy](testing.md); use
 
 ## Dev Terraform
 
-The dev stack uses a repo-owned Azure Blob backend and its own Azure Cosmos DB
-for MongoDB account. After `az login`:
+Bootstrap the R2-backed Terraform state locally, then initialize the dev stack
+against the same bucket. After `az login` and with the R2 env vars available:
 
 ```bash
-cd infra/terraform/envs/dev
-backend_key="$(
-  az storage account keys list \
-    --resource-group rg-mymediavault-tfstate \
-    --account-name mymediavaulttfstate \
-    --query '[0].value' -o tsv
-)"
-terraform init -reconfigure -backend-config="access_key=${backend_key}"
+cd infra/terraform/bootstrap
+terraform init
+terraform apply \
+  -var="r2_endpoint=${R2_ENDPOINT}" \
+  -var="r2_access_key_id=${R2_ACCESS_KEY_ID}" \
+  -var="r2_secret_access_key=${R2_SECRET_ACCESS_KEY}"
+
+cd ../envs/dev
+terraform init -reconfigure \
+  -backend-config="bucket=mymediavault-tfstate" \
+  -backend-config="key=envs/dev/terraform.tfstate" \
+  -backend-config="region=auto" \
+  -backend-config="endpoint=${R2_ENDPOINT}" \
+  -backend-config="access_key=${R2_ACCESS_KEY_ID}" \
+  -backend-config="secret_key=${R2_SECRET_ACCESS_KEY}" \
+  -backend-config="skip_credentials_validation=true" \
+  -backend-config="skip_metadata_api_check=true" \
+  -backend-config="skip_region_validation=true" \
+  -backend-config="force_path_style=true"
 terraform plan
 ```
 

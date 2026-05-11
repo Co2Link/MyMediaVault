@@ -73,6 +73,27 @@ variable "torrent_fetch_timeout_seconds" {
   default = 20
 }
 
+variable "r2_endpoint" {
+  type    = string
+  default = ""
+}
+
+variable "r2_access_key_id" {
+  type    = string
+  default = ""
+}
+
+variable "r2_secret_access_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "r2_bucket_name" {
+  type    = string
+  default = "torrent-raw"
+}
+
 module "database" {
   source = "../../modules/database"
 
@@ -103,14 +124,16 @@ module "app" {
   entra_tenant_id                           = var.entra_tenant_id
   azure_storage_connection_string           = module.storage.connection_string
   azure_storage_access_key                  = module.storage.primary_access_key
-  azure_blob_container                      = module.storage.torrent_container_name
   azure_function_package_container_endpoint = module.storage.function_packages_container_endpoint
   admin_object_ids                          = var.admin_object_ids
   admin_group_object_ids                    = var.admin_group_object_ids
   torrent_provider                          = var.torrent_provider
   torrent_resolver_urls                     = var.torrent_resolver_urls
   torrent_fetch_timeout_seconds             = var.torrent_fetch_timeout_seconds
-  torrent_metadata_queue_name               = module.storage.torrent_metadata_queue_name
+  r2_endpoint                               = var.r2_endpoint
+  r2_access_key_id                          = var.r2_access_key_id
+  r2_secret_access_key                      = var.r2_secret_access_key
+  r2_bucket_name                            = var.r2_bucket_name
 }
 
 resource "azurerm_resource_group" "main" {

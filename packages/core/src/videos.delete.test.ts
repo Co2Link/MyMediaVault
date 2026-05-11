@@ -62,7 +62,6 @@ vi.mock("./db.js", () => ({
 
 vi.mock("./storage.js", () => ({
   buildBlobStore: () => mocks.blobStore,
-  buildQueueStore: vi.fn(),
 }));
 
 vi.mock("./torrent-provider.js", () => ({

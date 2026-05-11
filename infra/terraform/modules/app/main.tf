@@ -52,7 +52,22 @@ variable "azure_storage_access_key" {
   sensitive = true
 }
 
-variable "azure_blob_container" {
+variable "r2_endpoint" {
+  type      = string
+  sensitive = true
+}
+
+variable "r2_access_key_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "r2_secret_access_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "r2_bucket_name" {
   type = string
 }
 
@@ -87,11 +102,6 @@ variable "torrent_resolver_urls" {
 variable "torrent_fetch_timeout_seconds" {
   type    = number
   default = 20
-}
-
-variable "torrent_metadata_queue_name" {
-  type    = string
-  default = "torrent-metadata-jobs"
 }
 
 resource "azurerm_log_analytics_workspace" "main" {
@@ -139,8 +149,8 @@ resource "azurerm_container_app" "web" {
   }
 
   secret {
-    name  = "azure-storage-connection-string"
-    value = var.azure_storage_connection_string
+    name  = "r2-secret-access-key"
+    value = var.r2_secret_access_key
   }
 
   ingress {
@@ -216,16 +226,6 @@ resource "azurerm_container_app" "web" {
       }
 
       env {
-        name        = "MMV_AZURE_STORAGE_CONNECTION_STRING"
-        secret_name = "azure-storage-connection-string"
-      }
-
-      env {
-        name  = "MMV_AZURE_BLOB_CONTAINER"
-        value = var.azure_blob_container
-      }
-
-      env {
         name  = "MMV_ADMIN_OBJECT_IDS"
         value = jsonencode(var.admin_object_ids)
       }
@@ -251,8 +251,23 @@ resource "azurerm_container_app" "web" {
       }
 
       env {
-        name  = "MMV_TORRENT_METADATA_QUEUE"
-        value = var.torrent_metadata_queue_name
+        name  = "R2_ENDPOINT"
+        value = var.r2_endpoint
+      }
+
+      env {
+        name  = "R2_ACCESS_KEY_ID"
+        value = var.r2_access_key_id
+      }
+
+      env {
+        name        = "R2_SECRET_ACCESS_KEY"
+        secret_name = "r2-secret-access-key"
+      }
+
+      env {
+        name  = "R2_BUCKET_NAME"
+        value = var.r2_bucket_name
       }
     }
   }
@@ -289,12 +304,13 @@ resource "azurerm_function_app_flex_consumption" "torrent_metadata" {
     AUTH_MICROSOFT_ENTRA_ID_ISSUER             = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
     MONGODB_URI                                = var.mongodb_uri
     MMV_MONGODB_DB_NAME                        = var.mongodb_database
-    MMV_AZURE_STORAGE_CONNECTION_STRING        = var.azure_storage_connection_string
-    MMV_AZURE_BLOB_CONTAINER                   = var.azure_blob_container
-    MMV_TORRENT_METADATA_QUEUE                 = var.torrent_metadata_queue_name
     MMV_TORRENT_PROVIDER                       = var.torrent_provider
     MMV_TORRENT_RESOLVER_URLS                  = jsonencode(var.torrent_resolver_urls)
     MMV_TORRENT_FETCH_TIMEOUT_SECONDS          = tostring(var.torrent_fetch_timeout_seconds)
+    R2_ENDPOINT                                = var.r2_endpoint
+    R2_ACCESS_KEY_ID                           = var.r2_access_key_id
+    R2_SECRET_ACCESS_KEY                       = var.r2_secret_access_key
+    R2_BUCKET_NAME                             = var.r2_bucket_name
     APPLICATIONINSIGHTS_CONNECTION_STRING      = azurerm_application_insights.functions.connection_string
     ApplicationInsightsAgent_EXTENSION_VERSION = "~3"
     FUNCTIONS_EXTENSION_VERSION                = "~4"

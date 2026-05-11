@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => {
   };
 
   const connectMongo = vi.fn();
-  const queueStore = { sendJson: vi.fn() };
 
   const query = <T>(value: T) => ({
     select: () => ({
@@ -129,7 +128,6 @@ const mocks = vi.hoisted(() => {
       create: vi.fn(async (doc: Record<string, unknown>) => ({
         _id: "job-1",
         ...doc,
-        queueEnqueuedAt: null,
         createdAt: new Date("2024-01-01T00:00:00Z"),
         updatedAt: new Date("2024-01-01T00:00:00Z"),
         toObject() {
@@ -141,7 +139,7 @@ const mocks = vi.hoisted(() => {
     },
   };
 
-  return { connectMongo, models, queueStore, state };
+  return { connectMongo, models, state };
 });
 
 vi.mock("./db.js", () => ({
@@ -155,7 +153,6 @@ vi.mock("./db.js", () => ({
 
 vi.mock("./storage.js", () => ({
   buildBlobStore: () => ({ putBytes: vi.fn(), deleteIfExists: vi.fn() }),
-  buildQueueStore: () => mocks.queueStore,
 }));
 
 vi.mock("./torrent-provider.js", () => ({
@@ -163,13 +160,12 @@ vi.mock("./torrent-provider.js", () => ({
 }));
 
 vi.mock("./env.js", () => ({
-  getEnv: vi.fn(() => ({ torrentMetadataQueue: "metadata" })),
+  getEnv: vi.fn(() => ({})),
 }));
 
 describe("video tag persistence", () => {
   beforeEach(() => {
     mocks.connectMongo.mockClear();
-    mocks.queueStore.sendJson.mockClear();
     for (const model of Object.values(mocks.models)) {
       for (const fn of Object.values(model as Record<string, unknown>)) {
         if (typeof fn === "function" && "mockClear" in fn) {

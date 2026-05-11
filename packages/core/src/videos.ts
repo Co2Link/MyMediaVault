@@ -13,7 +13,7 @@ import {
 } from "./db.js";
 import { getEnv } from "./env.js";
 import { ConflictError, NotFoundError } from "./errors.js";
-import { buildBlobStore, buildQueueStore } from "./storage.js";
+import { buildBlobStore } from "./storage.js";
 import { buildTorrentProvider, type TorrentMetadata } from "./torrent-provider.js";
 import type { TagRead, TorrentFileRead, TorrentSummary, VideoDetail, VideoSummary } from "./types.js";
 import { normalizeInfoHash } from "./validation.js";
@@ -191,11 +191,42 @@ export async function enqueueTorrentMetadata(torrentId: string) {
     job = created.toObject();
   }
 
-  if (!job.queueEnqueuedAt) {
-    await sendTorrentMetadataQueueMessage(job._id);
-  }
-
   return job;
+}
+
+export async function claimNextTorrentMetadataJob(now = new Date()) {
+  await connectMongo();
+  const job = await TorrentMetadataJobModel.findOneAndUpdate(
+    { status: "queued" },
+    {
+      $set: {
+        status: "processing",
+        error: null,
+        lastDequeuedAt: now,
+      },
+    },
+    {
+      new: true,
+      sort: { createdAt: 1, _id: 1 },
+    },
+  )
+    .lean()
+    .exec();
+
+  return job as TorrentMetadataJobDoc | null;
+}
+
+export async function processPendingTorrentMetadataJobs(limit = 10) {
+  let processed = 0;
+  while (processed < limit) {
+    const job = await claimNextTorrentMetadataJob();
+    if (!job) {
+      break;
+    }
+    await processTorrentMetadataJob(job._id);
+    processed += 1;
+  }
+  return { processed };
 }
 
 export async function processTorrentMetadataJob(jobId: string) {
@@ -287,76 +318,13 @@ export async function processTorrentMetadataJob(jobId: string) {
   return { status: "succeeded" as const, jobId };
 }
 
-export function parseTorrentMetadataQueueMessage(raw: unknown) {
-  const value = unwrapQueueMessage(raw);
-  if (!value || typeof value !== "object") {
-    throw new Error("Torrent metadata queue message must be an object.");
-  }
-  const message = value as { version?: unknown; jobId?: unknown };
-  if (message.version !== 1 || typeof message.jobId !== "string" || !message.jobId) {
-    throw new Error("Invalid torrent metadata queue message.");
-  }
-  return { version: 1 as const, jobId: message.jobId };
-}
-
-function unwrapQueueMessage(raw: unknown) {
-  if (typeof raw === "string") {
-    return JSON.parse(raw);
-  }
-
-  if (raw instanceof Uint8Array) {
-    return JSON.parse(new TextDecoder().decode(raw));
-  }
-
-  if (raw && typeof raw === "object") {
-    const record = raw as Record<string, unknown>;
-    for (const key of ["messageText", "body", "content", "text"]) {
-      const value = record[key];
-      if (typeof value === "string") {
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
-      }
-      if (value instanceof Uint8Array) {
-        return JSON.parse(new TextDecoder().decode(value));
-      }
-    }
-  }
-
-  return raw;
-}
-
-export async function markTorrentMetadataPoisoned(raw: unknown) {
-  await connectMongo();
-  const message = parseTorrentMetadataQueueMessage(raw);
-  const job = await TorrentMetadataJobModel.findById(message.jobId).lean().exec();
-  if (!job || isFinalJobStatus(job.status)) {
-    return { status: "skipped" as const, jobId: message.jobId };
-  }
-  await TorrentMetadataJobModel.updateOne(
-    { _id: message.jobId },
-    {
-      $set: {
-        status: "dead_lettered",
-        error: "Queue message moved to poison queue after max dequeue attempts.",
-        finishedAt: new Date(),
-      },
-    },
-  ).exec();
-  return { status: "dead_lettered" as const, jobId: message.jobId };
-}
-
 export async function repairStaleTorrentMetadataJobs(now = new Date()) {
   await connectMongo();
   const env = getEnv();
-  const queuedBefore = new Date(now.getTime() - env.torrentRepairStaleQueuedMinutes * 60 * 1000);
   const processingBefore = new Date(now.getTime() - env.torrentRepairStaleProcessingMinutes * 60 * 1000);
   const jobs = (
     await TorrentMetadataJobModel.find({
       $or: [
-        { status: "queued", $or: [{ queueEnqueuedAt: null }, { queueEnqueuedAt: { $lt: queuedBefore } }] },
         { status: "processing", $or: [{ lastDequeuedAt: null }, { lastDequeuedAt: { $lt: processingBefore } }] },
       ],
     })
@@ -368,17 +336,9 @@ export async function repairStaleTorrentMetadataJobs(now = new Date()) {
 
   for (const job of jobs) {
     await TorrentMetadataJobModel.updateOne({ _id: job._id }, { $set: { status: "queued", error: null } }).exec();
-    await sendTorrentMetadataQueueMessage(job._id);
   }
 
   return { repaired: jobs.length };
-}
-
-async function sendTorrentMetadataQueueMessage(jobId: string) {
-  const env = getEnv();
-  const queueStore = buildQueueStore();
-  await queueStore.sendJson(env.torrentMetadataQueue, { version: 1, jobId });
-  await TorrentMetadataJobModel.updateOne({ _id: jobId }, { $set: { queueEnqueuedAt: new Date() } }).exec();
 }
 
 async function markTorrentMetadataFailed(jobId: string, torrentId: string, message: string) {
@@ -476,7 +436,7 @@ function groupVideoTags(videoTags: VideoTagDoc[]) {
 }
 
 function isFinalJobStatus(status: string) {
-  return status === "succeeded" || status === "failed" || status === "dead_lettered";
+  return status === "succeeded" || status === "failed";
 }
 
 function compareNewestVideoFirst(a: VideoDoc, b: VideoDoc) {

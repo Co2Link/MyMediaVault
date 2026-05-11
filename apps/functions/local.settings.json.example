@@ -10,10 +10,12 @@
     "AUTH_MICROSOFT_ENTRA_ID_ISSUER": "https://login.microsoftonline.com/your-tenant-id/v2.0",
     "MONGODB_URI": "mongodb://127.0.0.1:27017/mymediavault",
     "MMV_MONGODB_DB_NAME": "mymediavault",
-    "MMV_AZURE_BLOB_CONTAINER": "torrent-raw",
-    "MMV_TORRENT_METADATA_QUEUE": "torrent-metadata-jobs",
     "MMV_TORRENT_PROVIDER": "fake",
     "MMV_TORRENT_RESOLVER_URLS": "[]",
-    "MMV_TORRENT_FETCH_TIMEOUT_SECONDS": "20"
+    "MMV_TORRENT_FETCH_TIMEOUT_SECONDS": "20",
+    "R2_ENDPOINT": "https://example.r2.cloudflarestorage.com",
+    "R2_ACCESS_KEY_ID": "your-r2-access-key-id",
+    "R2_SECRET_ACCESS_KEY": "your-r2-secret-access-key",
+    "R2_BUCKET_NAME": "torrent-raw"
   }
 }

@@ -99,7 +99,6 @@ export type TorrentMetadataJobDoc = {
   status: JobStatus;
   attempt: number;
   error: string | null;
-  queueEnqueuedAt: Date | null;
   lastDequeuedAt: Date | null;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -239,13 +238,12 @@ const torrentMetadataJobSchema = new Schema<TorrentMetadataJobDoc>(
     torrentId: { type: String, required: true, index: true },
     status: {
       type: String,
-      enum: ["queued", "processing", "succeeded", "failed", "dead_lettered"],
+      enum: ["queued", "processing", "succeeded", "failed"],
       required: true,
       index: true,
     },
     attempt: { type: Number, required: true },
     error: { type: String, default: null },
-    queueEnqueuedAt: { type: Date, default: null },
     lastDequeuedAt: { type: Date, default: null },
     startedAt: { type: Date, default: null },
     finishedAt: { type: Date, default: null },

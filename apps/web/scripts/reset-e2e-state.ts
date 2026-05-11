@@ -1,9 +1,6 @@
 import "../load-env";
-import { BlobServiceClient } from "@azure/storage-blob";
 import { resetE2EState, db } from "@mymediavault/core/db";
-import { rm } from "node:fs/promises";
-import path from "node:path";
-import { getEnv } from "../src/lib/env";
+import { buildBlobStore } from "@mymediavault/core/storage";
 
 async function main() {
   const usernames = [process.env.E2E_USER_USERNAME, process.env.E2E_ADMIN_USERNAME].filter(
@@ -22,17 +19,8 @@ async function deleteRawBlobs(keys: string[]) {
     return;
   }
 
-  const env = getEnv();
-  if (env.azureStorageConnectionString) {
-    const container = BlobServiceClient.fromConnectionString(env.azureStorageConnectionString).getContainerClient(
-      env.azureBlobContainer,
-    );
-    await Promise.all(keys.map((key) => container.deleteBlob(key).catch(() => undefined)));
-    return;
-  }
-
-  const root = path.join(process.cwd(), ".local", "blob-storage");
-  await Promise.all(keys.map((key) => rm(path.join(root, key), { force: true })));
+  const blobStore = buildBlobStore();
+  await Promise.all(keys.map((key) => blobStore.deleteIfExists(key)));
 }
 
 void main()

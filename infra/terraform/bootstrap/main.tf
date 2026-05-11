@@ -1,45 +1,59 @@
-variable "location" {
-  type    = string
-  default = "japaneast"
+variable "r2_endpoint" {
+  type        = string
+  description = "Cloudflare R2 S3-compatible endpoint."
 }
 
-variable "resource_group_name" {
-  type    = string
-  default = "rg-mymediavault-tfstate"
+variable "r2_access_key_id" {
+  type        = string
+  sensitive   = true
+  description = "Cloudflare R2 access key ID."
 }
 
-variable "storage_account_name" {
-  type    = string
-  default = "mymediavaulttfstate"
+variable "r2_secret_access_key" {
+  type        = string
+  sensitive   = true
+  description = "Cloudflare R2 secret access key."
 }
 
-resource "azurerm_resource_group" "state" {
-  name     = var.resource_group_name
-  location = var.location
+variable "state_bucket_name" {
+  type        = string
+  default     = "mymediavault-tfstate"
+  description = "Bucket name for Terraform state."
 }
 
-resource "azurerm_storage_account" "state" {
-  name                     = var.storage_account_name
-  resource_group_name      = azurerm_resource_group.state.name
-  location                 = azurerm_resource_group.state.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
+variable "state_key" {
+  type        = string
+  default     = "bootstrap/terraform.tfstate"
+  description = "Object key for bootstrap Terraform state."
 }
 
-resource "azurerm_storage_container" "state" {
-  name                  = "tfstate"
-  storage_account_id    = azurerm_storage_account.state.id
-  container_access_type = "private"
+provider "aws" {
+  region                      = "auto"
+  access_key                  = var.r2_access_key_id
+  secret_key                  = var.r2_secret_access_key
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  skip_requesting_account_id  = true
+  s3_use_path_style           = true
+
+  endpoints {
+    s3 = var.r2_endpoint
+  }
 }
 
-output "resource_group_name" {
-  value = azurerm_resource_group.state.name
+resource "aws_s3_bucket" "state" {
+  bucket = var.state_bucket_name
 }
 
-output "storage_account_name" {
-  value = azurerm_storage_account.state.name
+resource "aws_s3_bucket" "torrent_raw" {
+  bucket = "torrent-raw"
 }
 
-output "container_name" {
-  value = azurerm_storage_container.state.name
+output "state_bucket_name" {
+  value = aws_s3_bucket.state.bucket
+}
+
+output "torrent_raw_bucket_name" {
+  value = aws_s3_bucket.torrent_raw.bucket
 }

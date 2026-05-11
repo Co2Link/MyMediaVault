@@ -1,7 +1,7 @@
 export const metadataStatuses = ["pending", "processing", "succeeded", "failed"] as const;
 export type MetadataStatus = (typeof metadataStatuses)[number];
 
-export const jobStatuses = ["queued", "processing", "succeeded", "failed", "dead_lettered"] as const;
+export const jobStatuses = ["queued", "processing", "succeeded", "failed"] as const;
 export type JobStatus = (typeof jobStatuses)[number];
 
 export type TagRead = {

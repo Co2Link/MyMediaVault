@@ -29,8 +29,8 @@ erDiagram
 - `tags`: global tag catalog keyed by unique tag name.
 - `video_tags`: many-to-many links between videos and tags, replaced from the
   add and detail forms when a user saves tag selections.
-- `torrent_metadata_jobs`: audit records for Storage Queue-backed metadata
-  processing attempts.
+- `torrent_metadata_jobs`: audit records for timer-driven metadata processing
+  attempts.
 
 ## Important Constraints
 
@@ -53,7 +53,6 @@ unique.
 `Torrent.metadataStatus` tracks `pending`, `processing`, `succeeded`, or
 `failed`. Failed metadata processing stores `metadataError`; successful
 processing stores `name`, `sizeBytes`, `rawBlobKey`, and ordered files.
-`TorrentMetadataJob` records `queued`, `processing`, `succeeded`, `failed`, and
-`dead_lettered` attempts. Queue timing fields (`queueEnqueuedAt`,
-`lastDequeuedAt`, `startedAt`, and `finishedAt`) support duplicate-message
-handling, poison-queue auditing, and timer-trigger repair.
+`TorrentMetadataJob` records `queued`, `processing`, `succeeded`, and
+`failed` attempts. Timing fields (`lastDequeuedAt`, `startedAt`, and
+`finishedAt`) support duplicate-job handling and timer-trigger repair.

@@ -113,12 +113,6 @@ export MMV_AZURE_STORAGE_CONNECTION_STRING="${MMV_AZURE_STORAGE_CONNECTION_STRIN
 export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:3000}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:3000/api/health}"
 PLAYWRIGHT_ARGS=("$@")
-RUN_ID="${RUN_ID:-$(date +%s)-$$}"
-GENERATED_TORRENT_METADATA_QUEUE=0
-if [[ -z "${MMV_TORRENT_METADATA_QUEUE:-}" ]]; then
-  export MMV_TORRENT_METADATA_QUEUE="torrent-metadata-jobs-${RUN_ID}"
-  GENERATED_TORRENT_METADATA_QUEUE=1
-fi
 
 if [[ "${E2E_INCLUDE_MANUAL_TORRENT_TESTS:-}" != "1" ]]; then
   PLAYWRIGHT_ARGS+=(--grep-invert "@manual-torrent")
@@ -135,11 +129,6 @@ if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
   log "Forced stack restart requested. Existing auth state and local processes will be cleared."
   stop_existing_local_stack
   rm -rf "$E2E_DIR/.auth"
-fi
-
-if [[ "$GENERATED_TORRENT_METADATA_QUEUE" == "1" ]]; then
-  log "Using isolated queue $MMV_TORRENT_METADATA_QUEUE. Existing local worker processes will be restarted."
-  pkill -9 -f "[m]anual-worker.js" >/dev/null 2>&1 || true
 fi
 
 log "Resetting Playwright user data and orphaned torrent state. Logs: $LOG_DIR/reset.log"
@@ -160,7 +149,7 @@ else
   log "Reusing existing Next.js dev server at $E2E_BASE_URL."
 fi
 
-if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || [[ "$GENERATED_TORRENT_METADATA_QUEUE" == "1" ]] || ! pgrep -f "manual-worker.js" >/dev/null 2>&1; then
+if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! pgrep -f "manual-worker.js" >/dev/null 2>&1; then
   log "Starting Functions worker. Logs: $LOG_DIR/worker.log"
   (
     cd "$FUNCTIONS_DIR"

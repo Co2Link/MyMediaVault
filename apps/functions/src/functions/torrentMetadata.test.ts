@@ -1,15 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-describe("torrent metadata functions", () => {
-  it("uses the default torrent metadata queue name", async () => {
-    const previous = process.env.MMV_TORRENT_METADATA_QUEUE;
-    delete process.env.MMV_TORRENT_METADATA_QUEUE;
+const mocks = vi.hoisted(() => ({
+  timer: vi.fn(),
+}));
+
+vi.mock("@azure/functions", () => ({
+  app: {
+    timer: mocks.timer,
+  },
+}));
+
+describe("torrent metadata function registration", () => {
+  it("registers the timer trigger", async () => {
     await import("./torrentMetadata.js");
-    expect(process.env.MMV_TORRENT_METADATA_QUEUE).toBeUndefined();
-    if (previous === undefined) {
-      delete process.env.MMV_TORRENT_METADATA_QUEUE;
-    } else {
-      process.env.MMV_TORRENT_METADATA_QUEUE = previous;
-    }
+
+    expect(mocks.timer).toHaveBeenCalledWith(
+      "processTorrentMetadata",
+      expect.objectContaining({
+        schedule: "0 * * * * *",
+      }),
+    );
   });
 });

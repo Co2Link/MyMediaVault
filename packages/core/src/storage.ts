@@ -1,5 +1,4 @@
-import { BlobServiceClient } from "@azure/storage-blob";
-import { QueueClient } from "@azure/storage-queue";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getEnv } from "./env.js";
@@ -8,10 +7,6 @@ export interface BlobStore {
   putBytes(key: string, data: Uint8Array): Promise<string>;
   getBytes(key: string): Promise<Uint8Array>;
   deleteIfExists(key: string): Promise<void>;
-}
-
-export interface QueueStore {
-  sendJson(queueName: string, payload: unknown): Promise<void>;
 }
 
 class FileSystemBlobStore implements BlobStore {
@@ -33,55 +28,65 @@ class FileSystemBlobStore implements BlobStore {
   }
 }
 
-class AzureBlobStore implements BlobStore {
-  private readonly container;
+class R2BlobStore implements BlobStore {
+  private readonly client: S3Client;
 
-  constructor(connectionString: string, containerName: string) {
-    const client = BlobServiceClient.fromConnectionString(connectionString);
-    this.container = client.getContainerClient(containerName);
+  constructor(
+    private readonly endpoint: string,
+    private readonly bucketName: string,
+    accessKeyId: string,
+    secretAccessKey: string,
+  ) {
+    this.client = new S3Client({
+      region: "auto",
+      endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
   }
 
   async putBytes(key: string, data: Uint8Array) {
-    await this.container.createIfNotExists();
-    const blob = this.container.getBlockBlobClient(key);
-    await blob.deleteIfExists();
-    await blob.uploadData(data);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: data,
+      }),
+    );
     return key;
   }
 
   async getBytes(key: string) {
-    const result = await this.container.getBlobClient(key).downloadToBuffer();
-    return new Uint8Array(result);
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      }),
+    );
+    const body = result.Body;
+    if (!body || typeof (body as { transformToByteArray?: () => Promise<Uint8Array> }).transformToByteArray !== "function") {
+      throw new Error(`Failed to read object ${key} from R2 bucket ${this.bucketName}.`);
+    }
+    return await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
   }
 
   async deleteIfExists(key: string) {
-    await this.container.deleteBlob(key).catch(() => undefined);
-  }
-}
-
-class AzureQueueStore implements QueueStore {
-  constructor(private readonly connectionString: string) {}
-
-  async sendJson(queueName: string, payload: unknown) {
-    const queue = new QueueClient(this.connectionString, queueName);
-    await queue.createIfNotExists();
-    await queue.sendMessage(JSON.stringify(payload));
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      }),
+    );
   }
 }
 
 export function buildBlobStore(): BlobStore {
   const env = getEnv();
-  if (env.azureStorageConnectionString) {
-    return new AzureBlobStore(env.azureStorageConnectionString, env.azureBlobContainer);
+  if (env.r2Endpoint && env.r2AccessKeyId && env.r2SecretAccessKey) {
+    return new R2BlobStore(env.r2Endpoint, env.r2BucketName, env.r2AccessKeyId, env.r2SecretAccessKey);
   }
   return new FileSystemBlobStore(path.join(process.cwd(), ".local", "blob-storage"));
-}
-
-export function buildQueueStore(): QueueStore {
-  const env = getEnv();
-  const connectionString = env.azureStorageConnectionString ?? env.azureWebJobsStorage;
-  if (!connectionString) {
-    throw new Error("Missing MMV_AZURE_STORAGE_CONNECTION_STRING or AzureWebJobsStorage for queue operations.");
-  }
-  return new AzureQueueStore(connectionString);
 }

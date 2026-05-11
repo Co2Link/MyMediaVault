@@ -46,12 +46,14 @@ deployment work.
    prerequisites. The smoke check validates the new commit only when a web image
    was deployed.
 
-The dev Terraform stack uses repo-owned Azure Blob remote state:
+The dev Terraform stack uses Cloudflare R2-backed remote state:
 
-- resource group: `rg-mymediavault-tfstate`
-- storage account: `mymediavaulttfstate`
-- container: `tfstate`
-- app state key: `mymediavault-dev.tfstate`
+- bucket: `mymediavault-tfstate`
+- state key: `envs/dev/terraform.tfstate`
+- backend: Terraform S3-compatible backend configured with the R2 endpoint
+
+Bootstrap state is written locally once under `infra/terraform/bootstrap`, which
+creates the R2 bucket before the remote backends are initialized.
 
 ## Azure Resources
 
@@ -65,16 +67,16 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   The app can scale to zero and now uses a 300-second scale-in cooldown so it
   stops billing idle replicas sooner.
 - Functions: Azure Functions Flex Consumption Node.js 22 app with one maximum
-  instance, 512 MB instance memory, queue trigger, poison queue handler, and
-  timer repair trigger.
+  instance, 512 MB instance memory, and a timer trigger that polls queued jobs
+  from MongoDB.
   It receives the same auth settings as the web app because the shared core
   environment loader is used by both HTTP and worker code paths.
-- Database: Azure Cosmos DB for MongoDB account created by this repository,
-  configured for MongoDB 4.2 compatibility so the Node MongoDB driver can
-  connect through Mongoose.
-- Storage: Standard LRS storage account in the same region as the dev compute
-  resources, with private `torrent-raw` and `function-packages` containers plus
-  the `torrent-metadata-jobs` queue.
+- Database: Azure Cosmos DB for MongoDB free-tier account created by this
+  repository, configured for MongoDB 4.2 compatibility so the Node MongoDB
+  driver can connect through Mongoose.
+- Storage: Azure Blob is only used for the Functions package deployment
+  container. Raw torrent blobs live in Cloudflare R2, and Terraform state uses
+  the R2 backend.
 - Observability: Log Analytics workspace with 30-day retention and
   workspace-based Application Insights for the Function App.
 
@@ -95,7 +97,7 @@ exceptions
 
 ```kusto
 traces
-| where message has "dead_lettered" or message has "poison"
+| where message has "Torrent metadata jobs repaired"
 | order by timestamp desc
 ```
 

@@ -39,7 +39,7 @@ application.
   flag, name, email, and image.
 - Adding a video normalizes the info hash, reuses or creates the canonical
   torrent, creates the user-owned video, attaches any selected tags, and
-  enqueues a Storage Queue-backed metadata job.
+  creates a MongoDB-backed metadata job.
 - Updating a video detail view can change the private fields and replace the
   video's existing tag links with the selected catalog tags.
 - Deleting a video removes its private tags and, when it was the last video
@@ -72,12 +72,12 @@ Auth.js config in `apps/web/src/auth.ts`.
 | `MMV_COMMIT_SHA` | Commit label for health/debug output. |
 | `MMV_ADMIN_OBJECT_IDS` | Entra object IDs with admin access. |
 | `MMV_ADMIN_GROUP_OBJECT_IDS` | Entra group IDs with admin access. |
-| `MMV_AZURE_STORAGE_CONNECTION_STRING` | Preferred storage connection string. |
-| `AzureWebJobsStorage` | Storage fallback when the preferred string is absent. |
-| `MMV_AZURE_BLOB_CONTAINER` | Raw torrent blob container. |
-| `MMV_TORRENT_METADATA_QUEUE` | Queue used for metadata jobs. |
 | `MMV_TORRENT_PROVIDER` | Torrent provider mode. |
 | `MMV_TORRENT_RESOLVER_URLS` | HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | HTTP torrent fetch timeout. |
 | `MMV_TORRENT_REPAIR_STALE_QUEUED_MINUTES` | Stale queued-job threshold. |
 | `MMV_TORRENT_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing-job threshold. |
+| `R2_ENDPOINT` | Cloudflare R2 S3-compatible endpoint. |
+| `R2_ACCESS_KEY_ID` | Cloudflare R2 access key ID. |
+| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
+| `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |

@@ -14,8 +14,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.850.0",
     "@mymediavault/core": "file:../../packages/core",
-    "@azure/storage-blob": "^12.31.0",
     "bencode": "^4.0.0",
     "dotenv": "^17.4.2",
     "mongoose": "^8.20.1",
