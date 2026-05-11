@@ -16,7 +16,7 @@ variable "database_name" {
 }
 
 module "mongo_vcore" {
-  source = "/workspaces/shared-infra/modules/azure/mongo-vcore"
+  source = "../mongo-vcore"
 
   cluster_name           = "${var.prefix}-mongo"
   location               = var.location
