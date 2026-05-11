@@ -176,7 +176,6 @@ jobs:
       TF_VAR_r2_access_key_id: ${{ vars.R2_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
       TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       TF_VAR_r2_bucket_name: ${{ vars.R2_BUCKET_NAME || 'torrent-raw' }}
-      TF_VAR_worker_image: ${{ needs.worker_image.outputs.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -197,6 +196,7 @@ jobs:
           {
             echo "TF_VAR_app_image=${repo}:${HEAD_SHA}"
             echo "TF_VAR_app_commit_sha=${HEAD_SHA}"
+            echo "TF_VAR_worker_image=${repo}-worker:${HEAD_SHA}"
           } >> "$GITHUB_ENV"
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -229,6 +229,7 @@ jobs:
           {
             echo "TF_VAR_app_image=${current_image}"
             echo "TF_VAR_app_commit_sha=${current_commit}"
+            echo "TF_VAR_worker_image=${IMAGE_REPOSITORY}-worker:${current_commit}"
           } >> "$GITHUB_ENV"
         env:
           IMAGE_REPOSITORY: ${{ env.IMAGE_REPOSITORY }}
