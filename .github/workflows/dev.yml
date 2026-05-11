@@ -172,7 +172,6 @@ jobs:
       TF_VAR_auth_entra_client_secret: ${{ secrets.AUTH_MICROSOFT_ENTRA_ID_SECRET }}
       TF_VAR_admin_object_ids: ${{ vars.TF_VAR_ADMIN_OBJECT_IDS || '[]' }}
       TF_VAR_admin_group_object_ids: ${{ vars.TF_VAR_ADMIN_GROUP_OBJECT_IDS || '[]' }}
-      TF_VAR_worker_image: ${{ needs.worker_image.outputs.image }}
       TF_VAR_r2_endpoint: ${{ vars.R2_ENDPOINT }}
       TF_VAR_r2_access_key_id: ${{ vars.R2_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
       TF_VAR_r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -200,6 +199,17 @@ jobs:
           } >> "$GITHUB_ENV"
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Use worker image
+        shell: bash
+        run: |
+          if [[ -z "${WORKER_IMAGE}" ]]; then
+            echo "Unable to resolve the worker image." >&2
+            exit 1
+          fi
+          echo "TF_VAR_worker_image=${WORKER_IMAGE}" >> "$GITHUB_ENV"
+        env:
+          WORKER_IMAGE: ${{ needs.worker_image.outputs.image }}
 
       - name: Use current deployed image
         if: ${{ needs.changes.outputs.web != 'true' }}
