@@ -6,13 +6,13 @@ release workflows are intentionally out of scope until requested.
 ## CI
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `develop` or
-`main`. It uses path filters so the web and Functions jobs only run when the
+`main`. It uses path filters so the web and worker jobs only run when the
 shared app/core code changes, and the Terraform job only runs when infrastructure
 changes. Pushes to `develop` also publish the same path-filter results for the
 dev deployment workflow.
 
 - Web job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
-- Functions job: Node 22, `npm ci`, `npm run build`, and `npm run test`.
+- Worker job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
 - Terraform job: `terraform fmt -check -recursive ../..`,
   `terraform init -backend=false`, and `terraform validate`.
 - CI result job: verifies that every required or skipped validation job reached
@@ -31,7 +31,7 @@ deployment work.
 
 1. It builds and pushes the web Docker image from `apps/web/Dockerfile` only
    when the web app or shared core package changes.
-1. It builds and pushes the worker Docker image from `apps/functions/Dockerfile`
+1. It builds and pushes the worker Docker image from `apps/worker/Dockerfile`
    whenever the Dev workflow runs.
 2. It runs `terraform init -reconfigure`, `terraform plan`, and
    `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
@@ -42,7 +42,7 @@ deployment work.
    Terraform also ran, Terraform applies the new image; otherwise Azure CLI
    updates the Container App image and commit environment variable.
 4. It smoke-checks `GET /api/health` on the deployed web app and verifies that
-   the scheduled worker job exists after successful CI and successful or
+   the event-driven worker job exists after successful CI and successful or
    skipped deploy prerequisites. The smoke check validates the new commit only
    when a web image was deployed.
 
@@ -66,18 +66,19 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   redirects return to the deployed app instead of an internal runtime address.
   The app can scale to zero and now uses a 300-second scale-in cooldown so it
   stops billing idle replicas sooner.
-- Worker: scheduled Azure Container Apps job that runs the metadata poller on a
-  cron schedule. It uses the same auth settings as the web app because the
-  shared core environment loader is used by both HTTP and worker code paths.
+- Worker: event-driven Azure Container Apps job that uses the KEDA MongoDB
+  scaler to start when queued torrent metadata jobs exist. It uses the same auth
+  settings as the web app because the shared core environment loader is used by
+  both HTTP and worker code paths.
 - Database: Azure Cosmos DB for MongoDB free-tier account created by this
   repository, configured for MongoDB 4.2 compatibility so the Node MongoDB
   driver can connect through Mongoose.
 - Storage: raw torrent blobs live in Cloudflare R2, and Terraform state uses
   the R2 backend.
-- Observability: Log Analytics workspace with 30-day retention and
-  workspace-based Application Insights for the worker job and web app.
+- Observability: Log Analytics workspace with 30-day retention for the worker
+  job and web app.
 
-## Function KQL
+## Worker KQL
 
 Useful starter queries in the Log Analytics workspace:
 

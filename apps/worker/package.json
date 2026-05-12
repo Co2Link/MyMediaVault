@@ -1,21 +1,17 @@
 {
-  "name": "functions",
+  "name": "mymediavault-worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
     "prebuild": "npm --prefix ../../packages/core run build",
     "build": "tsc -p tsconfig.json",
-    "prestart": "npm run build",
-    "start": "func start --port ${FUNCTIONS_PORT:-7071}",
     "manual-worker": "node dist/manual-worker.js",
-    "scheduled-worker": "node dist/scheduled-worker.js",
     "pretest": "npm --prefix ../../packages/core run build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "event-worker": "node dist/event-worker.js"
   },
   "dependencies": {
-    "@azure/functions": "^4.8.0",
     "@aws-sdk/client-s3": "^3.850.0",
     "@mymediavault/core": "file:../../packages/core",
     "mongoose": "^8.20.1"

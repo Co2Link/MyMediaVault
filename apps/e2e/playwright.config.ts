@@ -24,7 +24,13 @@ export default defineConfig({
     {
       name: "user-chromium",
       dependencies: ["setup"],
-      testIgnore: [/auth\..*\.setup\.ts/, /admin-tags-admin\.spec\.ts/, /admin-torrents-admin\.spec\.ts/, /header\.spec\.ts/],
+      testIgnore: [
+        /auth\..*\.setup\.ts/,
+        /admin-tags-admin\.spec\.ts/,
+        /admin-torrents-admin\.spec\.ts/,
+        /header\.spec\.ts/,
+        /smoke-dev\.spec\.ts/,
+      ],
       use: {
         ...devices["Desktop Chrome"],
         storageState: userAuthFile,
@@ -46,6 +52,15 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         storageState: adminAuthFile,
+      },
+    },
+    {
+      name: "smoke-dev-chromium",
+      dependencies: ["setup"],
+      testMatch: /smoke-dev\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: userAuthFile,
       },
     },
   ],

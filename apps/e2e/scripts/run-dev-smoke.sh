@@ -55,13 +55,13 @@ require_successful_workflow() {
 }
 
 source_optional_file "$WEB_DIR/.env.local"
-source_optional_file "$E2E_DIR/.env.local"
+source_optional_file "$E2E_DIR/.env.dev"
 
 : "${E2E_BASE_URL:?Set E2E_BASE_URL to the deployed dev web URL.}"
-: "${E2E_USER_USERNAME:?Missing E2E_USER_USERNAME in apps/e2e/.env.local.}"
-: "${E2E_USER_PASSWORD:?Missing E2E_USER_PASSWORD in apps/e2e/.env.local.}"
-: "${E2E_ADMIN_USERNAME:?Missing E2E_ADMIN_USERNAME in apps/e2e/.env.local.}"
-: "${E2E_ADMIN_PASSWORD:?Missing E2E_ADMIN_PASSWORD in apps/e2e/.env.local.}"
+: "${E2E_USER_USERNAME:?Missing E2E_USER_USERNAME in apps/e2e/.env.dev.}"
+: "${E2E_USER_PASSWORD:?Missing E2E_USER_PASSWORD in apps/e2e/.env.dev.}"
+: "${E2E_ADMIN_USERNAME:?Missing E2E_ADMIN_USERNAME in apps/e2e/.env.dev.}"
+: "${E2E_ADMIN_PASSWORD:?Missing E2E_ADMIN_PASSWORD in apps/e2e/.env.dev.}"
 : "${MONGODB_URI:?Missing MONGODB_URI for dev Cosmos DB verification.}"
 
 if [[ "$E2E_BASE_URL" == http://localhost:* || "$E2E_BASE_URL" == http://127.0.0.1:* ]]; then
@@ -79,5 +79,4 @@ rm -rf "$E2E_DIR/.auth"
 
 log "Running deployed dev smoke against $E2E_BASE_URL."
 cd "$E2E_DIR"
-export E2E_DEV_SMOKE=1
-npx playwright test tests/smoke-dev.spec.ts --project=user-chromium
+npx playwright test tests/smoke-dev.spec.ts --project=smoke-dev-chromium

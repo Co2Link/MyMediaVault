@@ -35,14 +35,14 @@ else
   skip_section "web checks"
 fi
 
-if has_staged_changes_in "apps/functions" || has_staged_changes_in "packages/core"; then
-  run_in apps/functions npm run build
-  run_in apps/functions npm run test
+if has_staged_changes_in "apps/worker" || has_staged_changes_in "packages/core"; then
+  run_in apps/worker npm run build
+  run_in apps/worker npm run test
 else
-  skip_section "functions checks"
+  skip_section "worker checks"
 fi
 
-if has_staged_changes_in "apps/web" || has_staged_changes_in "apps/functions" || has_staged_changes_in "apps/e2e" || has_staged_changes_in "packages/core"; then
+if has_staged_changes_in "apps/web" || has_staged_changes_in "apps/worker" || has_staged_changes_in "apps/e2e" || has_staged_changes_in "packages/core"; then
   run_in apps/e2e npm run test:local
 else
   skip_section "e2e checks"

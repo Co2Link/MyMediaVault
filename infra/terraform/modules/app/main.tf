@@ -102,14 +102,6 @@ resource "azurerm_log_analytics_workspace" "main" {
   retention_in_days   = 30
 }
 
-resource "azurerm_application_insights" "functions" {
-  name                = "${var.prefix}-functions-ai"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  application_type    = "web"
-  workspace_id        = azurerm_log_analytics_workspace.main.id
-}
-
 resource "azurerm_container_app_environment" "main" {
   name                       = "${var.prefix}-apps"
   location                   = var.location
@@ -291,10 +283,32 @@ resource "azurerm_container_app_job" "torrent_metadata" {
     value = var.r2_secret_access_key
   }
 
-  schedule_trigger_config {
-    cron_expression          = "*/1 * * * *"
+  event_trigger_config {
     parallelism              = 1
     replica_completion_count = 1
+
+    scale {
+      min_executions              = 0
+      max_executions              = 1
+      polling_interval_in_seconds = 60
+
+      rules {
+        name             = "queued-torrent-metadata"
+        custom_rule_type = "mongodb"
+        metadata = {
+          activationQueryValue = "0"
+          collection           = "torrentmetadatajobs"
+          dbName               = var.mongodb_database
+          query                = jsonencode({ status = "queued" })
+          queryValue           = "1"
+        }
+
+        authentication {
+          secret_name       = "mongodb-uri"
+          trigger_parameter = "connectionString"
+        }
+      }
+    }
   }
 
   template {
@@ -303,8 +317,8 @@ resource "azurerm_container_app_job" "torrent_metadata" {
       image   = var.worker_image
       cpu     = 0.25
       memory  = "0.5Gi"
-      command = ["npm"]
-      args    = ["run", "scheduled-worker"]
+      command = ["node"]
+      args    = ["dist/event-worker.js"]
 
       env {
         name  = "NODE_ENV"

@@ -27,7 +27,7 @@ variable "app_image" {
 
 variable "worker_image" {
   type        = string
-  description = "Docker image to deploy to the scheduled worker job."
+  description = "Docker image to deploy to the event-driven worker job."
 }
 
 variable "app_commit_sha" {

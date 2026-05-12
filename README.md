@@ -10,7 +10,7 @@ description, and rating.
 
 ```text
 apps/web          Next.js full-stack app
-apps/functions    Azure Functions queue worker
+apps/worker       Container Apps worker job
 apps/e2e          Playwright tests
 packages/core     Shared Mongoose/domain/storage/torrent logic
 docs              Project docs
@@ -33,7 +33,7 @@ Enable the tracked pre-commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook runs core, web, Functions, e2e, and Terraform checks selectively based
+The hook runs core, web, worker, e2e, and Terraform checks selectively based
 on staged paths. The local authenticated Playwright browser suite uses
 `apps/e2e/.env.local`, so Entra test-user credentials must be available there.
 
@@ -50,9 +50,9 @@ Run locally:
 
 ```bash
 npm run dev
-cd ../functions
+cd ../worker
 npm ci
-npm run start
+npm run manual-worker
 ```
 
 ## End-to-End Tests

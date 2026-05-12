@@ -12,9 +12,6 @@ npm install -g @fission-ai/openspec@latest
 # Install Azure CLI
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
-# Install Azure Functions Core Tools
-npm install -g azure-functions-core-tools@4
-
 # Install OpenAI Codex CLI gobally
 npm i -g @openai/codex
 

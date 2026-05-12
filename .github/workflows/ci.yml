@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.filter.outputs.web }}
-      functions: ${{ steps.filter.outputs.functions }}
+      worker: ${{ steps.filter.outputs.worker }}
       terraform: ${{ steps.filter.outputs.terraform }}
     steps:
       - uses: actions/checkout@v5
@@ -24,9 +24,9 @@ jobs:
               - '.github/workflows/**'
               - 'apps/web/**'
               - 'packages/core/**'
-            functions:
+            worker:
               - '.github/workflows/**'
-              - 'apps/functions/**'
+              - 'apps/worker/**'
               - 'packages/core/**'
             terraform:
               - '.github/workflows/**'
@@ -37,7 +37,7 @@ jobs:
           mkdir -p dev-change-flags
           {
             echo "web=${{ steps.filter.outputs.web }}"
-            echo "functions=${{ steps.filter.outputs.functions }}"
+            echo "worker=${{ steps.filter.outputs.worker }}"
             echo "terraform=${{ steps.filter.outputs.terraform }}"
           } > dev-change-flags/flags.env
       - uses: actions/upload-artifact@v4
@@ -78,13 +78,13 @@ jobs:
       - run: npm run build
       - run: npm run test
 
-  functions:
+  worker:
     needs: changes
-    if: ${{ needs.changes.outputs.functions == 'true' }}
+    if: ${{ needs.changes.outputs.worker == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/functions
+        working-directory: apps/worker
     env:
       MONGODB_URI: mongodb://127.0.0.1:27017/mymediavault
       MMV_MONGODB_DB_NAME: mymediavault
@@ -93,10 +93,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: |
-            apps/functions/package-lock.json
+            apps/worker/package-lock.json
             packages/core/package-lock.json
       - run: npm --prefix ../../packages/core ci
       - run: npm ci
@@ -112,6 +112,7 @@ jobs:
         working-directory: infra/terraform/envs/dev
     env:
       TF_VAR_app_image: docker.io/example/mymediavault:validate
+      TF_VAR_worker_image: docker.io/example/mymediavault-worker:validate
       TF_VAR_app_commit_sha: validate
       TF_VAR_auth_secret: test-auth-secret
       TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT }}
@@ -134,7 +135,7 @@ jobs:
     needs:
       - changes
       - web
-      - functions
+      - worker
       - terraform
     runs-on: ubuntu-latest
     steps:
@@ -143,12 +144,12 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB_RESULT: ${{ needs.web.result }}
-          FUNCTIONS_RESULT: ${{ needs.functions.result }}
+          WORKER_RESULT: ${{ needs.worker.result }}
           TERRAFORM_RESULT: ${{ needs.terraform.result }}
         run: |
           test "$CHANGES_RESULT" = "success"
 
-          for result in "$WEB_RESULT" "$FUNCTIONS_RESULT" "$TERRAFORM_RESULT"; do
+          for result in "$WEB_RESULT" "$WORKER_RESULT" "$TERRAFORM_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) exit 1 ;;

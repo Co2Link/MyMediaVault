@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 E2E_DIR="$ROOT_DIR/apps/e2e"
 WEB_DIR="$ROOT_DIR/apps/web"
-FUNCTIONS_DIR="$ROOT_DIR/apps/functions"
+WORKER_DIR="$ROOT_DIR/apps/worker"
 LOG_DIR="$E2E_DIR/.logs"
 
 mkdir -p "$LOG_DIR"
@@ -45,10 +45,9 @@ wait_for_http() {
 }
 
 stop_existing_local_stack() {
-  log "Stopping any existing local Next.js dev server and Functions worker processes."
-  pkill -f "/workspaces/MyMediaVault/apps/web/node_modules/.bin/next dev" >/dev/null 2>&1 || true
+  log "Stopping any existing local Next.js dev server and worker processes."
+  pkill -f "$WEB_DIR/node_modules/.bin/next dev" >/dev/null 2>&1 || true
   pkill -f "next dev --hostname localhost --port 3000" >/dev/null 2>&1 || true
-  pkill -f "[f]unc start" >/dev/null 2>&1 || true
   pkill -9 -f "[m]anual-worker.js" >/dev/null 2>&1 || true
 }
 
@@ -85,12 +84,12 @@ cleanup() {
     log "Leaving existing Next.js dev server running because this run did not start it."
   fi
   if [[ -n "${WORKER_PID:-}" ]]; then
-    log "Stopping Functions worker started by this run (process group $WORKER_PID)."
-    stop_managed_process "$WORKER_PID" "Functions worker"
+    log "Stopping worker started by this run (process group $WORKER_PID)."
+    stop_managed_process "$WORKER_PID" "worker"
     wait "$WORKER_PID" >/dev/null 2>&1 || true
     pkill -9 -f "[m]anual-worker.js" >/dev/null 2>&1 || true
   else
-    log "Leaving existing Functions worker running because this run did not start it."
+    log "Leaving existing worker running because this run did not start it."
   fi
   log "run-local.sh exiting with code $exit_code."
   exit "$exit_code"
@@ -111,6 +110,10 @@ export MMV_MONGODB_DB_NAME="${MMV_MONGODB_DB_NAME:-mymediavault}"
 export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:3000}"
 HEALTH_URL="${HEALTH_URL:-http://localhost:3000/api/health}"
 PLAYWRIGHT_ARGS=("$@")
+
+if [[ "${#PLAYWRIGHT_ARGS[@]}" -eq 0 ]]; then
+  PLAYWRIGHT_ARGS+=(--project=user-chromium --project=header-chromium --project=admin-chromium)
+fi
 
 if [[ "${E2E_INCLUDE_MANUAL_TORRENT_TESTS:-}" != "1" ]]; then
   PLAYWRIGHT_ARGS+=(--grep-invert "@manual-torrent")
@@ -148,16 +151,16 @@ else
 fi
 
 if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! pgrep -f "manual-worker.js" >/dev/null 2>&1; then
-  log "Starting Functions worker. Logs: $LOG_DIR/worker.log"
+  log "Starting worker. Logs: $LOG_DIR/worker.log"
   (
-    cd "$FUNCTIONS_DIR"
+    cd "$WORKER_DIR"
     npm run build
     exec setsid npm run manual-worker
   ) >"$LOG_DIR/worker.log" 2>&1 &
   WORKER_PID=$!
-  log "Started Functions worker with pid $WORKER_PID."
+  log "Started worker with pid $WORKER_PID."
 else
-  log "Reusing existing Functions worker process."
+  log "Reusing existing worker process."
 fi
 
 log "Waiting for frontend at $E2E_BASE_URL."

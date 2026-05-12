@@ -1,8 +1,8 @@
 # Local Development
 
 Use the dev container when available. The repository expects Node.js 24 for the
-web app and e2e packages, Node.js 22 for `apps/functions`, access to MongoDB
-or Azure Cosmos DB for MongoDB, Cloudflare R2 credentials when you want to
+web app, worker, and e2e packages, access to MongoDB or Azure Cosmos DB for
+MongoDB, Cloudflare R2 credentials when you want to
 exercise remote blob storage, and Terraform for infrastructure validation.
 
 ## Web App
@@ -20,26 +20,24 @@ you want to use. Set `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 and `R2_BUCKET_NAME` when you want blob reads and writes to go through
 Cloudflare R2 instead of the local filesystem fallback.
 
-The Functions worker uses the fake torrent metadata provider by default. Set
+The worker uses the fake torrent metadata provider by default. Set
 `MMV_TORRENT_PROVIDER=http` and provide `MMV_TORRENT_RESOLVER_URLS` as a JSON
 array of base URLs or `{info_hash}` templates only when you want to exercise a
 real resolver during local development.
 
-Run the worker in a second terminal. Copy
-`apps/functions/local.settings.json.example` to `apps/functions/local.settings.json`
-or export equivalent values; the example includes the shared auth/database
-settings plus the optional R2 variables.
+Run the worker in a second terminal after exporting the same shared
+auth/database settings plus optional R2 variables used by the web app.
 
 ```bash
-cd apps/functions
+cd apps/worker
 npm ci
-npm run start
+npm run manual-worker
 ```
 
-For local e2e runs, the harness builds `apps/functions` and runs
+For local e2e runs, the harness builds `apps/worker` and runs
 `npm run manual-worker`. That process polls MongoDB directly, which keeps the
-web -> database -> worker smoke reliable even when the scheduled job runtime is
-not part of the local test loop.
+web -> database -> worker smoke reliable even when the Container Apps job
+runtime is not part of the local test loop.
 
 ## End-to-End Local Stack
 

@@ -51,8 +51,9 @@ application.
 
 ## Worker Boundary
 
-The web app creates work for `apps/functions`, but it does not process torrent
-metadata itself. Shared domain logic for both apps stays in `packages/core`.
+The web app creates metadata jobs for `apps/worker`, but it does not process
+torrent metadata itself. Shared domain logic for both apps stays in
+`packages/core`.
 
 ## Environment Variables
 

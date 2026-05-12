@@ -11,8 +11,6 @@ import { buildBlobStore } from "@mymediavault/core/storage";
 import { liveResolverInfoHash } from "../fixtures/torrents";
 import { requireEnv } from "./auth-helpers";
 
-test.skip(process.env.E2E_DEV_SMOKE !== "1", "Dev smoke runs only through npm run test:smoke:dev.");
-
 test.afterAll(async () => {
   await disconnectMongo();
 });

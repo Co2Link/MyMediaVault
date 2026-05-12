@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
       status: "processing",
       attempt: 1,
       error: null,
+      queueEnqueuedAt: new Date("2024-01-01T00:00:00Z"),
       lastDequeuedAt: null,
       startedAt: null,
       finishedAt: null,
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => {
       status: "processing",
       attempt: 1,
       error: "stuck",
+      queueEnqueuedAt: new Date("2024-01-01T00:00:00Z"),
       lastDequeuedAt: new Date("2024-01-01T00:00:00Z"),
       startedAt: new Date("2024-01-01T00:00:00Z"),
       finishedAt: null,
@@ -123,7 +125,7 @@ describe("torrent metadata scheduling", () => {
     });
     expect(mocks.models.TorrentMetadataJobModel.updateOne).toHaveBeenCalledWith(
       { _id: "job-2" },
-      { $set: { status: "queued", error: null } },
+      { $set: { status: "queued", error: null, queueEnqueuedAt: new Date("2024-01-02T00:00:00Z") } },
     );
   });
 });

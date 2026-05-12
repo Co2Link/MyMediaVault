@@ -1,27 +1,32 @@
 # Worker
 
-The worker lives in `apps/functions` and is deployed as a scheduled Azure
-Container Apps job. Locally, the same code can run as a long-lived Node.js
+The worker lives in `apps/worker` and is deployed as an event-driven Azure
+Container Apps job. Locally, the same package can run as a long-lived Node.js
 process for the e2e harness.
 
 ## Responsibilities
 
-- Poll MongoDB for queued torrent metadata jobs on a timer.
+- Drain queued torrent metadata jobs when the Container Apps job starts.
 - Fetch the raw `.torrent` payload through the configured provider.
 - Store the raw torrent in Cloudflare R2.
 - Write parsed torrent metadata and file lists back to the database.
-- Repair stale processing jobs on each scheduled run.
+- Repair stale processing jobs at the start of each worker run.
 
 ## Triggers
 
-- Scheduled Container Apps job for normal torrent metadata processing and
-  stale-job repair.
+- Event-driven Container Apps job using the KEDA MongoDB scaler. The scaler
+  polls the `torrentmetadatajobs` collection for `{ "status": "queued" }` and
+  starts at most one job execution per polling interval.
+
+KEDA is only the wake-up mechanism. The worker uses an atomic MongoDB
+`findOneAndUpdate` claim on `status = "queued"` before processing, so duplicate
+or stale scaler observations can only create no-op worker executions.
 
 ## Environment Variables
 
 The worker also reads the shared loader in `packages/core/src/env.ts`. It uses
 the same auth variables as the web app because the shared core code requires
-them, even though the Functions host itself does not run Auth.js.
+them, even though the worker does not run Auth.js.
 
 | Variable | Purpose |
 | --- | --- |
@@ -45,8 +50,9 @@ them, even though the Functions host itself does not run Auth.js.
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |
 
-`apps/functions/local.settings.json.example` covers the local environment used
-by the manual worker and local e2e harness.
+Use the same environment variables as the web app when running the worker
+locally. The e2e harness sources the web app env file before starting the
+manual worker.
 
 ## Local Notes
 

@@ -335,7 +335,10 @@ export async function repairStaleTorrentMetadataJobs(now = new Date()) {
     .slice(0, 25);
 
   for (const job of jobs) {
-    await TorrentMetadataJobModel.updateOne({ _id: job._id }, { $set: { status: "queued", error: null } }).exec();
+    await TorrentMetadataJobModel.updateOne(
+      { _id: job._id },
+      { $set: { status: "queued", error: null, queueEnqueuedAt: now } },
+    ).exec();
   }
 
   return { repaired: jobs.length };
