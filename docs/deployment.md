@@ -70,9 +70,11 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   scaler to start when queued torrent metadata jobs exist. It uses the same auth
   settings as the web app because the shared core environment loader is used by
   both HTTP and worker code paths.
-- Database: Azure Cosmos DB for MongoDB free-tier account created by this
-  repository, configured for MongoDB 4.2 compatibility so the Node MongoDB
-  driver can connect through Mongoose.
+- Database: Azure Cosmos DB for MongoDB vCore free-tier cluster created by this
+  repository, configured for MongoDB 8.0 so the Node MongoDB driver can connect
+  through Mongoose. The Mongo vCore firewall includes the Azure-services rule
+  so Container Apps and KEDA can reach the cluster without maintaining
+  per-revision outbound IP allowlists.
 - Storage: raw torrent blobs live in Cloudflare R2, and Terraform state uses
   the R2 backend.
 - Observability: Log Analytics workspace with 30-day retention for the worker

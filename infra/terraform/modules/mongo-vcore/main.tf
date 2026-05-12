@@ -22,3 +22,18 @@ resource "azurerm_mongo_cluster" "this" {
   public_network_access  = "Enabled"
   tags                   = var.tags
 }
+
+resource "azapi_resource" "allow_azure_services_firewall_rule" {
+  type      = "Microsoft.DocumentDB/mongoClusters/firewallRules@2025-09-01"
+  name      = "allow-azure-services"
+  parent_id = azurerm_mongo_cluster.this.id
+
+  body = {
+    properties = {
+      startIpAddress = "0.0.0.0"
+      endIpAddress   = "0.0.0.0"
+    }
+  }
+
+  schema_validation_enabled = false
+}
