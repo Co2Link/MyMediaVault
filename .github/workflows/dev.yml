@@ -122,8 +122,6 @@ jobs:
     needs: changes
     permissions:
       contents: read
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -234,15 +232,15 @@ jobs:
             echo "TF_VAR_app_image=${current_image}"
             echo "TF_VAR_app_commit_sha=${current_commit}"
             if [[ "$WORKER_CHANGED" == "true" ]]; then
-              echo "TF_VAR_worker_image=${WORKER_IMAGE}"
+              echo "TF_VAR_worker_image=${repo}-worker:${HEAD_SHA}"
             else
               echo "TF_VAR_worker_image=${repo}-worker:${current_commit}"
             fi
           } >> "$GITHUB_ENV"
         env:
           IMAGE_REPOSITORY: ${{ env.IMAGE_REPOSITORY }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           WORKER_CHANGED: ${{ needs.changes.outputs.worker }}
-          WORKER_IMAGE: ${{ needs.worker_image.outputs.image }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -327,10 +325,18 @@ jobs:
       - name: Deploy worker image
         shell: bash
         run: |
+          repo="${IMAGE_REPOSITORY}"
+          if [[ "${repo##*/}" == *:* ]]; then
+            repo="${repo%:*}"
+          fi
+          image="${repo}-worker:${HEAD_SHA}"
+
           az containerapp job update \
             --resource-group rg-mmv-dev \
             --name mmv-dev-worker \
-            --image "${{ needs.worker_image.outputs.image }}"
+            --image "$image"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
 
   smoke:
     if: ${{ always() && ((github.event_name == 'workflow_dispatch' && needs.changes.outputs.terraform == 'true') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) && (needs.changes.outputs.web != 'true' || needs.image.result == 'success') && needs.worker_image.result == 'success' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.container_app_deploy.result == 'success' || needs.container_app_deploy.result == 'skipped') && (needs.worker_job_deploy.result == 'success' || needs.worker_job_deploy.result == 'skipped') }}
