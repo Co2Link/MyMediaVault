@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+zero_sha="0000000000000000000000000000000000000000"
+changed_files=""
+
+run_in() {
+  local dir="$1"
+  shift
+  printf '\n[%s] %s\n' "$dir" "$*"
+  (cd "$repo_root/$dir" && "$@")
+}
+
+run_at_root() {
+  printf '\n[root] %s\n' "$*"
+  (cd "$repo_root" && "$@")
+}
+
+append_changed_files() {
+  local base="$1"
+  local head="$2"
+
+  changed_files+="$(
+    cd "$repo_root"
+    git diff --name-only --diff-filter=ACMR "$base" "$head"
+  )"$'\n'
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ -z "${local_ref:-}" || "$local_sha" == "$zero_sha" ]]; then
+    continue
+  fi
+
+  if [[ "$remote_sha" != "$zero_sha" ]]; then
+    append_changed_files "$remote_sha" "$local_sha"
+    continue
+  fi
+
+  merge_base="$(git -C "$repo_root" merge-base "$local_sha" "${remote_ref#refs/heads/}" 2>/dev/null || true)"
+  if [[ -z "$merge_base" ]]; then
+    merge_base="$(git -C "$repo_root" merge-base "$local_sha" HEAD 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$merge_base" && "$merge_base" != "$local_sha" ]]; then
+    append_changed_files "$merge_base" "$local_sha"
+  else
+    changed_files+="$(
+      cd "$repo_root"
+      git diff-tree --no-commit-id --name-only -r "$local_sha"
+    )"$'\n'
+  fi
+done
+
+changed_files="$(sort -u <<<"$changed_files")"
+
+if [[ -z "$changed_files" ]]; then
+  upstream="$(git -C "$repo_root" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+  if [[ -n "$upstream" ]]; then
+    append_changed_files "$(git -C "$repo_root" merge-base HEAD "$upstream")" HEAD
+    changed_files="$(sort -u <<<"$changed_files")"
+  fi
+fi
+
+has_changes_in() {
+  local pattern="$1"
+  grep -qE "$pattern" <<<"$changed_files"
+}
+
+skip_section() {
+  local label="$1"
+  printf '\n[skip] %s\n' "$label"
+}
+
+if has_changes_in "^(apps/web|apps/worker|apps/e2e|packages/core)(/|$)"; then
+  run_in apps/e2e npm run test:local
+else
+  skip_section "e2e checks"
+fi
+
+if has_changes_in "^(\\.dockerignore|\\.npmrc|apps/web/Dockerfile|apps/web/|packages/core/)"; then
+  run_at_root docker build -f apps/web/Dockerfile .
+else
+  skip_section "web Docker build"
+fi
+
+if has_changes_in "^(\\.dockerignore|\\.npmrc|apps/worker/Dockerfile|apps/worker/|packages/core/)"; then
+  run_at_root docker build -f apps/worker/Dockerfile .
+else
+  skip_section "worker Docker build"
+fi

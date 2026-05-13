@@ -3,9 +3,10 @@
 Testing is split by application layer and mirrored by `.github/workflows/ci.yml`
 where practical.
 
-The tracked pre-commit hook runs these check groups selectively based on staged
-paths, so web checks run for `apps/web`, e2e runs for `apps/web` or `apps/e2e`, and
-Terraform checks run only for `infra/terraform`.
+The tracked hooks run these check groups selectively. Pre-commit keeps the
+fast package and Terraform checks close to the commit. Pre-push runs the
+expensive gates for pushed changes, including authenticated local e2e tests and
+the web/worker Docker builds.
 
 ## Web App
 

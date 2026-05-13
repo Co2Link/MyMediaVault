@@ -332,7 +332,6 @@ h2 {
   grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.8fr);
 }
 
-.file-list,
 .tag-list {
   display: grid;
   gap: 12px;
@@ -341,7 +340,6 @@ h2 {
   padding: 0;
 }
 
-.file-list li,
 .tag-list li {
   align-items: center;
   background: rgba(255, 255, 255, 0.5);
@@ -351,6 +349,54 @@ h2 {
   gap: 12px;
   justify-content: space-between;
   padding: 14px 16px;
+}
+
+.file-tree {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-tree .file-tree {
+  border-left: 1px solid rgba(21, 32, 39, 0.12);
+  margin: 8px 0 0 10px;
+  padding-left: 14px;
+}
+
+.file-tree-folder,
+.file-tree-file {
+  min-width: 0;
+}
+
+.file-tree-folder summary,
+.file-tree-file {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(21, 32, 39, 0.08);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.file-tree-folder summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.file-tree-file span:first-child,
+.file-tree-folder summary {
+  overflow-wrap: anywhere;
+}
+
+.file-tree-file span:last-child {
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 0.88rem;
 }
 
 .inline-form {
@@ -494,8 +540,12 @@ h2 {
     display: grid;
   }
 
-  .file-list li,
   .tag-list li {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .file-tree-file {
     align-items: start;
     flex-direction: column;
   }
