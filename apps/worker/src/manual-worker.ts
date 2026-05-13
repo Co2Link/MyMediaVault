@@ -1,7 +1,7 @@
-import { getEnv } from "@mymediavault/core/env";
+import { getStorageEnv } from "@mymediavault/core/env";
 import { processPendingTorrentMetadataJobs, repairStaleTorrentMetadataJobs } from "@mymediavault/core/videos";
 
-const env = getEnv();
+const env = getStorageEnv();
 
 let shuttingDown = false;
 const sleep = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));

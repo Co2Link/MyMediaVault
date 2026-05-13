@@ -1,4 +1,4 @@
-import { getEnv } from "./env.js";
+import { getTorrentEnv } from "./env.js";
 
 export type TorrentFileMetadata = {
   path: string;
@@ -66,7 +66,7 @@ export class HttpTorrentMetadataProvider implements TorrentMetadataProvider {
 }
 
 export function buildTorrentProvider(): TorrentMetadataProvider {
-  const env = getEnv();
+  const env = getTorrentEnv();
   return env.torrentProvider === "http"
     ? new HttpTorrentMetadataProvider(env.torrentResolverUrls, env.torrentFetchTimeoutSeconds)
     : new FakeTorrentMetadataProvider();

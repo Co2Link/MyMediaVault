@@ -42,10 +42,8 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"ms-mssql.mssql",
 				"bierner.markdown-mermaid",
 				"mongodb.mongodb-vscode"
-				"ms-azuretools.vscode-azurestorage"
 			]
 		}
 	}

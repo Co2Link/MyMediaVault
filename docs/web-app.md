@@ -76,7 +76,6 @@ Auth.js config in `apps/web/src/auth.ts`.
 | `MMV_TORRENT_PROVIDER` | Torrent provider mode. |
 | `MMV_TORRENT_RESOLVER_URLS` | HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | HTTP torrent fetch timeout. |
-| `MMV_TORRENT_REPAIR_STALE_QUEUED_MINUTES` | Stale queued-job threshold. |
 | `MMV_TORRENT_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing-job threshold. |
 | `R2_ENDPOINT` | Cloudflare R2 S3-compatible endpoint. |
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 access key ID. |

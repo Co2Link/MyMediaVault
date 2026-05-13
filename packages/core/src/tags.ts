@@ -1,4 +1,4 @@
-import { connectMongo, TagModel } from "./db.js";
+import { connectMongo, TagModel, VideoTagModel } from "./db.js";
 import { ConflictError, NotFoundError } from "./errors.js";
 import type { TagRead } from "./types.js";
 
@@ -43,6 +43,7 @@ export async function deleteTag(id: string) {
   if (result.deletedCount === 0) {
     throw new NotFoundError("Tag was not found.");
   }
+  await VideoTagModel.deleteMany({ tagId: id }).exec();
 }
 
 function normalizeName(name: string) {

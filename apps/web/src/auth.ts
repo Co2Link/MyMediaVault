@@ -2,9 +2,9 @@ import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import NextAuth from "next-auth";
 import { MongooseAuthAdapter } from "@mymediavault/core/auth-adapter";
 import { updateUserProfile } from "@/lib/db";
-import { getEnv } from "@/lib/env";
+import { getAuthEnv } from "@/lib/env";
 
-const env = getEnv();
+const env = getAuthEnv();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: MongooseAuthAdapter(),

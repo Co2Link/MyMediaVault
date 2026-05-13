@@ -36,7 +36,6 @@ test-results/
 apps/*/.local/
 apps/e2e/.auth/
 apps/e2e/.logs/
-packages/core/src/generated/prisma/
 
 # Terraform
 .terraform/

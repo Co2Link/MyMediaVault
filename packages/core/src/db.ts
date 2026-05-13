@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import mongoose, { Schema, type Model } from "mongoose";
-import { getEnv } from "./env.js";
+import { getDatabaseEnv } from "./env.js";
 import type { JobStatus, MetadataStatus } from "./types.js";
 
 export type UserDoc = {
@@ -109,6 +109,7 @@ export type TorrentMetadataJobDoc = {
 
 type GlobalMongoose = {
   mongooseConnection?: Promise<typeof mongoose>;
+  mongooseInstance?: typeof mongoose;
 };
 
 const globalForMongoose = globalThis as unknown as GlobalMongoose;
@@ -302,18 +303,30 @@ export function videoTagId(videoId: string, tagId: string) {
 }
 
 export async function connectMongo() {
-  if (!globalForMongoose.mongooseConnection) {
-    const env = getEnv();
-    globalForMongoose.mongooseConnection = mongoose.connect(env.mongodbUri, {
-      dbName: env.mongodbDatabase,
-      serverSelectionTimeoutMS: env.mongodbServerSelectionTimeoutMs,
-    });
+  const isCurrentInstance = globalForMongoose.mongooseInstance === mongoose;
+  const isDisconnected = mongoose.connection.readyState === 0 || mongoose.connection.readyState === 3;
+  if (!globalForMongoose.mongooseConnection || !isCurrentInstance || isDisconnected) {
+    const env = getDatabaseEnv();
+    globalForMongoose.mongooseInstance = mongoose;
+    globalForMongoose.mongooseConnection = mongoose
+      .connect(env.mongodbUri, {
+        dbName: env.mongodbDatabase,
+        serverSelectionTimeoutMS: env.mongodbServerSelectionTimeoutMs,
+      })
+      .catch((error) => {
+        if (globalForMongoose.mongooseInstance === mongoose) {
+          globalForMongoose.mongooseConnection = undefined;
+          globalForMongoose.mongooseInstance = undefined;
+        }
+        throw error;
+      });
   }
   return globalForMongoose.mongooseConnection;
 }
 
 export async function disconnectMongo() {
   globalForMongoose.mongooseConnection = undefined;
+  globalForMongoose.mongooseInstance = undefined;
   await mongoose.disconnect();
 }
 

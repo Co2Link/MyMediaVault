@@ -5,3 +5,4 @@
 - Run Terraform locally only for bootstrap tasks under `infra/terraform/bootstrap`.
 - Do not deploy or modify the dev stack with local Terraform. Dev stack changes should go through GitHub Actions only.
 - When working on dev infrastructure, update the Terraform modules and the GitHub workflow inputs rather than applying the dev stack locally.
+- When application runtime environment variables change, update every deployment surface in the same change: Terraform module env blocks/secrets, GitHub workflow `TF_VAR_*` inputs, CI job env, docs, and example env files. Keep web and worker env surfaces separate; do not pass Auth/Entra variables to the worker unless the worker code directly requires them.

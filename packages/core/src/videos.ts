@@ -11,7 +11,7 @@ import {
   type VideoDoc,
   type VideoTagDoc,
 } from "./db.js";
-import { getEnv } from "./env.js";
+import { getTorrentEnv } from "./env.js";
 import { ConflictError, NotFoundError } from "./errors.js";
 import { buildBlobStore } from "./storage.js";
 import { buildTorrentProvider, type TorrentMetadata } from "./torrent-provider.js";
@@ -320,7 +320,7 @@ export async function processTorrentMetadataJob(jobId: string) {
 
 export async function repairStaleTorrentMetadataJobs(now = new Date()) {
   await connectMongo();
-  const env = getEnv();
+  const env = getTorrentEnv();
   const processingBefore = new Date(now.getTime() - env.torrentRepairStaleProcessingMinutes * 60 * 1000);
   const jobs = (
     await TorrentMetadataJobModel.find({

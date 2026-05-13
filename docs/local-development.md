@@ -25,8 +25,9 @@ The worker uses the fake torrent metadata provider by default. Set
 array of base URLs or `{info_hash}` templates only when you want to exercise a
 real resolver during local development.
 
-Run the worker in a second terminal after exporting the same shared
-auth/database settings plus optional R2 variables used by the web app.
+Run the worker in a second terminal after exporting the same database, torrent,
+and optional R2 variables used by the web app. Auth.js and Entra variables are
+only required by the web app.
 
 ```bash
 cd apps/worker

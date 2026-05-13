@@ -264,16 +264,6 @@ resource "azurerm_container_app_job" "torrent_metadata" {
   replica_retry_limit          = 1
 
   secret {
-    name  = "auth-secret"
-    value = var.auth_secret
-  }
-
-  secret {
-    name  = "entra-client-secret"
-    value = var.auth_entra_client_secret
-  }
-
-  secret {
     name  = "mongodb-uri"
     value = var.mongodb_uri
   }
@@ -323,26 +313,6 @@ resource "azurerm_container_app_job" "torrent_metadata" {
       env {
         name  = "NODE_ENV"
         value = "production"
-      }
-
-      env {
-        name        = "AUTH_SECRET"
-        secret_name = "auth-secret"
-      }
-
-      env {
-        name  = "AUTH_MICROSOFT_ENTRA_ID_ID"
-        value = var.auth_entra_client_id
-      }
-
-      env {
-        name        = "AUTH_MICROSOFT_ENTRA_ID_SECRET"
-        secret_name = "entra-client-secret"
-      }
-
-      env {
-        name  = "AUTH_MICROSOFT_ENTRA_ID_ISSUER"
-        value = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
       }
 
       env {

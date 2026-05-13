@@ -12,7 +12,6 @@
     "event-worker": "node dist/event-worker.js"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.850.0",
     "@mymediavault/core": "file:../../packages/core",
     "mongoose": "^8.20.1"
   },

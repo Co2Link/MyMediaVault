@@ -3,7 +3,8 @@
 - az cli and github cli are available, ask user to run `az login` or `gh auth login` when needed.
 - Prefer the best practice when deciding on infrastructure, architecture, code structure, and implementation, even if it requires more effort, unless the user specifies otherwise. If you are unsure about the best practice, ask the user for clarification or suggest a few options with pros and cons.
 - Run e2e tests at the end of the change to verify the overall behavior, ask user to setup the required environment if needed.
-- Currently the project is set to use a remote Azure SQL database for local testing and development. It could be a serverless database that have a cold start.
+- Local testing and development use the local MongoDB service defined in `.devcontainer/docker-compose.yml`.
+- Production uses Azure Cosmos DB for MongoDB vCore.
 - You are in a devcontainer environment, ask user to rebuild the container if you update devcontainer configuration or Dockerfile.
 - Do not hardcode any secrets, ID, or credentials in the codebase.
 
@@ -17,7 +18,7 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 
 ## Project Structure & Module Organization
 
-MyMediaVault is a video collection manager monorepo. Main code lives under `apps/`: `apps/web` is the Next.js full-stack application and `apps/e2e` contains Playwright tests. Infrastructure lives in `infra/terraform`; architecture and decisions live in `docs`.
+MyMediaVault is a video collection manager monorepo. Main code lives under `apps/`: `apps/web` is the Next.js full-stack application, `apps/worker` is the Container Apps worker job, and `apps/e2e` contains Playwright tests. Shared domain, database, storage, and torrent logic lives in `packages/core`. Infrastructure lives in `infra/terraform`; architecture and decisions live in `docs`.
 
 ## Build, Test, and Development Commands
 

@@ -73,26 +73,8 @@ against the local stack. To verify the deployed dev environment after GitHub
 
 ## Infrastructure
 
-```bash
-cd infra/terraform/bootstrap
-terraform init
-terraform plan
-```
-
-After the repo-owned backend storage exists:
-
-```bash
-cd ../envs/dev
-backend_key="$(
-  az storage account keys list \
-    --resource-group rg-mymediavault-tfstate \
-    --account-name mymediavaulttfstate \
-    --query '[0].value' -o tsv
-)"
-terraform init -reconfigure -backend-config="access_key=${backend_key}"
-terraform plan
-```
-
-The dev Terraform backend lives in the Azure Blob storage account managed by
-this repository. The dev environment also provisions its own Azure Cosmos DB
-for MongoDB account.
+Terraform state is stored in Cloudflare R2, while the dev application resources
+run on Azure. See [docs/local-development.md](docs/local-development.md) for
+the current bootstrap and `terraform init` commands. The dev environment
+provisions Azure Container Apps, Azure Cosmos DB for MongoDB, and related app
+infrastructure.

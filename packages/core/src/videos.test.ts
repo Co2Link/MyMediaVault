@@ -71,7 +71,7 @@ vi.mock("./torrent-provider.js", () => ({
 }));
 
 vi.mock("./env.js", () => ({
-  getEnv: vi.fn(() => ({
+  getTorrentEnv: vi.fn(() => ({
     torrentRepairStaleProcessingMinutes: 30,
   })),
 }));

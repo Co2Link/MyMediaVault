@@ -16,13 +16,6 @@ services:
     command: sleep infinity
     networks:
       - devnet
-  azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:latest
-    restart: unless-stopped
-    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --skipApiVersionCheck --location /data
-    volumes:
-      - azurite-data:/data
-    network_mode: service:devcontainer
   mongo:
     image: mongo:latest
     restart: unless-stopped
@@ -35,7 +28,6 @@ volumes:
   codex:
   gemini:
   uv-cache:
-  azurite-data:
   mongo-data:
   config_db:
 

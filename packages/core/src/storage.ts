@@ -1,7 +1,7 @@
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { getEnv } from "./env.js";
+import { getStorageEnv } from "./env.js";
 
 export interface BlobStore {
   putBytes(key: string, data: Uint8Array): Promise<string>;
@@ -84,7 +84,7 @@ class R2BlobStore implements BlobStore {
 }
 
 export function buildBlobStore(): BlobStore {
-  const env = getEnv();
+  const env = getStorageEnv();
   if (env.r2Endpoint && env.r2AccessKeyId && env.r2SecretAccessKey) {
     return new R2BlobStore(env.r2Endpoint, env.r2BucketName, env.r2AccessKeyId, env.r2SecretAccessKey);
   }
