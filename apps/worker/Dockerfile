@@ -1,7 +1,7 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app/apps/worker
 
-COPY apps/worker/package.json apps/worker/package-lock.json apps/worker/.npmrc ./
+COPY .npmrc apps/worker/package.json apps/worker/package-lock.json ./
 COPY packages/core /app/packages/core
 RUN npm --prefix ../../packages/core ci
 RUN npm ci
