@@ -50,8 +50,10 @@ tag selection, detail-page tag editing, collection search, and admin tag flows
 against the Next.js app plus local worker. Separate setup projects log in
 through Entra for the normal user and admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
-real test-user credentials in `apps/e2e/.env.local`. Before each local run, the
-harness deletes documents for both e2e users and cleans up any orphaned torrent
+real test-user credentials in `apps/e2e/.env.local`. Copy
+`apps/e2e/.env.example` to `apps/e2e/.env.local` for local runs or
+`apps/e2e/.env.dev` for deployed-dev smoke. Before each local run, the harness
+deletes documents for both e2e users and cleans up any orphaned torrent
 records and raw blobs so repeated runs do not fail on duplicate data.
 
 ## Dev Smoke
@@ -77,9 +79,10 @@ Playwright project so deployed-dev checks stay out of normal local runs.
 
 The local test harness sources `apps/web/.env.local` and `apps/e2e/.env.local`.
 The deployed-dev smoke harness sources `apps/web/.env.local` and
-`apps/e2e/.env.dev`. The tables below list the test-specific variables; the web
-and worker variables documented in their own docs are also required when the
-harness talks to the live app or worker.
+`apps/e2e/.env.dev`. Use `apps/e2e/.env.example` as the template for both
+files. The tables below list the test-specific variables; the web and worker
+variables documented in their own docs are also required when the harness talks
+to the live app or worker.
 
 | Variable | Purpose |
 | --- | --- |

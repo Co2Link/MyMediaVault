@@ -36,6 +36,7 @@ git config core.hooksPath .githooks
 The hook runs core, web, worker, e2e, and Terraform checks selectively based
 on staged paths. The local authenticated Playwright browser suite uses
 `apps/e2e/.env.local`, so Entra test-user credentials must be available there.
+Use `apps/e2e/.env.example` as the template for the e2e env files.
 
 ## Web
 

@@ -53,7 +53,7 @@ metadata, starts the Next.js app and local worker, then executes Playwright.
 The database must already be reachable via `MONGODB_URI`.
 `apps/e2e/.env.local` must define `E2E_USER_USERNAME`, `E2E_USER_PASSWORD`,
 `E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use
-`apps/e2e/.env.local.example` as the template.
+`apps/e2e/.env.example` as the template.
 
 Deployed dev verification lives in [Testing Strategy](testing.md); use
 `npm run test:smoke:dev` there after GitHub `CI` and `Dev` pass.
