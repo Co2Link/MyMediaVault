@@ -98,5 +98,7 @@ Enable the tracked hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook runs `apps/web` build/tests, authenticated local e2e tests, and
-Terraform formatting/validation.
+Pre-commit runs the faster package and Terraform checks that match staged
+paths. Pre-push runs the expensive gates for pushed changes: authenticated
+local e2e tests plus the web and worker Docker image builds. Docker must be
+available in the dev container for the pre-push image checks.

@@ -3,8 +3,8 @@ WORKDIR /app/apps/web
 
 COPY .npmrc apps/web/package.json apps/web/package-lock.json ./
 COPY packages/core /app/packages/core
+RUN npm ci --install-links=false --ignore-scripts
 RUN npm --prefix ../../packages/core ci
-RUN npm ci
 
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app/apps/web

@@ -42,12 +42,6 @@ else
   skip_section "worker checks"
 fi
 
-if has_staged_changes_in "apps/web" || has_staged_changes_in "apps/worker" || has_staged_changes_in "apps/e2e" || has_staged_changes_in "packages/core"; then
-  run_in apps/e2e npm run test:local
-else
-  skip_section "e2e checks"
-fi
-
 if has_staged_changes_in "infra/terraform"; then
   run_in infra/terraform/envs/dev terraform fmt -check -recursive ../..
   run_in infra/terraform/envs/dev terraform init -backend=false
