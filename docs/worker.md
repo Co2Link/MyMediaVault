@@ -4,6 +4,9 @@ The worker lives in `apps/worker` and is deployed as an event-driven Azure
 Container Apps job. Locally, the same package can run as a long-lived Node.js
 process for the e2e harness.
 
+The torrent preview worker lives separately in `apps/preview-worker`. It is a
+Python process intended to run on a VM, not infrastructure managed by this repo.
+
 ## Responsibilities
 
 - Drain queued torrent metadata jobs when the Container Apps job starts.
@@ -51,3 +54,45 @@ file before starting the manual worker.
 For local e2e runs, `apps/e2e/scripts/run-local.sh` starts
 `npm run manual-worker`. That keeps the web -> database -> worker path
 reliable in local test runs.
+
+## Preview Worker
+
+`apps/preview-worker` uses Beanie document models that mirror the Mongoose
+torrent preview fields, then continuously polls the `torrents` collection for
+torrents whose metadata has succeeded and whose raw torrent blob is available.
+It claims eligible torrents atomically by setting `previewStatus = "processing"`,
+increments `previewAttempts`, calls `torrent-preview` with its default
+configuration, uploads the contact sheet and nine selected frames to R2, and
+writes status, artifact keys, dimensions, warnings, and diagnostics back to the
+torrent document.
+
+The worker prioritizes torrents with no generated preview (`pending` or missing
+preview status). It can also regenerate succeeded previews when the
+`torrent-preview` artifact fingerprint changes. `failed` and `partial` results
+are treated as degraded terminal states and are not retried automatically.
+
+Run locally:
+
+```bash
+cd apps/preview-worker
+cp .env.example .env
+uv run mymediavault-preview-worker
+```
+
+Preview worker environment:
+
+| Variable | Purpose |
+| --- | --- |
+| `MONGODB_URI` | MongoDB connection for polling torrents. |
+| `MMV_MONGODB_DB_NAME` | Database name. |
+| `MMV_MONGODB_SERVER_SELECTION_TIMEOUT_MS` | Mongo driver server-selection timeout. |
+| `R2_ENDPOINT` | Cloudflare R2 S3-compatible endpoint. |
+| `R2_ACCESS_KEY_ID` | Cloudflare R2 access key ID. |
+| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
+| `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |
+| `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. Defaults to `20`. |
+| `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle polling interval. Defaults to `5`. |
+| `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing threshold. Defaults to `120`. |
+
+The VM image must include Python 3.13, `libtorrent`, `ffmpeg`, and preferably
+`ffprobe`.

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { MetadataStatusBadge } from "@/components/metadata-status";
+import { VideoPreviewGallery } from "@/components/video-preview-gallery";
 import { getVideoById } from "@/lib/videos";
 import { VideoDetailForm } from "@/app/videos/[id]/video-detail-form";
 import { listTags } from "@/lib/tags";
@@ -108,6 +109,7 @@ export default async function VideoDetailPage({
           <MetadataStatusBadge error={video.metadataError} status={video.metadataStatus} />
         </div>
         {query.created === "1" ? <p className="success-copy">Video added. Metadata processing has been queued.</p> : null}
+        <VideoPreviewGallery preview={video.preview} videoId={video.id} />
         <VideoDetailForm tags={tags} video={video} />
       </section>
       <aside className="editor-card">

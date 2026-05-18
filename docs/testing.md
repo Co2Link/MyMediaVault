@@ -68,12 +68,17 @@ Run the dev smoke locally after the GitHub `CI` and `Dev` workflows pass for
 the current commit on `develop`. The script checks those workflow results with
 GitHub CLI before running Playwright against the deployed dev URL. It verifies
 the full user add-video path through the web app, Cosmos DB, the worker job,
-Cloudflare R2, and the UI metadata-ready state.
+Cloudflare R2, preview generation, preview UI behavior, and the UI
+metadata-ready state. The script starts `apps/preview-worker` locally against
+the dev MongoDB/R2 environment before Playwright runs, and shuts it down on
+success or failure. The smoke deletes the created video, torrent, raw blob, and
+preview artifacts after the assertions finish.
 
 `apps/e2e/.env.dev` must set the Entra test-user credentials and `E2E_BASE_URL`
-to the deployed dev web URL. Source values in `apps/web/.env.local` must point
-to the dev Cosmos DB and Cloudflare R2 so the smoke can verify database records
-and raw torrent blobs. The script runs the dedicated `smoke-dev-chromium`
+to the deployed dev web URL. Source values in `apps/web/.env.local` and
+`apps/preview-worker/.env.dev` must point to the dev Cosmos DB and Cloudflare R2
+so the smoke can verify database records, raw torrent blobs, run the preview
+worker, and verify preview artifacts. The script runs the dedicated `smoke-dev-chromium`
 Playwright project so deployed-dev checks stay out of normal local runs.
 
 ## Environment Variables
@@ -93,6 +98,7 @@ to the live app or worker.
 | `E2E_ADMIN_PASSWORD` | Admin test user password. |
 | `E2E_BASE_URL` | App under test base URL. Defaults to `http://localhost:3000` locally. |
 | `E2E_DEV_SMOKE_INFO_HASH` | Overrides the dev smoke torrent hash. |
+| `E2E_DEV_SMOKE_PREVIEW_TIMEOUT_MS` | Optional preview-generation timeout for deployed-dev smoke. Defaults to `600000`. |
 | `E2E_INCLUDE_MANUAL_TORRENT_TESTS` | Keeps the `@manual-torrent` cases in local runs. |
 | `E2E_FORCE_STACK_RESTART` | Restarts the local stack and clears auth state. |
 | `E2E_REQUIRE_HTTP_TORRENT_PROVIDER` | Forces `MMV_TORRENT_PROVIDER=http` locally. |

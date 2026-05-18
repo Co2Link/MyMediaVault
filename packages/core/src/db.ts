@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import mongoose, { Schema, type Model } from "mongoose";
 import { getDatabaseEnv } from "./env.js";
-import type { JobStatus, MetadataStatus } from "./types.js";
+import type { JobStatus, MetadataStatus, PreviewStatus } from "./types.js";
 
 export type UserDoc = {
   _id: string;
@@ -60,6 +60,37 @@ export type TorrentFileDoc = {
   position: number;
 };
 
+export type TorrentPreviewFrameDoc = {
+  key: string;
+  width: number;
+  height: number;
+  timestampSeconds: number;
+  score: number;
+  metadata: Record<string, string>;
+};
+
+export type TorrentPreviewSheetDoc = {
+  key: string;
+  width: number;
+  height: number;
+  mimeType: string;
+  metadata: Record<string, string>;
+};
+
+export type TorrentPreviewDiagnosticsDoc = {
+  artifactVersion: string | null;
+  artifactFingerprint: string | null;
+  downloadedBytes: number | null;
+  elapsedSeconds: number | null;
+  attempts: number | null;
+  strategyName: string | null;
+  selectedFilePath: string | null;
+  selectedFileSizeBytes: number | null;
+  failureReason: string | null;
+  warnings: string[];
+  details: Record<string, unknown>;
+};
+
 export type TorrentDoc = {
   _id: string;
   infoHash: string;
@@ -71,6 +102,14 @@ export type TorrentDoc = {
   metadataAttempts: number;
   metadataLastAttemptAt: Date | null;
   files: TorrentFileDoc[];
+  previewStatus: PreviewStatus;
+  previewError: string | null;
+  previewAttempts: number;
+  previewLastAttemptAt: Date | null;
+  previewUpdatedAt: Date | null;
+  previewFrames: TorrentPreviewFrameDoc[];
+  previewSheet: TorrentPreviewSheetDoc | null;
+  previewDiagnostics: TorrentPreviewDiagnosticsDoc;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -193,6 +232,46 @@ const torrentFileSchema = new Schema<TorrentFileDoc>(
   { _id: false, versionKey: false },
 );
 
+const torrentPreviewFrameSchema = new Schema<TorrentPreviewFrameDoc>(
+  {
+    key: { type: String, required: true },
+    width: { type: Number, required: true },
+    height: { type: Number, required: true },
+    timestampSeconds: { type: Number, required: true },
+    score: { type: Number, required: true },
+    metadata: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false, versionKey: false },
+);
+
+const torrentPreviewSheetSchema = new Schema<TorrentPreviewSheetDoc>(
+  {
+    key: { type: String, required: true },
+    width: { type: Number, required: true },
+    height: { type: Number, required: true },
+    mimeType: { type: String, required: true },
+    metadata: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false, versionKey: false },
+);
+
+const torrentPreviewDiagnosticsSchema = new Schema<TorrentPreviewDiagnosticsDoc>(
+  {
+    artifactVersion: { type: String, default: null },
+    artifactFingerprint: { type: String, default: null },
+    downloadedBytes: { type: Number, default: null },
+    elapsedSeconds: { type: Number, default: null },
+    attempts: { type: Number, default: null },
+    strategyName: { type: String, default: null },
+    selectedFilePath: { type: String, default: null },
+    selectedFileSizeBytes: { type: Number, default: null },
+    failureReason: { type: String, default: null },
+    warnings: { type: [String], default: [] },
+    details: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false, versionKey: false },
+);
+
 const torrentSchema = new Schema<TorrentDoc>(
   {
     _id: { type: String, default: newId },
@@ -205,9 +284,23 @@ const torrentSchema = new Schema<TorrentDoc>(
     metadataAttempts: { type: Number, default: 0 },
     metadataLastAttemptAt: { type: Date, default: null },
     files: { type: [torrentFileSchema], default: [] },
+    previewStatus: {
+      type: String,
+      enum: ["pending", "processing", "succeeded", "partial", "failed"],
+      default: "pending",
+      index: true,
+    },
+    previewError: { type: String, default: null },
+    previewAttempts: { type: Number, default: 0 },
+    previewLastAttemptAt: { type: Date, default: null },
+    previewUpdatedAt: { type: Date, default: null },
+    previewFrames: { type: [torrentPreviewFrameSchema], default: [] },
+    previewSheet: { type: torrentPreviewSheetSchema, default: null },
+    previewDiagnostics: { type: torrentPreviewDiagnosticsSchema, default: () => ({}) },
   },
   schemaOptions,
 );
+torrentSchema.index({ metadataStatus: 1, previewStatus: 1, updatedAt: 1, _id: 1 });
 
 const videoSchema = new Schema<VideoDoc>(
   {
@@ -393,23 +486,32 @@ export async function resetE2EState(usernames: string[]) {
     videos.length > 0 ? VideoTagModel.deleteMany({ videoId: { $in: videos.map((video) => video._id) } }).exec() : Promise.resolve(),
   ]);
 
-  const rawBlobKeys: string[] = [];
+  const blobKeys: string[] = [];
   for (const torrentId of candidateTorrentIds) {
     const remainingVideos = await VideoModel.countDocuments({ torrentId }).exec();
     if (remainingVideos > 0) {
       continue;
     }
     const torrent = await TorrentModel.findById(torrentId).lean().exec();
-    if (torrent?.rawBlobKey) {
-      rawBlobKeys.push(torrent.rawBlobKey);
-    }
+    blobKeys.push(...torrentBlobKeys(torrent));
     await Promise.all([
       TorrentModel.deleteOne({ _id: torrentId }).exec(),
       TorrentMetadataJobModel.deleteMany({ torrentId }).exec(),
     ]);
   }
 
-  return { rawBlobKeys };
+  return { blobKeys, rawBlobKeys: blobKeys };
+}
+
+function torrentBlobKeys(torrent: TorrentDoc | null): string[] {
+  if (!torrent) {
+    return [];
+  }
+  return [
+    torrent.rawBlobKey,
+    torrent.previewSheet?.key,
+    ...(torrent.previewFrames ?? []).map((frame) => frame.key),
+  ].filter((key): key is string => Boolean(key));
 }
 
 function model<T>(name: string, schema: Schema<T>): Model<T> {

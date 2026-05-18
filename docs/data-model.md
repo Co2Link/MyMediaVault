@@ -38,9 +38,9 @@ Canonical torrent reuse is enforced by `torrents.infoHash`. User isolation is
 enforced by querying videos with both `video._id` and `video.userId`; multiple
 users may reference the same torrent while keeping private video fields.
 Deleting the last video that references a torrent removes the orphan torrent
-record, its metadata job history, and the stored raw blob. Admin torrent
+record, its metadata job history, stored raw blob, and stored preview artifacts. Admin torrent
 deletion cascades through dependent videos and their tag links before removing
-the torrent blob. Tag selections are validated against the global `tags`
+the torrent blob and preview artifacts. Tag selections are validated against the global `tags`
 catalog before write operations, so the add/detail forms can only attach tags
 that already exist.
 
@@ -57,3 +57,19 @@ processing stores `name`, `sizeBytes`, `rawBlobKey`, and ordered files.
 `failed` attempts. `queueEnqueuedAt` records when the job last became eligible
 for the event-driven worker. Timing fields (`lastDequeuedAt`, `startedAt`, and
 `finishedAt`) support duplicate-job handling and stale processing repair.
+
+## Preview State
+
+`Torrent.previewStatus` tracks `pending`, `processing`, `succeeded`, `partial`,
+or `failed`. The VM-hosted preview worker only claims torrents whose metadata
+has succeeded and whose raw torrent blob is available. Successful preview output
+stores a contact sheet in `previewSheet` and up to nine frame records in
+`previewFrames`; both store private R2 object keys and dimensions. Partial
+preview output is retained for diagnostics but is presented as degraded to
+users.
+
+`previewDiagnostics` stores the `torrent-preview` artifact version and
+fingerprint, selected file, downloaded bytes, elapsed time, strategy, warnings,
+failure reason, and low-level torrent diagnostics. The worker increments
+`previewAttempts` and updates `previewLastAttemptAt` whenever it claims a
+torrent.

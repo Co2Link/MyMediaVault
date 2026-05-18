@@ -10,11 +10,11 @@ async function main() {
     throw new Error("Missing required environment variables: E2E_USER_USERNAME and E2E_ADMIN_USERNAME");
   }
 
-  const { rawBlobKeys } = await resetE2EState(usernames);
-  await deleteRawBlobs(rawBlobKeys);
+  const { blobKeys } = await resetE2EState(usernames);
+  await deleteBlobs(blobKeys);
 }
 
-async function deleteRawBlobs(keys: string[]) {
+async function deleteBlobs(keys: string[]) {
   if (keys.length === 0) {
     return;
   }

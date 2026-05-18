@@ -15,7 +15,7 @@ application.
 - `src/app`: collection, add-video, detail, admin-tags, admin-torrents, sign-in, and route
   handler segments.
 - `src/components`: shared UI for the header, avatar, user menu, search form,
-  video cards, and metadata status.
+  video cards, torrent previews, and metadata status.
 - `src/auth.ts`: Auth.js configuration for Entra sign-in, database sessions,
   and admin resolution.
 - `src/lib`: compatibility exports and auth/session guards around shared core
@@ -32,6 +32,8 @@ application.
 - `/api/auth/[...nextauth]`: Auth.js handler.
 - `/api/health`: deployment health check.
 - `/api/me/photo`: Microsoft Graph avatar lookup.
+- `/api/videos/[id]/preview/[artifact]`: authenticated preview artifact proxy
+  for torrent preview sheets and frames stored in R2.
 
 ## Data Flow
 
@@ -45,15 +47,18 @@ application.
 - Deleting a video removes its private tags and, when it was the last video
   referencing the canonical torrent, deletes the torrent metadata and raw blob.
 - Admin torrent deletion removes the torrent, its dependent videos and video
-  tags, the metadata job records, and the stored raw blob.
+  tags, the metadata job records, the stored raw blob, and preview artifacts.
 - Detail and admin changes revalidate the affected routes so the server-rendered
   views stay current.
+- Preview sheets and frames are served through authenticated route handlers so
+  private R2 object keys are never exposed as public URLs.
 
 ## Worker Boundary
 
 The web app creates metadata jobs for `apps/worker`, but it does not process
-torrent metadata itself. Shared domain logic for both apps stays in
-`packages/core`.
+torrent metadata or preview images itself. Preview generation is handled by the
+VM-hosted `apps/preview-worker` process. Shared domain logic for the web app and
+Node worker stays in `packages/core`.
 
 ## Environment Variables
 

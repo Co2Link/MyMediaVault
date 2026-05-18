@@ -157,6 +157,11 @@ describe("torrent and video deletion", () => {
       metadataAttempts: 1,
       metadataLastAttemptAt: null,
       files: [],
+      previewFrames: [
+        { key: "previews/abc/frame-1.jpg" },
+        { key: "previews/abc/frame-2.jpg" },
+      ],
+      previewSheet: { key: "previews/abc/sheet.jpg" },
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -169,6 +174,9 @@ describe("torrent and video deletion", () => {
     expect(mocks.models.TorrentMetadataJobModel.deleteMany).toHaveBeenCalledWith({ torrentId: "torrent-1" });
     expect(mocks.models.TorrentModel.deleteOne).toHaveBeenCalledWith({ _id: "torrent-1" });
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("torrents/abc.torrent");
+    expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/abc/frame-1.jpg");
+    expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/abc/frame-2.jpg");
+    expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/abc/sheet.jpg");
   });
 
   it("deletes an admin-managed torrent together with its videos and blob", async () => {
@@ -183,6 +191,8 @@ describe("torrent and video deletion", () => {
       metadataAttempts: 1,
       metadataLastAttemptAt: null,
       files: [],
+      previewFrames: [{ key: "previews/def/frame-1.jpg" }],
+      previewSheet: { key: "previews/def/sheet.jpg" },
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -221,5 +231,7 @@ describe("torrent and video deletion", () => {
     expect(mocks.models.TorrentMetadataJobModel.deleteMany).toHaveBeenCalledWith({ torrentId: "torrent-2" });
     expect(mocks.models.TorrentModel.deleteOne).toHaveBeenCalledWith({ _id: "torrent-2" });
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("torrents/def.torrent");
+    expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/def/frame-1.jpg");
+    expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/def/sheet.jpg");
   });
 });

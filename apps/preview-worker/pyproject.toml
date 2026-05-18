@@ -1,0 +1,26 @@
+[project]
+name = "mymediavault-preview-worker"
+version = "0.1.0"
+description = "VM-hosted torrent preview worker for MyMediaVault"
+readme = "README.md"
+authors = [
+    { name = "Co2Link", email = "Co2Link@users.noreply.github.com" }
+]
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "beanie>=2.1.0",
+    "boto3>=1.43.9",
+    "pydantic-settings>=2.14.1",
+    "pymongo>=4.17.0",
+    "torrent-preview",
+]
+
+[project.scripts]
+mymediavault-preview-worker = "mymediavault_preview_worker:main"
+
+[build-system]
+requires = ["uv_build>=0.11.14,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+torrent-preview = { git = "https://github.com/Co2Link/torrent-preview", rev = "v1.0.0" }

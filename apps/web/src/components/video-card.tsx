@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { MetadataStatusBadge } from "@/components/metadata-status";
+import { VideoPreviewCarousel } from "@/components/video-preview-carousel";
 import type { VideoSummary } from "@/lib/types";
 
 export function VideoCard({ video }: { video: VideoSummary }) {
   return (
     <article className="video-card">
+      <VideoPreviewCarousel preview={video.preview} videoId={video.id} />
       <div className="video-card-header">
         <div>
           <h2>{video.displayTitle ?? video.infoHash}</h2>
