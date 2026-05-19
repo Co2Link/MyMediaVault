@@ -10,8 +10,8 @@ import {
   VideoTagModel,
 } from "@mymediavault/core/db";
 import { buildBlobStore } from "@mymediavault/core/storage";
-import { liveResolverInfoHash } from "../fixtures/torrents";
-import { requireEnv } from "./auth-helpers";
+import { liveResolverInfoHash } from "../fixtures/torrents.js";
+import { requireEnv } from "./auth-helpers.js";
 
 test.afterAll(async () => {
   await disconnectMongo();
@@ -87,7 +87,7 @@ test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cl
     const finishedJob = await waitForDocument(
       async () => {
         const current = await TorrentMetadataJobModel.findById(queuedJob._id).lean().exec();
-        if (current?.status === "failed" || current?.status === "dead_lettered") {
+        if (current?.status === "failed") {
           throw new Error(`Torrent metadata job ${queuedJob._id} ended in ${current.status}: ${current.error ?? "unknown error"}`);
         }
         return current?.status === "succeeded" ? current : null;
@@ -147,6 +147,14 @@ test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cl
     await expect(card.getByText("2/10")).toBeVisible();
     await card.getByRole("button", { name: "Previous preview image" }).click();
     await expect(card.getByText("1/10")).toBeVisible();
+    await card.getByRole("button", { name: "Open full size preview" }).click();
+    const lightbox = page.getByRole("dialog", { name: "Full size preview image" });
+    await expect(lightbox).toBeVisible();
+    await lightbox.getByRole("button", { name: "Next preview image" }).click();
+    await expect(lightbox.getByText("2/10")).toBeVisible();
+    await lightbox.getByRole("button", { name: "Previous preview image" }).click();
+    await expect(lightbox.getByText("1/10")).toBeVisible();
+    await lightbox.getByRole("button", { name: "Close full size preview" }).click();
   } finally {
     await cleanupSmokeTorrent(userId, torrentId, previewKeys);
   }

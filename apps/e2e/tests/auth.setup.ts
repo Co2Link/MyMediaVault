@@ -1,5 +1,5 @@
 import { test as setup } from "@playwright/test";
-import { authenticateWithEntra, buildAuthFile, requireEnv } from "./auth-helpers";
+import { authenticateWithEntra, buildAuthFile, requireEnv } from "./auth-helpers.js";
 
 setup("authenticate normal and admin users with Entra ID", async ({ browser }) => {
   setup.setTimeout(180_000);

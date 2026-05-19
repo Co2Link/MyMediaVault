@@ -1,4 +1,9 @@
+"use client";
+
 import Image from "next/image";
+import { useMemo, useState } from "react";
+import { previewImages } from "@/components/preview-images";
+import { VideoPreviewLightbox } from "@/components/video-preview-lightbox";
 import type { PreviewRead } from "@/lib/types";
 
 export function VideoPreviewGallery({
@@ -8,7 +13,11 @@ export function VideoPreviewGallery({
   preview: PreviewRead;
   videoId: string;
 }) {
-  if (!preview.sheet && preview.frames.length === 0) {
+  const images = useMemo(() => previewImages(videoId, preview), [preview, videoId]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  if (images.length === 0) {
     return (
       <section className={`preview-gallery preview-${preview.status}`}>
         <div>
@@ -23,6 +32,13 @@ export function VideoPreviewGallery({
     );
   }
 
+  const showPrevious = () => setCurrentIndex((index) => (index === 0 ? images.length - 1 : index - 1));
+  const showNext = () => setCurrentIndex((index) => (index + 1) % images.length);
+  const openLightbox = (index: number) => {
+    setCurrentIndex(index);
+    setIsLightboxOpen(true);
+  };
+
   return (
     <section className={`preview-gallery preview-${preview.status}`}>
       <div className="preview-gallery-header">
@@ -33,30 +49,34 @@ export function VideoPreviewGallery({
           ) : null}
         </div>
       </div>
-      {preview.sheet ? (
-        <Image
-          alt="Torrent preview sheet"
-          className="preview-sheet"
-          height={preview.sheet.height}
-          src={`/api/videos/${videoId}/preview/sheet`}
-          unoptimized
-          width={preview.sheet.width}
-        />
-      ) : null}
-      {preview.frames.length > 0 ? (
-        <div className="preview-frame-grid">
-          {preview.frames.slice(0, 9).map((frame, index) => (
+      <div className="preview-frame-grid">
+        {images.map((image, index) => (
+          <button
+            aria-label={`Open ${image.alt.toLowerCase()}`}
+            className="preview-frame-button"
+            key={image.src}
+            onClick={() => openLightbox(index)}
+            type="button"
+          >
             <Image
-              alt={`Torrent preview frame ${index + 1}`}
+              alt={image.alt}
               className="preview-frame"
-              height={frame.height}
-              key={frame.key}
-              src={`/api/videos/${videoId}/preview/frame-${index}`}
+              height={image.height}
+              src={image.src}
               unoptimized
-              width={frame.width}
+              width={image.width}
             />
-          ))}
-        </div>
+          </button>
+        ))}
+      </div>
+      {isLightboxOpen ? (
+        <VideoPreviewLightbox
+          currentIndex={currentIndex}
+          images={images}
+          onClose={() => setIsLightboxOpen(false)}
+          onNext={showNext}
+          onPrevious={showPrevious}
+        />
       ) : null}
     </section>
   );

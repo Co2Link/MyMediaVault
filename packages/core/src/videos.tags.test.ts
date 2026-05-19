@@ -6,6 +6,26 @@ const mocks = vi.hoisted(() => {
       { _id: "tag-1", name: "Drama" },
       { _id: "tag-2", name: "Favorites" },
     ] as Array<Record<string, unknown>>,
+    actors: [
+      {
+        _id: "actor-1",
+        name: "Actor One",
+        description: "First actor",
+        profileImageKey: "actors/actor-1/profile.jpg",
+        profileImageMimeType: "image/jpeg",
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
+      },
+      {
+        _id: "actor-2",
+        name: "Actor Two",
+        description: null,
+        profileImageKey: "actors/actor-2/profile.jpg",
+        profileImageMimeType: "image/jpeg",
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
+      },
+    ] as Array<Record<string, unknown>>,
     torrents: [] as Array<Record<string, unknown>>,
     videos: [] as Array<Record<string, unknown>>,
     videoTags: [] as Array<Record<string, unknown>>,
@@ -26,6 +46,13 @@ const mocks = vi.hoisted(() => {
   });
 
   const models = {
+    ActorModel: {
+      find: vi.fn((filter?: { _id?: { $in?: string[] } }) => {
+        const ids = filter?._id?.$in;
+        const value = ids ? state.actors.filter((actor) => ids.includes(actor._id as string)) : state.actors;
+        return query(value);
+      }),
+    },
     TagModel: {
       find: vi.fn((filter?: { _id?: { $in?: string[] } }) => {
         const ids = filter?._id?.$in;
@@ -53,6 +80,7 @@ const mocks = vi.hoisted(() => {
           metadataAttempts: 0,
           metadataLastAttemptAt: null,
           files: [],
+          actorIds: Array.isArray(doc.actorIds) ? doc.actorIds : [],
           createdAt: new Date("2024-01-01T00:00:00Z"),
           updatedAt: new Date("2024-01-01T00:00:00Z"),
           toObject() {
@@ -62,7 +90,13 @@ const mocks = vi.hoisted(() => {
         state.torrents.push(created);
         return created;
       }),
-      updateOne: vi.fn(() => query({ acknowledged: true })),
+      updateOne: vi.fn((filter: { _id?: string }, update: { $set?: Record<string, unknown> }) => {
+        const torrent = state.torrents.find((entry) => entry._id === filter._id);
+        if (torrent && update.$set) {
+          Object.assign(torrent, update.$set);
+        }
+        return query({ acknowledged: true });
+      }),
     },
     VideoModel: {
       findOne: vi.fn(() => query(null)),
@@ -144,6 +178,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("./db.js", () => ({
   connectMongo: mocks.connectMongo,
+  ActorModel: mocks.models.ActorModel,
   TagModel: mocks.models.TagModel,
   TorrentModel: mocks.models.TorrentModel,
   VideoModel: mocks.models.VideoModel,
@@ -187,6 +222,7 @@ describe("video tag persistence", () => {
       description: "Description",
       rating: 4,
       tagIds: ["tag-2", "tag-1", "tag-2"],
+      actorIds: [],
     });
 
     expect(mocks.models.VideoTagModel.deleteMany).toHaveBeenCalledWith({ videoId: "video-1" });
@@ -210,6 +246,7 @@ describe("video tag persistence", () => {
         metadataAttempts: 1,
         metadataLastAttemptAt: null,
         files: [],
+        actorIds: [],
         createdAt: new Date("2024-01-01T00:00:00Z"),
         updatedAt: new Date("2024-01-01T00:00:00Z"),
       },
@@ -225,10 +262,60 @@ describe("video tag persistence", () => {
       description: null,
       rating: null,
       tagIds: ["tag-2"],
+      actorIds: [],
     });
 
     expect(mocks.models.VideoTagModel.deleteMany).toHaveBeenCalledWith({ videoId: "video-1" });
     expect(mocks.models.VideoTagModel.create).toHaveBeenCalledWith([{ videoId: "video-1", tagId: "tag-2" }]);
     expect(video.tags.map((tag) => tag.id)).toEqual(["tag-2"]);
+  });
+
+  it("stores selected actors on the shared torrent when creating a video", async () => {
+    const { createVideo } = await import("./videos.js");
+
+    const video = await createVideo("user-1", {
+      infoHash: "abcdef0123456789abcdef0123456789abcdef01",
+      title: "Title",
+      description: null,
+      rating: null,
+      tagIds: [],
+      actorIds: ["actor-2", "actor-1", "actor-2"],
+    });
+
+    expect(mocks.state.torrents[0]?.actorIds).toEqual(["actor-2", "actor-1"]);
+    expect(video.actors.map((actor) => actor.id)).toEqual(["actor-1", "actor-2"]);
+  });
+
+  it("replaces torrent actors when updating video details", async () => {
+    mocks.state.torrents = [
+      {
+        _id: "torrent-1",
+        infoHash: "abcdef0123456789abcdef0123456789abcdef01",
+        name: "Torrent",
+        sizeBytes: 123,
+        rawBlobKey: null,
+        metadataStatus: "succeeded",
+        metadataError: null,
+        metadataAttempts: 1,
+        metadataLastAttemptAt: null,
+        files: [],
+        actorIds: ["actor-1"],
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { updateVideo } = await import("./videos.js");
+
+    const video = await updateVideo("user-1", "video-1", {
+      title: "Updated title",
+      description: null,
+      rating: null,
+      tagIds: [],
+      actorIds: ["actor-2"],
+    });
+
+    expect(mocks.models.TorrentModel.updateOne).toHaveBeenCalledWith({ _id: "torrent-1" }, { $set: { actorIds: ["actor-2"] } });
+    expect(video.actors.map((actor) => actor.id)).toEqual(["actor-2"]);
   });
 });

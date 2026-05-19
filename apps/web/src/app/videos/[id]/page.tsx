@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { ActorLinks } from "@/components/actor-links";
 import { MetadataStatusBadge } from "@/components/metadata-status";
 import { VideoPreviewGallery } from "@/components/video-preview-gallery";
+import { listActors } from "@/lib/actors";
 import { getVideoById } from "@/lib/videos";
 import { VideoDetailForm } from "@/app/videos/[id]/video-detail-form";
 import { listTags } from "@/lib/tags";
@@ -94,7 +96,7 @@ export default async function VideoDetailPage({
   }
 
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const [video, tags] = await Promise.all([getVideoById(session.user.id, id), listTags()]);
+  const [video, actors, tags] = await Promise.all([getVideoById(session.user.id, id), listActors(), listTags()]);
   const fileTree = createFileTree(video.files);
 
   return (
@@ -110,7 +112,19 @@ export default async function VideoDetailPage({
         </div>
         {query.created === "1" ? <p className="success-copy">Video added. Metadata processing has been queued.</p> : null}
         <VideoPreviewGallery preview={video.preview} videoId={video.id} />
-        <VideoDetailForm tags={tags} video={video} />
+        <dl className="detail-meta-grid">
+          <div>
+            <dt>Actors</dt>
+            <dd>
+              <ActorLinks actors={video.actors} />
+            </dd>
+          </div>
+          <div>
+            <dt>Tags</dt>
+            <dd>{video.tags.length ? video.tags.map((tag) => tag.name).join(", ") : "None"}</dd>
+          </div>
+        </dl>
+        <VideoDetailForm actors={actors} tags={tags} video={video} />
       </section>
       <aside className="editor-card">
         <h2>Torrent files</h2>

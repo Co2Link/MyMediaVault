@@ -12,6 +12,15 @@ export type TagRead = {
   name: string;
 };
 
+export type ActorRead = {
+  id: string;
+  name: string;
+  description: string | null;
+  hasProfileImage: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type TorrentFileRead = {
   path: string;
   sizeBytes: number;
@@ -69,6 +78,7 @@ export type VideoSummary = {
   metadataStatus: MetadataStatus;
   preview: PreviewRead;
   tags: TagRead[];
+  actors: ActorRead[];
   createdAt: string;
   updatedAt: string;
 };

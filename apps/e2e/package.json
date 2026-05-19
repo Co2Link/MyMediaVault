@@ -14,6 +14,7 @@
   "devDependencies": {
     "@mymediavault/core": "file:../../packages/core",
     "@playwright/test": "latest",
+    "@types/node": "^24.12.4",
     "typescript": "latest"
   }
 }

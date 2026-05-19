@@ -61,15 +61,16 @@ reliable in local test runs.
 torrent preview fields, then continuously polls the `torrents` collection for
 torrents whose metadata has succeeded and whose raw torrent blob is available.
 It claims eligible torrents atomically by setting `previewStatus = "processing"`,
-increments `previewAttempts`, calls `torrent-preview` with its default
+increments `previewAttempts`, calls `torrent-preview` 1.2.0 with its default
 configuration, uploads the contact sheet and nine selected frames to R2, and
 writes status, artifact keys, dimensions, warnings, and diagnostics back to the
 torrent document.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
-preview status). It can also regenerate succeeded previews when the
-`torrent-preview` artifact fingerprint changes. `failed` and `partial` results
-are treated as degraded terminal states and are not retried automatically.
+preview status). It also regenerates `succeeded` and `partial` previews when
+the recorded `torrent-preview` artifact version or fingerprint is stale for the
+current worker. Current `failed` results are treated as degraded terminal states
+and are not retried automatically.
 
 Run locally:
 

@@ -28,12 +28,14 @@ export async function updateVideoAction(
       description: formData.get("description"),
       rating: formData.get("rating"),
       tagIds: formData.getAll("tagIds"),
+      actorIds: formData.getAll("actorIds"),
     });
     await updateVideo(session.user.id, videoId, {
       title: normalizeOptionalText(parsed.title),
       description: normalizeOptionalText(parsed.description),
       rating: normalizeRating(parsed.rating),
       tagIds: parsed.tagIds,
+      actorIds: parsed.actorIds,
     });
     revalidatePath("/");
     revalidatePath(`/videos/${videoId}`);
@@ -50,6 +52,7 @@ export async function updateVideoAction(
 }
 
 export async function deleteVideoAction(videoId: string, _: DeleteVideoActionState): Promise<DeleteVideoActionState> {
+  void _;
   try {
     const session = await getRequiredSession();
     await deleteVideo(session.user.id, videoId);

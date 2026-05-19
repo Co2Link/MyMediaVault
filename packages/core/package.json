@@ -20,6 +20,11 @@
       "import": "./dist/auth-adapter.js",
       "default": "./dist/auth-adapter.js"
     },
+    "./actors": {
+      "types": "./dist/actors.d.ts",
+      "import": "./dist/actors.js",
+      "default": "./dist/actors.js"
+    },
     "./env": {
       "types": "./dist/env.d.ts",
       "import": "./dist/env.js",

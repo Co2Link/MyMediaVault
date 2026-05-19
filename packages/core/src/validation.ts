@@ -6,6 +6,7 @@ export const videoCreateSchema = z.object({
   description: z.string().trim().max(5000).optional().or(z.literal("")),
   rating: z.union([z.literal(""), z.coerce.number().int().min(1).max(5)]).optional(),
   tagIds: z.array(z.string().trim().min(1)),
+  actorIds: z.array(z.string().trim().min(1)),
 });
 
 export const videoUpdateSchema = z.object({
@@ -13,10 +14,16 @@ export const videoUpdateSchema = z.object({
   description: z.string().trim().max(5000).optional().or(z.literal("")),
   rating: z.union([z.literal(""), z.coerce.number().int().min(1).max(5)]).optional(),
   tagIds: z.array(z.string().trim().min(1)),
+  actorIds: z.array(z.string().trim().min(1)),
 });
 
 export const tagSchema = z.object({
   name: z.string().trim().min(1).max(128),
+});
+
+export const actorSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(5000).optional().or(z.literal("")),
 });
 
 export function normalizeInfoHash(value: string) {

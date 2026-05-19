@@ -25,6 +25,7 @@ export async function Header({ session }: { session: AppSession | null }) {
             {session.user.isAdmin ? (
               <>
                 <Link href="/admin/tags">Tags</Link>
+                <Link href="/admin/actors">Actors</Link>
                 <Link href="/admin/torrents">Torrents</Link>
               </>
             ) : null}

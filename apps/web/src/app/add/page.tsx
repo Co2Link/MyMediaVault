@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AddVideoForm } from "@/app/add/add-video-form";
+import { listActors } from "@/lib/actors";
 import { listTags } from "@/lib/tags";
 
 export default async function AddPage() {
@@ -9,11 +10,11 @@ export default async function AddPage() {
     redirect("/auth/sign-in");
   }
 
-  const tags = await listTags();
+  const [actors, tags] = await Promise.all([listActors(), listTags()]);
 
   return (
     <main className="workspace">
-      <AddVideoForm tags={tags} />
+      <AddVideoForm actors={actors} tags={tags} />
     </main>
   );
 }

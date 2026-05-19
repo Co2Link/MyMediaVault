@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
   });
 
   const models = {
+    ActorModel: {},
     TagModel: {},
     TorrentModel: {},
     VideoModel: {},
@@ -55,6 +56,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("./db.js", () => ({
   connectMongo: mocks.connectMongo,
+  ActorModel: mocks.models.ActorModel,
   TagModel: mocks.models.TagModel,
   TorrentModel: mocks.models.TorrentModel,
   VideoModel: mocks.models.VideoModel,

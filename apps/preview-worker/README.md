@@ -2,7 +2,7 @@
 
 VM-hosted Python worker that polls MongoDB for torrents needing preview images,
 uses Beanie models that mirror the Mongoose torrent document, uses
-`torrent-preview` with its default configuration, uploads the generated sheet
+`torrent-preview` 1.2.0 with its default configuration, uploads the generated sheet
 and frames to R2-compatible storage, and writes preview status back to the
 canonical torrent document.
 

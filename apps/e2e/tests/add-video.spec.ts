@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fixtureInfoHash, liveResolverInfoHash } from "../fixtures/torrents";
+import { liveResolverInfoHash } from "../fixtures/torrents.js";
 
 test("standard user can add a video and see processing status", async ({ page }) => {
   const uniqueInfoHash = `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa${Date.now().toString(16).padStart(8, "0").slice(-8)}`;

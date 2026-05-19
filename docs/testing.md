@@ -18,7 +18,8 @@ npm run test
 
 The web app uses Vitest and Testing Library. Keep tests colocated with route,
 component, or domain modules as `*.test.tsx` or `*.test.ts`. Favor direct tests
-of validation and domain helpers for server actions and route handlers.
+of validation and domain helpers for server actions and route handlers. Actor
+selection and preview lightbox behavior are covered with component tests.
 
 ## Core and Worker
 
@@ -47,8 +48,9 @@ npm run test:local
 ```
 
 Playwright tests cover the authenticated header/account menu, add-video with
-tag selection, detail-page tag editing, collection search, and admin tag flows
-against the Next.js app plus local worker. Separate setup projects log in
+actor and tag selection, detail-page actor/tag editing, collection search, and
+admin actor/tag flows against the Next.js app plus local worker. Separate setup
+projects log in
 through Entra for the normal user and admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
 real test-user credentials in `apps/e2e/.env.local`. Copy
@@ -69,7 +71,8 @@ the current commit on `develop`. The script checks those workflow results with
 GitHub CLI before running Playwright against the deployed dev URL. It verifies
 the full user add-video path through the web app, Cosmos DB, the worker job,
 Cloudflare R2, preview generation, preview UI behavior, and the UI
-metadata-ready state. The script starts `apps/preview-worker` locally against
+metadata-ready state. Preview UI assertions cover collection carousel navigation
+and full-size preview navigation. The script starts `apps/preview-worker` locally against
 the dev MongoDB/R2 environment before Playwright runs, and shuts it down on
 success or failure. The smoke deletes the created video, torrent, raw blob, and
 preview artifacts after the assertions finish.

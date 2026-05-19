@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -233,6 +234,7 @@ class PreviewWorker:
         self._database = self._client[settings.mongodb_database]
         self._blob_store = BlobStore(settings)
         self._config = PreviewEngineConfig()
+        self._artifact_version = _package_version("torrent-preview")
         self._artifact_fingerprint = self._config.artifact_fingerprint()
         self._engine = PreviewEngine(
             config=self._config,
@@ -244,8 +246,9 @@ class PreviewWorker:
         await init_beanie(database=self._database, document_models=[Torrent])
         await self._engine.start()
         logger.info(
-            "Preview worker started with max_concurrency={} artifact_fingerprint={}",
+            "Preview worker started with max_concurrency={} artifact_version={} artifact_fingerprint={}",
             self._max_concurrency,
+            self._artifact_version,
             self._artifact_fingerprint,
         )
         try:
@@ -290,8 +293,13 @@ class PreviewWorker:
             },
             {
                 **base,
-                "previewStatus": "succeeded",
-                "previewDiagnostics.artifactFingerprint": {"$ne": self._artifact_fingerprint},
+                "previewStatus": {"$in": ["succeeded", "partial"]},
+                "$or": [
+                    {"previewDiagnostics.artifactVersion": {"$exists": False}},
+                    {"previewDiagnostics.artifactVersion": {"$ne": self._artifact_version}},
+                    {"previewDiagnostics.artifactFingerprint": {"$exists": False}},
+                    {"previewDiagnostics.artifactFingerprint": {"$ne": self._artifact_fingerprint}},
+                ],
             },
         ]
 
@@ -435,6 +443,13 @@ def _to_plain_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _package_version(package_name: str) -> str:
+    try:
+        return version(package_name)
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def main() -> None:

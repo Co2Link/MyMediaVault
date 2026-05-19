@@ -1,4 +1,5 @@
 export * from "./auth-adapter.js";
+export * from "./actors.js";
 export * from "./db.js";
 export * from "./env.js";
 export * from "./errors.js";

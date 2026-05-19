@@ -11,6 +11,7 @@ erDiagram
   Torrent ||--o{ Video : referenced_by
   Torrent ||--o{ TorrentFile : contains
   Torrent ||--o{ TorrentMetadataJob : processed_by
+  Torrent }o--o{ Actor : features
   Video ||--o{ VideoTag : has
   Tag ||--o{ VideoTag : labels
 ```
@@ -24,6 +25,8 @@ erDiagram
 - `sessions`: Auth.js database sessions keyed by unique `sessionToken`.
 - `verification_tokens`: Auth.js verification token storage.
 - `torrents`: canonical torrent metadata keyed by unique normalized `infoHash`.
+- `actors`: shared actor catalog keyed by unique actor name. Actor records store
+  a name, optional description, and private profile-image blob metadata.
 - `videos`: user-owned collection item with private title, description, and
   rating; unique by `(userId, torrentId)`.
 - `tags`: global tag catalog keyed by unique tag name.
@@ -47,6 +50,13 @@ that already exist.
 Rating is optional and constrained to 1 through 5 in validation code before
 write operations. Tag names are trimmed, whitespace-normalized, non-empty, and
 unique.
+
+Actor names are trimmed, whitespace-normalized, non-empty, and unique. Actor
+profile images are stored in the configured blob store under private object
+keys and are served through authenticated web route handlers. Torrent actor
+attribution is stored as `torrents.actorIds`, so all videos that reference the
+same canonical torrent share the same actor list. Deleting an actor removes its
+ID from every torrent before deleting the actor's profile image blob.
 
 ## Metadata State
 
@@ -73,3 +83,8 @@ fingerprint, selected file, downloaded bytes, elapsed time, strategy, warnings,
 failure reason, and low-level torrent diagnostics. The worker increments
 `previewAttempts` and updates `previewLastAttemptAt` whenever it claims a
 torrent.
+
+The preview worker regenerates `succeeded` and `partial` previews when their
+recorded `torrent-preview` artifact version or fingerprint differs from the
+worker's current package/configuration. Current `failed` results remain terminal
+unless they are manually requeued.

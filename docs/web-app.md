@@ -12,8 +12,8 @@ application.
 
 ## Structure
 
-- `src/app`: collection, add-video, detail, admin-tags, admin-torrents, sign-in, and route
-  handler segments.
+- `src/app`: collection, add-video, actor profile, detail, admin-actors,
+  admin-tags, admin-torrents, sign-in, and route handler segments.
 - `src/components`: shared UI for the header, avatar, user menu, search form,
   video cards, torrent previews, and metadata status.
 - `src/auth.ts`: Auth.js configuration for Entra sign-in, database sessions,
@@ -24,14 +24,18 @@ application.
 ## Routes
 
 - `/`: the signed-in user collection with search.
-- `/add`: add a video by torrent info hash and assign existing tags.
-- `/videos/[id]`: view, edit, tag, and delete private video details.
+- `/add`: add a video by torrent info hash and assign existing actors and tags.
+- `/actors/[id]`: view the shared actor profile, description, and profile image.
+- `/videos/[id]`: view, edit actors/tags, and delete private video details.
+- `/admin/actors`: admin-only actor catalog management.
 - `/admin/tags`: admin-only tag management.
 - `/admin/torrents`: admin-only torrent management and deletion.
 - `/auth/sign-in`: explicit sign-in page.
 - `/api/auth/[...nextauth]`: Auth.js handler.
 - `/api/health`: deployment health check.
 - `/api/me/photo`: Microsoft Graph avatar lookup.
+- `/api/actors/[id]/image`: authenticated actor profile-image proxy for
+  private blob-store objects.
 - `/api/videos/[id]/preview/[artifact]`: authenticated preview artifact proxy
   for torrent preview sheets and frames stored in R2.
 
@@ -40,14 +44,18 @@ application.
 - Sign-in upserts the local `users` document with the Entra object ID, admin
   flag, name, email, and image.
 - Adding a video normalizes the info hash, reuses or creates the canonical
-  torrent, creates the user-owned video, attaches any selected tags, and
-  creates a MongoDB-backed metadata job.
-- Updating a video detail view can change the private fields and replace the
-  video's existing tag links with the selected catalog tags.
+  torrent, applies selected actors to the shared torrent actor list, creates the
+  user-owned video, attaches any selected tags, and creates a MongoDB-backed
+  metadata job.
+- Updating a video detail view can change the private fields, replace the
+  video's existing tag links with the selected catalog tags, and replace the
+  canonical torrent's shared actor list.
 - Deleting a video removes its private tags and, when it was the last video
   referencing the canonical torrent, deletes the torrent metadata and raw blob.
 - Admin torrent deletion removes the torrent, its dependent videos and video
   tags, the metadata job records, the stored raw blob, and preview artifacts.
+- Admin actor deletion removes the actor, pulls it from all torrent actor lists,
+  and deletes the stored profile image.
 - Detail and admin changes revalidate the affected routes so the server-rendered
   views stay current.
 - Preview sheets and frames are served through authenticated route handlers so

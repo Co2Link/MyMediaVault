@@ -54,6 +54,16 @@ export type TagDoc = {
   updatedAt: Date;
 };
 
+export type ActorDoc = {
+  _id: string;
+  name: string;
+  description: string | null;
+  profileImageKey: string;
+  profileImageMimeType: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type TorrentFileDoc = {
   path: string;
   sizeBytes: number;
@@ -102,6 +112,7 @@ export type TorrentDoc = {
   metadataAttempts: number;
   metadataLastAttemptAt: Date | null;
   files: TorrentFileDoc[];
+  actorIds: string[];
   previewStatus: PreviewStatus;
   previewError: string | null;
   previewAttempts: number;
@@ -223,6 +234,17 @@ const tagSchema = new Schema<TagDoc>(
   schemaOptions,
 );
 
+const actorSchema = new Schema<ActorDoc>(
+  {
+    _id: { type: String, default: newId },
+    name: { type: String, required: true, unique: true },
+    description: { type: String, default: null },
+    profileImageKey: { type: String, required: true },
+    profileImageMimeType: { type: String, required: true },
+  },
+  schemaOptions,
+);
+
 const torrentFileSchema = new Schema<TorrentFileDoc>(
   {
     path: { type: String, required: true },
@@ -284,6 +306,7 @@ const torrentSchema = new Schema<TorrentDoc>(
     metadataAttempts: { type: Number, default: 0 },
     metadataLastAttemptAt: { type: Date, default: null },
     files: { type: [torrentFileSchema], default: [] },
+    actorIds: { type: [String], default: [], index: true },
     previewStatus: {
       type: String,
       enum: ["pending", "processing", "succeeded", "partial", "failed"],
@@ -354,6 +377,7 @@ export const AccountModel = model<AccountDoc>("Account", accountSchema);
 export const SessionModel = model<SessionDoc>("Session", sessionSchema);
 export const VerificationTokenModel = model<VerificationTokenDoc>("VerificationToken", verificationTokenSchema);
 export const TagModel = model<TagDoc>("Tag", tagSchema);
+export const ActorModel = model<ActorDoc>("Actor", actorSchema);
 export const TorrentModel = model<TorrentDoc>("Torrent", torrentSchema);
 export const VideoModel = model<VideoDoc>("Video", videoSchema);
 export const VideoTagModel = model<VideoTagDoc>("VideoTag", videoTagSchema);
@@ -366,6 +390,7 @@ export const db = {
   Session: SessionModel,
   VerificationToken: VerificationTokenModel,
   Tag: TagModel,
+  Actor: ActorModel,
   Torrent: TorrentModel,
   Video: VideoModel,
   VideoTag: VideoTagModel,
@@ -431,6 +456,7 @@ export async function ensureIndexes() {
     SessionModel.init(),
     VerificationTokenModel.init(),
     TagModel.init(),
+    ActorModel.init(),
     TorrentModel.init(),
     VideoModel.init(),
     VideoTagModel.init(),
@@ -476,8 +502,12 @@ export async function resetE2EState(usernames: string[]) {
   const userIds = users.map((user) => user._id);
   const videos = await VideoModel.find({ userId: { $in: userIds } }).lean().exec();
   const candidateTorrentIds = [...new Set(videos.map((video) => video.torrentId))];
+  const staleActors = await ActorModel.find({ name: /^e2e-actor-/ }).lean().exec();
+  const staleActorIds = staleActors.map((actor) => actor._id);
 
   await Promise.all([
+    staleActorIds.length > 0 ? ActorModel.deleteMany({ _id: { $in: staleActorIds } }).exec() : Promise.resolve(),
+    staleActorIds.length > 0 ? TorrentModel.updateMany({}, { $pull: { actorIds: { $in: staleActorIds } } }).exec() : Promise.resolve(),
     TagModel.deleteMany({ name: /^e2e-tag-/ }).exec(),
     userIds.length > 0 ? UserModel.deleteMany({ _id: { $in: userIds } }).exec() : Promise.resolve(),
     userIds.length > 0 ? AccountModel.deleteMany({ userId: { $in: userIds } }).exec() : Promise.resolve(),
@@ -486,7 +516,10 @@ export async function resetE2EState(usernames: string[]) {
     videos.length > 0 ? VideoTagModel.deleteMany({ videoId: { $in: videos.map((video) => video._id) } }).exec() : Promise.resolve(),
   ]);
 
-  const blobKeys: string[] = [];
+  const blobKeys: string[] = staleActors
+    .map((actor) => actor.profileImageKey)
+    .filter((key): key is string => Boolean(key));
+
   for (const torrentId of candidateTorrentIds) {
     const remainingVideos = await VideoModel.countDocuments({ torrentId }).exec();
     if (remainingVideos > 0) {

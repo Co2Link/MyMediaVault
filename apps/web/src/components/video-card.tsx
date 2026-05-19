@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActorLinks } from "@/components/actor-links";
 import { MetadataStatusBadge } from "@/components/metadata-status";
 import { VideoPreviewCarousel } from "@/components/video-preview-carousel";
 import type { VideoSummary } from "@/lib/types";
@@ -18,6 +19,12 @@ export function VideoCard({ video }: { video: VideoSummary }) {
         <div>
           <dt>Rating</dt>
           <dd>{video.rating ?? "Unrated"}</dd>
+        </div>
+        <div>
+          <dt>Actors</dt>
+          <dd>
+            <ActorLinks actors={video.actors} />
+          </dd>
         </div>
         <div>
           <dt>Tags</dt>
