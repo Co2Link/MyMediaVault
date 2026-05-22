@@ -67,15 +67,34 @@ npm run test:smoke:dev
 ```
 
 Run the dev smoke locally after the GitHub `CI` and `Dev` workflows pass for
-the current commit on `develop`. The script checks those workflow results with
-GitHub CLI before running Playwright against the deployed dev URL. It verifies
-the full user add-video path through the web app, Cosmos DB, the worker job,
-Cloudflare R2, preview generation, preview UI behavior, and the UI
-metadata-ready state. Preview UI assertions cover collection carousel navigation
-and full-size preview navigation. The script starts `apps/preview-worker` locally against
-the dev MongoDB/R2 environment before Playwright runs, and shuts it down on
-success or failure. The smoke deletes the created video, torrent, raw blob, and
-preview artifacts after the assertions finish.
+the exact commit being validated has been pushed to `develop` and deployed.
+Local working-tree changes are not part of the deployed dev app, so a dev smoke
+run before commit, push, and deployment only validates the previous deployed
+revision. Do not report dev smoke as validation for a local UI or app change
+until the matching commit is visible in the `Dev` workflow and the workflow has
+completed successfully.
+
+The normal sequence for deployed-dev validation is:
+
+1. Run local package and e2e checks against the local stack.
+2. Commit the change and push it through the normal `develop` flow.
+3. Wait for GitHub `CI` and the triggered `Dev` deployment to pass for that
+   commit.
+4. Run `npm run test:smoke:dev` without overriding `DEV_SMOKE_COMMIT_SHA`.
+5. For visible UI changes, use Playwright against the deployed dev URL after
+   deployment, not only against a local dev server.
+
+The script checks workflow results with GitHub CLI before running Playwright
+against the deployed dev URL. `DEV_SMOKE_COMMIT_SHA` is a diagnostic override
+for investigating a specific deployed commit; it should not be used to claim
+that unpushed local changes passed dev smoke. The smoke verifies the full user
+add-video path through the web app, Cosmos DB, the worker job, Cloudflare R2,
+preview generation, preview UI behavior, and the UI metadata-ready state.
+Preview UI assertions cover collection carousel navigation and full-size
+preview navigation. The script starts `apps/preview-worker` locally against the
+dev MongoDB/R2 environment before Playwright runs, and shuts it down on success
+or failure. The smoke deletes the created video, torrent, raw blob, and preview
+artifacts after the assertions finish.
 
 `apps/e2e/.env.dev` must set the Entra test-user credentials and `E2E_BASE_URL`
 to the deployed dev web URL. Source values in `apps/web/.env.local` and

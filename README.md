@@ -69,7 +69,9 @@ app and local queue worker automatically when needed, loads env from
 `apps/web/.env.local` and `apps/e2e/.env.local`, cleans documents owned by the
 Playwright test users, performs real Entra login, and runs the browser suite
 against the local stack. To verify the deployed dev environment after GitHub
-`CI` and `Dev` pass, run `npm run test:smoke:dev` from `apps/e2e`.
+`CI` and `Dev` pass for the pushed commit, run `npm run test:smoke:dev` from
+`apps/e2e`. A dev smoke run before commit, push, and deployment only validates
+the previous deployed revision, not local working-tree changes.
 
 ## Infrastructure
 

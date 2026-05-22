@@ -184,6 +184,7 @@ button {
   background: transparent;
   border: 0;
   color: inherit;
+  cursor: pointer;
   display: block;
   padding: 0;
   text-align: inherit;
@@ -226,15 +227,27 @@ button {
   right: 10px;
 }
 
+.video-preview-carousel .preview-controls {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.video-preview-carousel:hover .preview-controls,
+.video-preview-carousel:focus-within .preview-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .preview-arrow,
 .preview-counter {
-  backdrop-filter: blur(12px);
-  background: rgba(255, 250, 242, 0.82);
-  border: 1px solid rgba(21, 32, 39, 0.14);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 999px;
-  color: var(--foreground);
+  color: #fff;
   font-family: var(--font-mono), monospace;
   line-height: 1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.72);
 }
 
 .preview-arrow {
@@ -244,6 +257,12 @@ button {
   justify-content: center;
   padding: 0;
   width: 36px;
+}
+
+.preview-arrow:hover,
+.preview-arrow:focus-visible {
+  border-color: rgba(255, 255, 255, 0.72);
+  outline: 0;
 }
 
 .preview-counter {
@@ -284,8 +303,9 @@ button {
 
 .preview-lightbox {
   align-items: center;
-  display: grid;
+  display: flex;
   inset: 0;
+  justify-content: center;
   padding: 24px;
   position: fixed;
   z-index: 20;
@@ -299,18 +319,19 @@ button {
 }
 
 .preview-lightbox-content {
-  display: grid;
-  gap: 14px;
+  align-items: center;
+  display: flex;
   height: min(90vh, 920px);
-  justify-self: center;
-  max-width: min(96vw, 1320px);
+  justify-content: center;
   position: relative;
-  width: 100%;
+  width: min(96vw, 1320px);
+  z-index: 1;
 }
 
 .preview-lightbox-image {
-  min-height: 0;
+  height: min(82vh, 920px);
   position: relative;
+  width: 100%;
 }
 
 .preview-lightbox-image img {
@@ -319,23 +340,36 @@ button {
 
 .preview-lightbox-close {
   align-items: center;
-  background: rgba(255, 250, 242, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 999px;
-  color: var(--foreground);
+  color: #fff;
   display: inline-flex;
   height: 40px;
   justify-content: center;
-  justify-self: end;
   padding: 0;
+  position: absolute;
+  right: 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.72);
+  top: 0;
   width: 40px;
+}
+
+.preview-lightbox-close:hover,
+.preview-lightbox-close:focus-visible {
+  border-color: rgba(255, 255, 255, 0.72);
+  outline: 0;
 }
 
 .preview-lightbox-controls {
   align-items: center;
+  bottom: 0;
   display: flex;
   gap: 12px;
   justify-content: center;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
 }
 
 .preview-partial,

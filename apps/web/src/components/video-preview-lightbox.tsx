@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import type { PreviewImage } from "@/components/preview-images";
 
 export function VideoPreviewLightbox({
@@ -36,11 +37,11 @@ export function VideoPreviewLightbox({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose, onNext, onPrevious]);
 
-  if (!current) {
+  if (!current || typeof document === "undefined") {
     return null;
   }
 
-  return (
+  return createPortal(
     <div aria-label="Full size preview image" aria-modal="true" className="preview-lightbox" role="dialog">
       <button aria-label="Dismiss full size preview" className="preview-lightbox-backdrop" onClick={onClose} type="button" />
       <div className="preview-lightbox-content">
@@ -64,6 +65,7 @@ export function VideoPreviewLightbox({
           </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

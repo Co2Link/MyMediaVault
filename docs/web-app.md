@@ -60,6 +60,9 @@ application.
   views stay current.
 - Preview sheets and frames are served through authenticated route handlers so
   private R2 object keys are never exposed as public URLs.
+- Collection and detail preview images open a centered full-size lightbox with
+  previous/next navigation. Detail torrent file folders render collapsed by
+  default so long file lists do not dominate the page.
 
 ## Worker Boundary
 

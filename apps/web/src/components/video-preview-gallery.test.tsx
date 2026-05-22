@@ -53,13 +53,15 @@ const preview: PreviewRead = {
 describe("VideoPreviewGallery", () => {
   it("treats the sheet as a gallery image and opens full size navigation", async () => {
     const user = userEvent.setup();
-    const { getAllByRole, getByRole, getByText } = render(<VideoPreviewGallery preview={preview} videoId="video-1" />);
+    const { findByRole, getAllByRole, getByRole, getByText } = render(
+      <VideoPreviewGallery preview={preview} videoId="video-1" />,
+    );
 
     expect(getAllByRole("img")).toHaveLength(3);
 
     await user.click(getByRole("button", { name: "Open torrent preview sheet" }));
 
-    expect(getByRole("dialog", { name: "Full size preview image" })).toBeVisible();
+    expect(await findByRole("dialog", { name: "Full size preview image" })).toBeVisible();
     expect(getByText("1/3")).toBeVisible();
 
     await user.click(getByRole("button", { name: "Next preview image" }));
