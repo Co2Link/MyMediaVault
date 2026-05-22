@@ -4,7 +4,6 @@ import argparse
 import asyncio
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -16,15 +15,21 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import AsyncMongoClient, ReturnDocument
 from torrent_preview import (
+    PREVIEW_ARTIFACT_VERSION,
+    PreviewHarnessConfig,
     PreviewContext,
     PreviewEngine,
     PreviewEngineConfig,
+    PreviewJobLease,
+    PreviewJobSource,
     PreviewOutput,
     PreviewOutputHandler,
-    PreviewRequest,
+    PreviewResult,
+    PreviewWorkerHarness,
     StoredFrame,
     StoredPreview,
     StoredSheet,
+    configure_default_logging,
 )
 
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
@@ -35,12 +40,17 @@ DEFAULT_STALE_PROCESSING_MINUTES = 120
 class PreviewWorkerSettings(BaseSettings):
     mongodb_uri: str = Field(alias="MONGODB_URI")
     mongodb_database: str = Field(default="mymediavault", alias="MMV_MONGODB_DB_NAME")
-    mongodb_server_selection_timeout_ms: int = Field(default=10000, alias="MMV_MONGODB_SERVER_SELECTION_TIMEOUT_MS")
+    mongodb_server_selection_timeout_ms: int = Field(
+        default=10000, alias="MMV_MONGODB_SERVER_SELECTION_TIMEOUT_MS"
+    )
     r2_endpoint: str | None = Field(default=None, alias="R2_ENDPOINT")
     r2_access_key_id: str | None = Field(default=None, alias="R2_ACCESS_KEY_ID")
     r2_secret_access_key: str | None = Field(default=None, alias="R2_SECRET_ACCESS_KEY")
     r2_bucket_name: str = Field(default="torrent-raw", alias="R2_BUCKET_NAME")
-    preview_worker_max_concurrency: int = Field(default=DEFAULT_MAX_CONCURRENCY, alias="MMV_PREVIEW_WORKER_MAX_CONCURRENCY")
+    openai_api_key: str = Field(alias="OPENAI_API_KEY")
+    preview_worker_max_concurrency: int = Field(
+        default=DEFAULT_MAX_CONCURRENCY, alias="MMV_PREVIEW_WORKER_MAX_CONCURRENCY"
+    )
     preview_worker_poll_interval_seconds: float = Field(
         default=DEFAULT_POLL_INTERVAL_SECONDS,
         alias="MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS",
@@ -50,19 +60,30 @@ class PreviewWorkerSettings(BaseSettings):
         alias="MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES",
     )
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", populate_by_name=True
+    )
 
     @model_validator(mode="after")
     def validate_storage_credentials(self) -> PreviewWorkerSettings:
-        credentials = [self.r2_endpoint, self.r2_access_key_id, self.r2_secret_access_key]
+        credentials = [
+            self.r2_endpoint,
+            self.r2_access_key_id,
+            self.r2_secret_access_key,
+        ]
         if any(credentials) and not all(credentials):
             msg = "R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY must be set together"
+            raise ValueError(msg)
+        if not self.openai_api_key.strip():
+            msg = "OPENAI_API_KEY must be set for torrent-preview Pydantic AI ranking"
             raise ValueError(msg)
         return self
 
     @property
     def use_r2(self) -> bool:
-        return bool(self.r2_endpoint and self.r2_access_key_id and self.r2_secret_access_key)
+        return bool(
+            self.r2_endpoint and self.r2_access_key_id and self.r2_secret_access_key
+        )
 
 
 class TorrentPreviewFrame(BaseModel):
@@ -108,7 +129,9 @@ class Torrent(Document):
     previewUpdatedAt: datetime | None = None
     previewFrames: list[TorrentPreviewFrame] = Field(default_factory=list)
     previewSheet: TorrentPreviewSheet | None = None
-    previewDiagnostics: TorrentPreviewDiagnostics = Field(default_factory=TorrentPreviewDiagnostics)
+    previewDiagnostics: TorrentPreviewDiagnostics = Field(
+        default_factory=TorrentPreviewDiagnostics
+    )
 
     class Settings:
         name = "torrents"
@@ -147,7 +170,9 @@ class BlobStore:
         if self._client is None:
             await asyncio.to_thread((self._root / key).unlink, missing_ok=True)
             return
-        await asyncio.to_thread(self._client.delete_object, Bucket=self._bucket_name, Key=key)
+        await asyncio.to_thread(
+            self._client.delete_object, Bucket=self._bucket_name, Key=key
+        )
 
     def _build_r2_client(self) -> BaseClient | None:
         if not self._settings.use_r2:
@@ -198,6 +223,7 @@ class R2PreviewOutputHandler(PreviewOutputHandler):
                         if frame.anchor_ratio is None
                         else f"{frame.anchor_ratio:.6f}",
                         "decode_method": frame.decode_method,
+                        "accepted_by_llm": str(frame.accepted_by_llm).lower(),
                     },
                 )
             )
@@ -205,7 +231,9 @@ class R2PreviewOutputHandler(PreviewOutputHandler):
         sheet = None
         if output.sheet is not None:
             key = f"previews/{context.info_hash}/preview_sheet.jpg"
-            await self._blob_store.put_file(key, output.sheet.path, output.sheet.mime_type)
+            await self._blob_store.put_file(
+                key, output.sheet.path, output.sheet.mime_type
+            )
             sheet = StoredSheet(
                 uri=key,
                 width=output.sheet.width,
@@ -217,68 +245,93 @@ class R2PreviewOutputHandler(PreviewOutputHandler):
         return StoredPreview(frames=frames, sheet=sheet)
 
 
-class PreviewWorker:
+class MongoPreviewJobLease(PreviewJobLease):
     def __init__(
         self,
         *,
-        settings: PreviewWorkerSettings,
+        torrent: Torrent,
+        blob_store: BlobStore,
     ) -> None:
-        self._settings = settings
-        self._max_concurrency = max(1, settings.preview_worker_max_concurrency)
-        self._poll_interval_seconds = max(0.5, settings.preview_worker_poll_interval_seconds)
-        self._stale_processing_minutes = max(1, settings.preview_repair_stale_processing_minutes)
-        self._client = AsyncMongoClient(
-            settings.mongodb_uri,
-            serverSelectionTimeoutMS=settings.mongodb_server_selection_timeout_ms,
-        )
-        self._database = self._client[settings.mongodb_database]
-        self._blob_store = BlobStore(settings)
-        self._config = PreviewEngineConfig()
-        self._artifact_version = _package_version("torrent-preview")
-        self._artifact_fingerprint = self._config.artifact_fingerprint()
-        self._engine = PreviewEngine(
-            config=self._config,
-            output_handler=R2PreviewOutputHandler(self._blob_store),
-        )
-        self._stopping = False
+        self._torrent = torrent
+        self._blob_store = blob_store
+        self._old_keys = _preview_keys(torrent)
 
-    async def run(self) -> None:
-        await init_beanie(database=self._database, document_models=[Torrent])
-        await self._engine.start()
-        logger.info(
-            "Preview worker started with max_concurrency={} artifact_version={} artifact_fingerprint={}",
-            self._max_concurrency,
-            self._artifact_version,
-            self._artifact_fingerprint,
+    @property
+    def job_id(self) -> str:
+        return self._torrent.id
+
+    async def load_torrent_bytes(self) -> bytes:
+        raw_blob_key = self._torrent.rawBlobKey
+        if raw_blob_key is None:
+            msg = f"Torrent {self._torrent.id} does not have a raw blob key"
+            raise ValueError(msg)
+        return await asyncio.to_thread(self._blob_store.get_bytes, raw_blob_key)
+
+    async def complete(self, result: PreviewResult) -> None:
+        await Torrent.get_pymongo_collection().update_one(
+            {"_id": self._torrent.id}, _success_update(result)
         )
-        try:
-            while not self._stopping:
-                await self._repair_stale_processing()
-                torrents = await self._claim_batch()
-                if not torrents:
-                    await asyncio.sleep(self._poll_interval_seconds)
-                    continue
-                await asyncio.gather(*(self._process_torrent(torrent) for torrent in torrents))
-        finally:
-            await self._engine.close()
-            await self._client.close()
+        await self._delete_old_keys(_preview_keys_from_result(result))
 
-    def stop(self) -> None:
-        self._stopping = True
+    async def fail(self, error: Exception) -> None:
+        message = str(error) or error.__class__.__name__
+        await Torrent.get_pymongo_collection().update_one(
+            {"_id": self._torrent.id},
+            {
+                "$set": {
+                    "previewStatus": "failed",
+                    "previewError": message,
+                    "previewUpdatedAt": datetime.now(UTC),
+                    "previewDiagnostics.failureReason": message,
+                }
+            },
+        )
 
-    async def _claim_batch(self) -> list[Torrent]:
-        claimed: list[Torrent] = []
-        for query in self._claim_queries():
-            while len(claimed) < self._max_concurrency:
+    async def _delete_old_keys(self, new_keys: set[str]) -> None:
+        for key in self._old_keys - new_keys:
+            await self._blob_store.delete_if_exists(key)
+
+
+class MongoPreviewJobSource(PreviewJobSource):
+    def __init__(
+        self,
+        *,
+        blob_store: BlobStore,
+        stale_processing_minutes: int,
+    ) -> None:
+        self._blob_store = blob_store
+        self._stale_processing_minutes = max(1, stale_processing_minutes)
+
+    async def claim_batch(
+        self,
+        *,
+        limit: int,
+        artifact_version: str,
+        artifact_fingerprint: str,
+    ) -> list[MongoPreviewJobLease]:
+        await self._repair_stale_processing()
+        claimed: list[MongoPreviewJobLease] = []
+        for query in self._claim_queries(
+            artifact_version=artifact_version,
+            artifact_fingerprint=artifact_fingerprint,
+        ):
+            while len(claimed) < limit:
                 torrent = await self._claim_one(query)
                 if torrent is None:
                     break
-                claimed.append(torrent)
-            if len(claimed) >= self._max_concurrency:
+                claimed.append(
+                    MongoPreviewJobLease(torrent=torrent, blob_store=self._blob_store)
+                )
+            if len(claimed) >= limit:
                 break
         return claimed
 
-    def _claim_queries(self) -> list[dict[str, Any]]:
+    def _claim_queries(
+        self,
+        *,
+        artifact_version: str,
+        artifact_fingerprint: str,
+    ) -> list[dict[str, Any]]:
         base = {
             "metadataStatus": "succeeded",
             "rawBlobKey": {"$type": "string", "$ne": ""},
@@ -296,9 +349,13 @@ class PreviewWorker:
                 "previewStatus": {"$in": ["succeeded", "partial"]},
                 "$or": [
                     {"previewDiagnostics.artifactVersion": {"$exists": False}},
-                    {"previewDiagnostics.artifactVersion": {"$ne": self._artifact_version}},
+                    {"previewDiagnostics.artifactVersion": {"$ne": artifact_version}},
                     {"previewDiagnostics.artifactFingerprint": {"$exists": False}},
-                    {"previewDiagnostics.artifactFingerprint": {"$ne": self._artifact_fingerprint}},
+                    {
+                        "previewDiagnostics.artifactFingerprint": {
+                            "$ne": artifact_fingerprint
+                        }
+                    },
                 ],
             },
         ]
@@ -321,7 +378,9 @@ class PreviewWorker:
         return Torrent.model_validate(document) if document else None
 
     async def _repair_stale_processing(self) -> None:
-        stale_before = datetime.now(UTC) - timedelta(minutes=self._stale_processing_minutes)
+        stale_before = datetime.now(UTC) - timedelta(
+            minutes=self._stale_processing_minutes
+        )
         result = await Torrent.get_pymongo_collection().update_many(
             {
                 "previewStatus": "processing",
@@ -340,43 +399,66 @@ class PreviewWorker:
         if result.modified_count:
             logger.info("Requeued {} stale preview jobs", result.modified_count)
 
-    async def _process_torrent(self, torrent: Torrent) -> None:
-        torrent_id = torrent.id
-        info_hash = torrent.infoHash
-        raw_blob_key = torrent.rawBlobKey
-        if raw_blob_key is None:
-            return
-        old_keys = _preview_keys(torrent)
-        logger.info("Generating preview for torrent {}", info_hash)
 
+class PreviewWorker:
+    def __init__(
+        self,
+        *,
+        settings: PreviewWorkerSettings,
+    ) -> None:
+        self._settings = settings
+        self._max_concurrency = max(1, settings.preview_worker_max_concurrency)
+        self._poll_interval_seconds = max(
+            0.5, settings.preview_worker_poll_interval_seconds
+        )
+        self._stale_processing_minutes = max(
+            1, settings.preview_repair_stale_processing_minutes
+        )
+        self._client = AsyncMongoClient(
+            settings.mongodb_uri,
+            serverSelectionTimeoutMS=settings.mongodb_server_selection_timeout_ms,
+        )
+        self._database = self._client[settings.mongodb_database]
+        self._blob_store = BlobStore(settings)
+        self._config = PreviewEngineConfig(frame_ranker="pydantic-ai")
+        self._engine = PreviewEngine(
+            config=self._config,
+            output_handler=R2PreviewOutputHandler(self._blob_store),
+        )
+        self._harness: PreviewWorkerHarness | None = None
+
+    async def run(self) -> None:
+        await init_beanie(database=self._database, document_models=[Torrent])
+        job_source = MongoPreviewJobSource(
+            blob_store=self._blob_store,
+            stale_processing_minutes=self._stale_processing_minutes,
+        )
+        self._harness = PreviewWorkerHarness(
+            engine=self._engine,
+            job_source=job_source,
+            config=PreviewHarnessConfig(
+                max_concurrency=self._max_concurrency,
+                poll_interval_seconds=self._poll_interval_seconds,
+            ),
+        )
+        logger.info(
+            "Preview worker started with max_concurrency={} artifact_version={} artifact_fingerprint={}",
+            self._max_concurrency,
+            PREVIEW_ARTIFACT_VERSION,
+            self._config.artifact_fingerprint(),
+        )
         try:
-            raw_torrent = await asyncio.to_thread(self._blob_store.get_bytes, raw_blob_key)
-            result = await self._engine.preview(PreviewRequest(torrent_bytes=raw_torrent))
-            update = _success_update(result)
-            await Torrent.get_pymongo_collection().update_one({"_id": torrent_id}, update)
-            await self._delete_old_keys(old_keys, _preview_keys_from_result(result))
-            logger.info("Preview finished for torrent {} with status {}", info_hash, result.status)
-        except Exception as exc:
-            message = str(exc) or exc.__class__.__name__
-            await Torrent.get_pymongo_collection().update_one(
-                {"_id": torrent_id},
-                {
-                    "$set": {
-                        "previewStatus": "failed",
-                        "previewError": message,
-                        "previewUpdatedAt": datetime.now(UTC),
-                        "previewDiagnostics.failureReason": message,
-                    }
-                },
-            )
-            logger.exception("Preview failed for torrent {}", info_hash)
+            await self._harness.run()
+        finally:
+            await self._client.close()
+            self._harness = None
 
-    async def _delete_old_keys(self, old_keys: set[str], new_keys: set[str]) -> None:
-        for key in old_keys - new_keys:
-            await self._blob_store.delete_if_exists(key)
+    def stop(self) -> None:
+        if self._harness is not None:
+            self._harness.stop()
 
 
-def _success_update(result: Any) -> dict[str, Any]:
+def _success_update(result: PreviewResult) -> dict[str, Any]:
     now = datetime.now(UTC)
     selected_file = result.selected_file
     diagnostics = {
@@ -445,15 +527,11 @@ def _to_plain_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _package_version(package_name: str) -> str:
-    try:
-        return version(package_name)
-    except PackageNotFoundError:
-        return "unknown"
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the MyMediaVault torrent preview worker.")
+    configure_default_logging(debug=False)
+    parser = argparse.ArgumentParser(
+        description="Run the MyMediaVault torrent preview worker."
+    )
     parser.add_argument(
         "--max-concurrency",
         type=int,

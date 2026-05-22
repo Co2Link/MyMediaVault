@@ -7,6 +7,7 @@
 - Production uses Azure Cosmos DB for MongoDB vCore.
 - You are in a devcontainer environment, ask user to rebuild the container if you update devcontainer configuration or Dockerfile.
 - Do not hardcode any secrets, ID, or credentials in the codebase.
+- When you update any AGENTS.md, it should be general guidelines and not specific to this repo.
 
 <!-- BEGIN:nextjs-agent-rules -->
  
@@ -61,4 +62,11 @@ Do not commit `.env` files, Entra credentials, database passwords, Terraform sec
 
 ## Documentation Maintenance
 
-Coding agents own `docs/`. Treat [docs/index.md](/workspaces/MyMediaVault/docs/index.md) as the documentation entry point and read the relevant linked documents before changing code that affects architecture, APIs, data models, tests, deployment, or workflows. When behavior changes, update the matching Markdown file in the same change. Create a focused `.md` when no existing doc fits, and link it from `docs/index.md`.
+Coding agents own `docs/`. Treat docs/index.md as the documentation entry point and read the relevant linked documents before changing code. When behavior changes, update the matching Markdown file in the same change. Create a focused `.md` when no existing doc fits, and link it from `docs/index.md`.
+
+## Python guidelines
+- Use uv to manage python environment, do not edit pyproject.toml directly.
+- Tool preferences
+  - loguru for logging.
+  - ty for type checking.
+  - ruff for linting and formatting.

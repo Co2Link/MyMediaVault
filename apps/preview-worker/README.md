@@ -1,10 +1,10 @@
 # MyMediaVault Preview Worker
 
 VM-hosted Python worker that polls MongoDB for torrents needing preview images,
-uses Beanie models that mirror the Mongoose torrent document, uses
-`torrent-preview` 1.2.0 with its default configuration, uploads the generated sheet
-and frames to R2-compatible storage, and writes preview status back to the
-canonical torrent document.
+uses Beanie models that mirror the Mongoose torrent document, delegates polling
+and concurrent execution to the `torrent-preview` worker harness, uploads the
+generated sheet and frames to R2-compatible storage, and writes preview status
+back to the canonical torrent document.
 
 ## Run
 
@@ -21,6 +21,7 @@ Required environment:
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET_NAME`
+- `OPENAI_API_KEY`
 
 Optional environment:
 
@@ -29,4 +30,5 @@ Optional environment:
 - `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` defaults to `120`
 
 The VM runtime must provide Python 3.13, `libtorrent`, `ffmpeg`, and preferably
-`ffprobe`.
+`ffprobe`. `OPENAI_API_KEY` is required because the worker intentionally runs
+`torrent-preview` with the Pydantic AI ranker.

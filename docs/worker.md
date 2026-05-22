@@ -58,19 +58,20 @@ reliable in local test runs.
 ## Preview Worker
 
 `apps/preview-worker` uses Beanie document models that mirror the Mongoose
-torrent preview fields, then continuously polls the `torrents` collection for
-torrents whose metadata has succeeded and whose raw torrent blob is available.
-It claims eligible torrents atomically by setting `previewStatus = "processing"`,
-increments `previewAttempts`, calls `torrent-preview` 1.2.0 with its default
-configuration, uploads the contact sheet and nine selected frames to R2, and
-writes status, artifact keys, dimensions, warnings, and diagnostics back to the
-torrent document.
+torrent preview fields, then supplies a MongoDB job source to the
+`torrent-preview` worker harness. The app-owned source continuously polls the
+`torrents` collection for torrents whose metadata has succeeded and whose raw
+torrent blob is available. It claims eligible torrents atomically by setting
+`previewStatus = "processing"`, increments `previewAttempts`, runs
+`torrent-preview` 3.2.0 with the Pydantic AI ranker, uploads the contact sheet
+and nine selected frames to R2, and writes status, artifact keys, dimensions,
+warnings, LLM acceptance metadata, and diagnostics back to the torrent document.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
 preview status). It also regenerates `succeeded` and `partial` previews when
-the recorded `torrent-preview` artifact version or fingerprint is stale for the
-current worker. Current `failed` results are treated as degraded terminal states
-and are not retried automatically.
+the recorded `torrent-preview` artifact contract version or fingerprint is
+stale for the current worker. Current `failed` results are treated as degraded
+terminal states and are not retried automatically.
 
 Run locally:
 
@@ -91,6 +92,7 @@ Preview worker environment:
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 access key ID. |
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |
+| `OPENAI_API_KEY` | Required by the Pydantic AI preview ranker. |
 | `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. Defaults to `20`. |
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle polling interval. Defaults to `5`. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing threshold. Defaults to `120`. |

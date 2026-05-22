@@ -78,13 +78,14 @@ stores a contact sheet in `previewSheet` and up to nine frame records in
 preview output is retained for diagnostics but is presented as degraded to
 users.
 
-`previewDiagnostics` stores the `torrent-preview` artifact version and
+`previewDiagnostics` stores the `torrent-preview` artifact contract version and
 fingerprint, selected file, downloaded bytes, elapsed time, strategy, warnings,
-failure reason, and low-level torrent diagnostics. The worker increments
-`previewAttempts` and updates `previewLastAttemptAt` whenever it claims a
-torrent.
+failure reason, and low-level torrent diagnostics. Frame metadata includes
+whether the Pydantic AI ranker accepted the selected frame when that signal is
+available. The worker increments `previewAttempts` and updates
+`previewLastAttemptAt` whenever it claims a torrent.
 
 The preview worker regenerates `succeeded` and `partial` previews when their
-recorded `torrent-preview` artifact version or fingerprint differs from the
-worker's current package/configuration. Current `failed` results remain terminal
-unless they are manually requeued.
+recorded `torrent-preview` artifact contract version or fingerprint differs
+from the worker's current library recipe. Current `failed` results remain
+terminal unless they are manually requeued.

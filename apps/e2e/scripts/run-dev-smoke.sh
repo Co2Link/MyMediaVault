@@ -107,6 +107,7 @@ source_optional_file "$E2E_DIR/.env.dev"
 : "${R2_ENDPOINT:?Missing R2_ENDPOINT for dev preview worker and R2 verification.}"
 : "${R2_ACCESS_KEY_ID:?Missing R2_ACCESS_KEY_ID for dev preview worker and R2 verification.}"
 : "${R2_SECRET_ACCESS_KEY:?Missing R2_SECRET_ACCESS_KEY for dev preview worker and R2 verification.}"
+: "${OPENAI_API_KEY:?Missing OPENAI_API_KEY for torrent-preview Pydantic AI ranking.}"
 
 if [[ "$E2E_BASE_URL" == http://localhost:* || "$E2E_BASE_URL" == http://127.0.0.1:* ]]; then
   echo "E2E_BASE_URL must point to the deployed dev environment, not localhost." >&2

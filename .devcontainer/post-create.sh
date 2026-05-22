@@ -6,6 +6,13 @@ for path in "$HOME/.claude" "$HOME/.codex" "$HOME/.gemini"; do
     fi
 done
 
+# Install external runtime tools used by torrent-preview.
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
+    sudo rm -rf /var/lib/apt/lists/*
+fi
+
 # Install OpenSpec CLI globally
 npm install -g @fission-ai/openspec@latest
 

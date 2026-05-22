@@ -81,17 +81,20 @@ preview artifacts after the assertions finish.
 to the deployed dev web URL. Source values in `apps/web/.env.local` and
 `apps/preview-worker/.env.dev` must point to the dev Cosmos DB and Cloudflare R2
 so the smoke can verify database records, raw torrent blobs, run the preview
-worker, and verify preview artifacts. The script runs the dedicated `smoke-dev-chromium`
-Playwright project so deployed-dev checks stay out of normal local runs.
+worker, and verify preview artifacts. It must also include `OPENAI_API_KEY` so
+the preview worker can run the required Pydantic AI ranker. The script runs the
+dedicated `smoke-dev-chromium` Playwright project so deployed-dev checks stay
+out of normal local runs.
 
 ## Environment Variables
 
 The local test harness sources `apps/web/.env.local` and `apps/e2e/.env.local`.
-The deployed-dev smoke harness sources `apps/web/.env.local` and
-`apps/e2e/.env.dev`. Use `apps/e2e/.env.example` as the template for both
-files. The tables below list the test-specific variables; the web and worker
-variables documented in their own docs are also required when the harness talks
-to the live app or worker.
+The deployed-dev smoke harness sources `apps/web/.env.local`,
+`apps/preview-worker/.env.dev`, and `apps/e2e/.env.dev`. Use
+`apps/e2e/.env.example` as the template for e2e variables. The tables below
+list the test-specific variables; the web and worker variables documented in
+their own docs are also required when the harness talks to the live app or
+worker.
 
 | Variable | Purpose |
 | --- | --- |
@@ -115,6 +118,7 @@ to the live app or worker.
 | `R2_ACCESS_KEY_ID` | Local R2 access key ID. |
 | `R2_SECRET_ACCESS_KEY` | Local R2 secret access key. |
 | `R2_BUCKET_NAME` | Local R2 bucket name. |
+| `OPENAI_API_KEY` | Required for dev smoke preview generation with the Pydantic AI ranker. |
 | `HEALTH_URL` | Optional local health-check URL. |
 
 ## Infrastructure Checks

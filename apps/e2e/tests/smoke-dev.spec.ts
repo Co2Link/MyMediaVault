@@ -107,12 +107,19 @@ test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cl
     const previewedTorrent = await waitForDocument(
       async () => {
         const current = await TorrentModel.findById(torrent._id).lean().exec();
-        if (current?.previewStatus === "failed" || current?.previewStatus === "partial") {
+        if (current?.previewStatus === "failed") {
           throw new Error(
             `Torrent preview degraded for ${torrent._id}: ${current.previewStatus} ${current.previewError ?? current.previewDiagnostics?.failureReason ?? ""}`,
           );
         }
-        return current?.previewStatus === "succeeded" ? current : null;
+        if (
+          (current?.previewStatus === "succeeded" || current?.previewStatus === "partial") &&
+          current.previewSheet &&
+          (current.previewFrames ?? []).length === 9
+        ) {
+          return current;
+        }
+        return null;
       },
       `torrent ${torrent._id} to finish preview generation`,
       { timeoutMs: Number(process.env.E2E_DEV_SMOKE_PREVIEW_TIMEOUT_MS ?? "600000"), intervalMs: 10_000 },
@@ -120,8 +127,17 @@ test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cl
 
     expect(previewedTorrent.previewSheet?.key).toBeTruthy();
     expect(previewedTorrent.previewFrames).toHaveLength(9);
-    expect(previewedTorrent.previewDiagnostics.artifactVersion).toBeTruthy();
+    expect(previewedTorrent.previewDiagnostics.artifactVersion).toBe("preview-v5");
     expect(previewedTorrent.previewDiagnostics.artifactFingerprint).toBeTruthy();
+    expect(previewedTorrent.previewFrames.some((frame) => frame.metadata?.accepted_by_llm === "true")).toBe(true);
+    for (const frame of previewedTorrent.previewFrames) {
+      expect(frame.metadata?.accepted_by_llm).toMatch(/^(true|false)$/);
+    }
+    if (previewedTorrent.previewStatus === "succeeded") {
+      for (const frame of previewedTorrent.previewFrames) {
+        expect(frame.metadata?.accepted_by_llm).toBe("true");
+      }
+    }
     previewKeys = previewBlobKeys(previewedTorrent);
 
     const previewSheetBytes = await buildBlobStore().getBytes(previewedTorrent.previewSheet!.key);
