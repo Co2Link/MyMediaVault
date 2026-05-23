@@ -6,7 +6,6 @@ import type { PreviewRead } from "@/lib/types";
 
 const preview: PreviewRead = {
   status: "succeeded",
-  error: null,
   attempts: 1,
   lastAttemptAt: null,
   updatedAt: "2024-01-01T00:00:00.000Z",
@@ -15,7 +14,6 @@ const preview: PreviewRead = {
     width: 1200,
     height: 800,
     mimeType: "image/jpeg",
-    metadata: {},
   },
   frames: [
     {
@@ -23,20 +21,16 @@ const preview: PreviewRead = {
       width: 640,
       height: 360,
       timestampSeconds: 1,
-      score: 0.9,
-      metadata: {},
     },
   ],
   diagnostics: {
     artifactVersion: "preview-v5",
     artifactFingerprint: "fingerprint",
+    statusReason: null,
     downloadedBytes: null,
     elapsedSeconds: null,
-    attempts: null,
-    strategyName: null,
     selectedFilePath: null,
     selectedFileSizeBytes: null,
-    failureReason: null,
     warnings: [],
     details: {},
   },

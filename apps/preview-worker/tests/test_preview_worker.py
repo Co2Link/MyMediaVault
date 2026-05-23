@@ -2,25 +2,23 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 from torrent_preview import (
-    ExtractedFrame,
-    PreviewContext,
+    GeneratedFrame,
+    GeneratedSheet,
+    PreviewArtifact,
     PreviewDiagnostics,
-    PreviewOutput,
     PreviewResult,
-    RenderedSheet,
     SelectedFile,
-    StoredFrame,
-    StoredSheet,
 )
 
 from mymediavault_preview_worker import (
+    MongoPreviewJobLease,
     MongoPreviewJobSource,
     PreviewWorkerSettings,
-    R2PreviewOutputHandler,
     _success_update,
 )
 
@@ -43,16 +41,19 @@ def test_settings_reject_blank_openai_api_key() -> None:
         )
 
 
-def test_stale_artifact_query_uses_library_artifact_contract() -> None:
-    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120)  # type: ignore[arg-type]
+def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
+    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
 
     queries = source._claim_queries(
         artifact_version="preview-v5",
         artifact_fingerprint="sha256:current",
     )
 
-    stale_query = queries[1]
-    assert stale_query["previewStatus"] == {"$in": ["succeeded", "partial"]}
+    assert queries[0]["previewAttempts"] == {"$lt": 3}
+    assert queries[1]["previewStatus"] == {"$in": ["failed", "partial"]}
+    assert queries[1]["previewAttempts"] == {"$lt": 3}
+    stale_query = queries[2]
+    assert stale_query["previewStatus"] == "succeeded"
     assert {"previewDiagnostics.artifactVersion": {"$ne": "preview-v5"}} in stale_query[
         "$or"
     ]
@@ -63,50 +64,61 @@ def test_stale_artifact_query_uses_library_artifact_contract() -> None:
 
 def test_success_update_persists_preview_result_artifact_fields() -> None:
     result = PreviewResult(
-        artifact_version="preview-v5",
-        artifact_fingerprint="sha256:current",
         status="succeeded",
+        status_reason=None,
         info_hash="abc",
-        selected_file=SelectedFile(index=0, path="movie.mkv", length=123),
-        frames=[
-            StoredFrame(
-                uri="previews/abc/frame.jpg",
-                score=0.9,
-                width=1920,
-                height=1080,
-                timestamp_seconds=12.5,
-                metadata={"accepted_by_llm": "true"},
-            )
-        ],
-        sheet=StoredSheet(
-            uri="previews/abc/preview_sheet.jpg",
-            width=960,
-            height=540,
-            mime_type="image/jpeg",
-            metadata={"kind": "sheet"},
+        artifact=PreviewArtifact(
+            frames=[
+                GeneratedFrame(
+                    path=Path("frame.jpg"),
+                    width=1920,
+                    height=1080,
+                    timestamp_seconds=12.5,
+                )
+            ],
+            sheet=GeneratedSheet(path=Path("sheet.jpg"), width=960, height=540),
         ),
-        downloaded_bytes=456,
-        elapsed_seconds=7.8,
-        attempts=2,
-        strategy_name="progressive-range-v1",
-        failure_reason=None,
-        warnings=[],
-        diagnostics=PreviewDiagnostics(torrent_cache_enabled=True),
+        diagnostics=PreviewDiagnostics(
+            selected_file=SelectedFile(index=0, path="movie.mkv", length=123),
+            downloaded_bytes=456,
+            elapsed_seconds=7.8,
+            torrent_cache_enabled=True,
+        ),
     )
 
-    update = _success_update(result)["$set"]
+    update = _success_update(
+        result,
+        stored_frames=[
+            {
+                "key": "previews/abc/frame_001.jpg",
+                "width": 1920,
+                "height": 1080,
+                "timestampSeconds": 12.5,
+            }
+        ],
+        stored_sheet={
+            "key": "previews/abc/preview_sheet.jpg",
+            "width": 960,
+            "height": 540,
+            "mimeType": "image/jpeg",
+        },
+        artifact_version="preview-v6",
+        artifact_fingerprint="sha256:current",
+    )["$set"]
 
     assert update["previewStatus"] == "succeeded"
-    assert update["previewDiagnostics"]["artifactVersion"] == "preview-v5"
+    assert update["previewDiagnostics"]["artifactVersion"] == "preview-v6"
     assert update["previewDiagnostics"]["artifactFingerprint"] == "sha256:current"
     assert update["previewDiagnostics"]["selectedFilePath"] == "movie.mkv"
-    assert update["previewFrames"][0]["metadata"]["accepted_by_llm"] == "true"
+    assert update["previewFrames"][0]["key"] == "previews/abc/frame_001.jpg"
     assert update["previewSheet"]["key"] == "previews/abc/preview_sheet.jpg"
 
 
-def test_r2_output_handler_preserves_llm_acceptance_metadata(tmp_path: Path) -> None:
+def test_job_lease_uploads_v4_artifacts(tmp_path: Path) -> None:
     frame_path = tmp_path / "frame.jpg"
     frame_path.write_bytes(b"frame")
+    sheet_path = tmp_path / "sheet.jpg"
+    sheet_path.write_bytes(b"sheet")
 
     class FakeBlobStore:
         def __init__(self) -> None:
@@ -117,34 +129,30 @@ def test_r2_output_handler_preserves_llm_acceptance_metadata(tmp_path: Path) -> 
             return key
 
     blob_store = FakeBlobStore()
-    handler = R2PreviewOutputHandler(blob_store)  # type: ignore[arg-type]
-    output = PreviewOutput(
-        artifact_version="preview-v5",
+    lease = MongoPreviewJobLease(
+        torrent=SimpleNamespace(
+            id="torrent-1",
+            rawBlobKey=None,
+            previewFrames=[],
+            previewSheet=None,
+        ),
+        blob_store=blob_store,  # type: ignore[arg-type]
+        artifact_version="preview-v6",
         artifact_fingerprint="sha256:current",
-        frames=[
-            ExtractedFrame(
-                path=frame_path,
-                score=0.8,
-                width=640,
-                height=360,
-                timestamp_seconds=1.25,
-                anchor_index=0,
-                anchor_ratio=0.1,
-                decode_method="anchor-window",
-                accepted_by_llm=True,
-            )
-        ],
-        sheet=RenderedSheet(path=frame_path, width=640, height=360),
-        status="succeeded",
-        target_frames=1,
-        failure_reason=None,
-    )
-    context = PreviewContext(
-        info_hash="abc",
-        selected_file=SelectedFile(index=0, path="movie.mkv", length=123),
     )
 
-    stored = asyncio.run(handler.handle(context, output))
+    frames = asyncio.run(lease._store_frames(
+        "abc",
+        [GeneratedFrame(path=frame_path, width=640, height=360, timestamp_seconds=1.25)],
+    ))
+    sheet = asyncio.run(lease._store_sheet(
+        "abc", GeneratedSheet(path=sheet_path, width=640, height=360)
+    ))
 
-    assert stored.frames[0].metadata["accepted_by_llm"] == "true"
-    assert blob_store.uploads[0][0].startswith("previews/abc/frame_001_")
+    assert frames[0]["key"] == "previews/abc/frame_001.jpg"
+    assert sheet is not None
+    assert sheet["key"] == "previews/abc/preview_sheet.jpg"
+    assert blob_store.uploads == [
+        ("previews/abc/frame_001.jpg", frame_path, "image/jpeg"),
+        ("previews/abc/preview_sheet.jpg", sheet_path, "image/jpeg"),
+    ]

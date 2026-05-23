@@ -15,26 +15,22 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import AsyncMongoClient, ReturnDocument
 from torrent_preview import (
-    PREVIEW_ARTIFACT_VERSION,
+    GeneratedFrame,
+    GeneratedSheet,
     PreviewHarnessConfig,
-    PreviewContext,
     PreviewEngine,
     PreviewEngineConfig,
     PreviewJobLease,
     PreviewJobSource,
-    PreviewOutput,
-    PreviewOutputHandler,
     PreviewResult,
     PreviewWorkerHarness,
-    StoredFrame,
-    StoredPreview,
-    StoredSheet,
     configure_default_logging,
 )
 
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
+DEFAULT_MAX_ATTEMPTS = 3
 
 
 class PreviewWorkerSettings(BaseSettings):
@@ -58,6 +54,9 @@ class PreviewWorkerSettings(BaseSettings):
     preview_repair_stale_processing_minutes: int = Field(
         default=DEFAULT_STALE_PROCESSING_MINUTES,
         alias="MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES",
+    )
+    preview_max_attempts: int = Field(
+        default=DEFAULT_MAX_ATTEMPTS, alias="MMV_PREVIEW_MAX_ATTEMPTS"
     )
 
     model_config = SettingsConfigDict(
@@ -91,8 +90,6 @@ class TorrentPreviewFrame(BaseModel):
     width: int
     height: int
     timestampSeconds: float
-    score: float
-    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class TorrentPreviewSheet(BaseModel):
@@ -100,19 +97,16 @@ class TorrentPreviewSheet(BaseModel):
     width: int
     height: int
     mimeType: str
-    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class TorrentPreviewDiagnostics(BaseModel):
     artifactVersion: str | None = None
     artifactFingerprint: str | None = None
+    statusReason: str | None = None
     downloadedBytes: int | None = None
     elapsedSeconds: float | None = None
-    attempts: int | None = None
-    strategyName: str | None = None
     selectedFilePath: str | None = None
     selectedFileSizeBytes: int | None = None
-    failureReason: str | None = None
     warnings: list[str] = Field(default_factory=list)
     details: dict[str, Any] = Field(default_factory=dict)
 
@@ -123,7 +117,6 @@ class Torrent(Document):
     rawBlobKey: str | None = None
     metadataStatus: str = "pending"
     previewStatus: str = "pending"
-    previewError: str | None = None
     previewAttempts: int = 0
     previewLastAttemptAt: datetime | None = None
     previewUpdatedAt: datetime | None = None
@@ -186,74 +179,19 @@ class BlobStore:
         )
 
 
-class R2PreviewOutputHandler(PreviewOutputHandler):
-    def __init__(self, blob_store: BlobStore) -> None:
-        self._blob_store = blob_store
-
-    async def handle(
-        self,
-        context: PreviewContext,
-        output: PreviewOutput,
-    ) -> StoredPreview:
-        frames: list[StoredFrame] = []
-        for index, frame in enumerate(output.frames, start=1):
-            suffix = frame.path.suffix or ".jpg"
-            key = (
-                f"previews/{context.info_hash}/"
-                f"frame_{index:03d}_{int(frame.timestamp_seconds * 1000):012d}{suffix}"
-            )
-            await self._blob_store.put_file(key, frame.path, "image/jpeg")
-            frames.append(
-                StoredFrame(
-                    uri=key,
-                    score=frame.score,
-                    width=frame.width,
-                    height=frame.height,
-                    timestamp_seconds=frame.timestamp_seconds,
-                    metadata={
-                        "selected_file": context.selected_file.path,
-                        "timestamp_seconds": f"{frame.timestamp_seconds:.3f}",
-                        "width": str(frame.width),
-                        "height": str(frame.height),
-                        "score": f"{frame.score:.6f}",
-                        "anchor_index": ""
-                        if frame.anchor_index is None
-                        else str(frame.anchor_index),
-                        "anchor_ratio": ""
-                        if frame.anchor_ratio is None
-                        else f"{frame.anchor_ratio:.6f}",
-                        "decode_method": frame.decode_method,
-                        "accepted_by_llm": str(frame.accepted_by_llm).lower(),
-                    },
-                )
-            )
-
-        sheet = None
-        if output.sheet is not None:
-            key = f"previews/{context.info_hash}/preview_sheet.jpg"
-            await self._blob_store.put_file(
-                key, output.sheet.path, output.sheet.mime_type
-            )
-            sheet = StoredSheet(
-                uri=key,
-                width=output.sheet.width,
-                height=output.sheet.height,
-                mime_type=output.sheet.mime_type,
-                metadata=dict(output.sheet.metadata),
-            )
-
-        return StoredPreview(frames=frames, sheet=sheet)
-
-
 class MongoPreviewJobLease(PreviewJobLease):
     def __init__(
         self,
         *,
         torrent: Torrent,
         blob_store: BlobStore,
+        artifact_version: str,
+        artifact_fingerprint: str,
     ) -> None:
         self._torrent = torrent
         self._blob_store = blob_store
+        self._artifact_version = artifact_version
+        self._artifact_fingerprint = artifact_fingerprint
         self._old_keys = _preview_keys(torrent)
 
     @property
@@ -268,10 +206,19 @@ class MongoPreviewJobLease(PreviewJobLease):
         return await asyncio.to_thread(self._blob_store.get_bytes, raw_blob_key)
 
     async def complete(self, result: PreviewResult) -> None:
+        stored_frames = await self._store_frames(result.info_hash, result.artifact.frames)
+        stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
         await Torrent.get_pymongo_collection().update_one(
-            {"_id": self._torrent.id}, _success_update(result)
+            {"_id": self._torrent.id},
+            _success_update(
+                result,
+                stored_frames=stored_frames,
+                stored_sheet=stored_sheet,
+                artifact_version=self._artifact_version,
+                artifact_fingerprint=self._artifact_fingerprint,
+            ),
         )
-        await self._delete_old_keys(_preview_keys_from_result(result))
+        await self._delete_old_keys(_preview_keys_from_stored(stored_frames, stored_sheet))
 
     async def fail(self, error: Exception) -> None:
         message = str(error) or error.__class__.__name__
@@ -280,9 +227,8 @@ class MongoPreviewJobLease(PreviewJobLease):
             {
                 "$set": {
                     "previewStatus": "failed",
-                    "previewError": message,
                     "previewUpdatedAt": datetime.now(UTC),
-                    "previewDiagnostics.failureReason": message,
+                    "previewDiagnostics.statusReason": message,
                 }
             },
         )
@@ -291,6 +237,37 @@ class MongoPreviewJobLease(PreviewJobLease):
         for key in self._old_keys - new_keys:
             await self._blob_store.delete_if_exists(key)
 
+    async def _store_frames(
+        self, info_hash: str, frames: list[GeneratedFrame]
+    ) -> list[dict[str, Any]]:
+        stored = []
+        for index, frame in enumerate(frames, start=1):
+            key = f"previews/{info_hash}/frame_{index:03d}.jpg"
+            await self._blob_store.put_file(key, frame.path, "image/jpeg")
+            stored.append(
+                {
+                    "key": key,
+                    "width": frame.width,
+                    "height": frame.height,
+                    "timestampSeconds": frame.timestamp_seconds,
+                }
+            )
+        return stored
+
+    async def _store_sheet(
+        self, info_hash: str, sheet: GeneratedSheet | None
+    ) -> dict[str, Any] | None:
+        if sheet is None:
+            return None
+        key = f"previews/{info_hash}/preview_sheet.jpg"
+        await self._blob_store.put_file(key, sheet.path, sheet.mime_type)
+        return {
+            "key": key,
+            "width": sheet.width,
+            "height": sheet.height,
+            "mimeType": sheet.mime_type,
+        }
+
 
 class MongoPreviewJobSource(PreviewJobSource):
     def __init__(
@@ -298,9 +275,11 @@ class MongoPreviewJobSource(PreviewJobSource):
         *,
         blob_store: BlobStore,
         stale_processing_minutes: int,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ) -> None:
         self._blob_store = blob_store
         self._stale_processing_minutes = max(1, stale_processing_minutes)
+        self._max_attempts = max(1, max_attempts)
 
     async def claim_batch(
         self,
@@ -320,7 +299,12 @@ class MongoPreviewJobSource(PreviewJobSource):
                 if torrent is None:
                     break
                 claimed.append(
-                    MongoPreviewJobLease(torrent=torrent, blob_store=self._blob_store)
+                    MongoPreviewJobLease(
+                        torrent=torrent,
+                        blob_store=self._blob_store,
+                        artifact_version=artifact_version,
+                        artifact_fingerprint=artifact_fingerprint,
+                    )
                 )
             if len(claimed) >= limit:
                 break
@@ -336,17 +320,22 @@ class MongoPreviewJobSource(PreviewJobSource):
             "metadataStatus": "succeeded",
             "rawBlobKey": {"$type": "string", "$ne": ""},
         }
+        retryable = {**base, "previewAttempts": {"$lt": self._max_attempts}}
         return [
             {
-                **base,
+                **retryable,
                 "$or": [
                     {"previewStatus": {"$exists": False}},
                     {"previewStatus": "pending"},
                 ],
             },
             {
+                **retryable,
+                "previewStatus": {"$in": ["failed", "partial"]},
+            },
+            {
                 **base,
-                "previewStatus": {"$in": ["succeeded", "partial"]},
+                "previewStatus": "succeeded",
                 "$or": [
                     {"previewDiagnostics.artifactVersion": {"$exists": False}},
                     {"previewDiagnostics.artifactVersion": {"$ne": artifact_version}},
@@ -367,7 +356,6 @@ class MongoPreviewJobSource(PreviewJobSource):
             {
                 "$set": {
                     "previewStatus": "processing",
-                    "previewError": None,
                     "previewLastAttemptAt": now,
                 },
                 "$inc": {"previewAttempts": 1},
@@ -392,7 +380,7 @@ class MongoPreviewJobSource(PreviewJobSource):
             {
                 "$set": {
                     "previewStatus": "pending",
-                    "previewError": "Preview processing timed out and was requeued.",
+                    "previewDiagnostics.statusReason": "Preview processing timed out and was requeued.",
                 }
             },
         )
@@ -414,17 +402,15 @@ class PreviewWorker:
         self._stale_processing_minutes = max(
             1, settings.preview_repair_stale_processing_minutes
         )
+        self._max_attempts = max(1, settings.preview_max_attempts)
         self._client = AsyncMongoClient(
             settings.mongodb_uri,
             serverSelectionTimeoutMS=settings.mongodb_server_selection_timeout_ms,
         )
         self._database = self._client[settings.mongodb_database]
         self._blob_store = BlobStore(settings)
-        self._config = PreviewEngineConfig(frame_ranker="pydantic-ai")
-        self._engine = PreviewEngine(
-            config=self._config,
-            output_handler=R2PreviewOutputHandler(self._blob_store),
-        )
+        self._config = PreviewEngineConfig()
+        self._engine = PreviewEngine(config=self._config)
         self._harness: PreviewWorkerHarness | None = None
 
     async def run(self) -> None:
@@ -432,6 +418,7 @@ class PreviewWorker:
         job_source = MongoPreviewJobSource(
             blob_store=self._blob_store,
             stale_processing_minutes=self._stale_processing_minutes,
+            max_attempts=self._max_attempts,
         )
         self._harness = PreviewWorkerHarness(
             engine=self._engine,
@@ -444,8 +431,8 @@ class PreviewWorker:
         logger.info(
             "Preview worker started with max_concurrency={} artifact_version={} artifact_fingerprint={}",
             self._max_concurrency,
-            PREVIEW_ARTIFACT_VERSION,
-            self._config.artifact_fingerprint(),
+            self._engine.artifact_version,
+            self._engine.artifact_fingerprint,
         )
         try:
             await self._harness.run()
@@ -458,47 +445,33 @@ class PreviewWorker:
             self._harness.stop()
 
 
-def _success_update(result: PreviewResult) -> dict[str, Any]:
+def _success_update(
+    result: PreviewResult,
+    *,
+    stored_frames: list[dict[str, Any]],
+    stored_sheet: dict[str, Any] | None,
+    artifact_version: str,
+    artifact_fingerprint: str,
+) -> dict[str, Any]:
     now = datetime.now(UTC)
-    selected_file = result.selected_file
+    selected_file = result.diagnostics.selected_file
     diagnostics = {
-        "artifactVersion": result.artifact_version,
-        "artifactFingerprint": result.artifact_fingerprint,
-        "downloadedBytes": result.downloaded_bytes,
-        "elapsedSeconds": result.elapsed_seconds,
-        "attempts": result.attempts,
-        "strategyName": result.strategy_name,
+        "artifactVersion": artifact_version,
+        "artifactFingerprint": artifact_fingerprint,
+        "statusReason": result.status_reason,
+        "downloadedBytes": result.diagnostics.downloaded_bytes,
+        "elapsedSeconds": result.diagnostics.elapsed_seconds,
         "selectedFilePath": selected_file.path if selected_file else None,
         "selectedFileSizeBytes": selected_file.length if selected_file else None,
-        "failureReason": result.failure_reason,
-        "warnings": result.warnings,
+        "warnings": result.diagnostics.warnings,
         "details": _to_plain_dict(result.diagnostics),
     }
     return {
         "$set": {
             "previewStatus": result.status,
-            "previewError": result.failure_reason,
             "previewUpdatedAt": now,
-            "previewFrames": [
-                {
-                    "key": frame.uri,
-                    "width": frame.width,
-                    "height": frame.height,
-                    "timestampSeconds": frame.timestamp_seconds,
-                    "score": frame.score,
-                    "metadata": dict(frame.metadata),
-                }
-                for frame in result.frames
-            ],
-            "previewSheet": None
-            if result.sheet is None
-            else {
-                "key": result.sheet.uri,
-                "width": result.sheet.width,
-                "height": result.sheet.height,
-                "mimeType": result.sheet.mime_type,
-                "metadata": dict(result.sheet.metadata),
-            },
+            "previewFrames": stored_frames,
+            "previewSheet": stored_sheet,
             "previewDiagnostics": diagnostics,
         }
     }
@@ -512,10 +485,12 @@ def _preview_keys(torrent: Torrent) -> set[str]:
     return keys
 
 
-def _preview_keys_from_result(result: Any) -> set[str]:
-    keys = {frame.uri for frame in result.frames}
-    if result.sheet is not None:
-        keys.add(result.sheet.uri)
+def _preview_keys_from_stored(
+    frames: list[dict[str, Any]], sheet: dict[str, Any] | None
+) -> set[str]:
+    keys = {frame["key"] for frame in frames if frame.get("key")}
+    if sheet and sheet.get("key"):
+        keys.add(sheet["key"])
     return keys
 
 
@@ -544,6 +519,10 @@ def main() -> None:
         "--stale-processing-minutes",
         type=int,
     )
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+    )
     args = parser.parse_args()
     settings = PreviewWorkerSettings()
     if args.max_concurrency is not None:
@@ -552,6 +531,8 @@ def main() -> None:
         settings.preview_worker_poll_interval_seconds = args.poll_interval_seconds
     if args.stale_processing_minutes is not None:
         settings.preview_repair_stale_processing_minutes = args.stale_processing_minutes
+    if args.max_attempts is not None:
+        settings.preview_max_attempts = args.max_attempts
 
     worker = PreviewWorker(
         settings=settings,

@@ -75,8 +75,6 @@ export type TorrentPreviewFrameDoc = {
   width: number;
   height: number;
   timestampSeconds: number;
-  score: number;
-  metadata: Record<string, string>;
 };
 
 export type TorrentPreviewSheetDoc = {
@@ -84,19 +82,16 @@ export type TorrentPreviewSheetDoc = {
   width: number;
   height: number;
   mimeType: string;
-  metadata: Record<string, string>;
 };
 
 export type TorrentPreviewDiagnosticsDoc = {
   artifactVersion: string | null;
   artifactFingerprint: string | null;
+  statusReason: string | null;
   downloadedBytes: number | null;
   elapsedSeconds: number | null;
-  attempts: number | null;
-  strategyName: string | null;
   selectedFilePath: string | null;
   selectedFileSizeBytes: number | null;
-  failureReason: string | null;
   warnings: string[];
   details: Record<string, unknown>;
 };
@@ -114,7 +109,6 @@ export type TorrentDoc = {
   files: TorrentFileDoc[];
   actorIds: string[];
   previewStatus: PreviewStatus;
-  previewError: string | null;
   previewAttempts: number;
   previewLastAttemptAt: Date | null;
   previewUpdatedAt: Date | null;
@@ -260,8 +254,6 @@ const torrentPreviewFrameSchema = new Schema<TorrentPreviewFrameDoc>(
     width: { type: Number, required: true },
     height: { type: Number, required: true },
     timestampSeconds: { type: Number, required: true },
-    score: { type: Number, required: true },
-    metadata: { type: Schema.Types.Mixed, default: {} },
   },
   { _id: false, versionKey: false },
 );
@@ -272,7 +264,6 @@ const torrentPreviewSheetSchema = new Schema<TorrentPreviewSheetDoc>(
     width: { type: Number, required: true },
     height: { type: Number, required: true },
     mimeType: { type: String, required: true },
-    metadata: { type: Schema.Types.Mixed, default: {} },
   },
   { _id: false, versionKey: false },
 );
@@ -281,13 +272,11 @@ const torrentPreviewDiagnosticsSchema = new Schema<TorrentPreviewDiagnosticsDoc>
   {
     artifactVersion: { type: String, default: null },
     artifactFingerprint: { type: String, default: null },
+    statusReason: { type: String, default: null },
     downloadedBytes: { type: Number, default: null },
     elapsedSeconds: { type: Number, default: null },
-    attempts: { type: Number, default: null },
-    strategyName: { type: String, default: null },
     selectedFilePath: { type: String, default: null },
     selectedFileSizeBytes: { type: Number, default: null },
-    failureReason: { type: String, default: null },
     warnings: { type: [String], default: [] },
     details: { type: Schema.Types.Mixed, default: {} },
   },
@@ -313,7 +302,6 @@ const torrentSchema = new Schema<TorrentDoc>(
       default: "pending",
       index: true,
     },
-    previewError: { type: String, default: null },
     previewAttempts: { type: Number, default: 0 },
     previewLastAttemptAt: { type: Date, default: null },
     previewUpdatedAt: { type: Date, default: null },

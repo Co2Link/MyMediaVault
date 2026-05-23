@@ -103,6 +103,32 @@ export async function getVideoPreviewArtifact(
   };
 }
 
+export async function getTorrentPreviewArtifact(
+  torrentId: string,
+  artifact: "sheet" | { frameIndex: number },
+) {
+  await connectMongo();
+  const torrent = await TorrentModel.findById(torrentId).lean().exec();
+  if (!torrent) {
+    throw new NotFoundError("Torrent was not found.");
+  }
+
+  const key =
+    artifact === "sheet"
+      ? torrent.previewSheet?.key
+      : torrent.previewFrames.at(artifact.frameIndex)?.key;
+  if (!key) {
+    throw new NotFoundError("Preview artifact was not found.");
+  }
+
+  const bytes = await buildBlobStore().getBytes(key);
+  return {
+    bytes,
+    key,
+    mimeType: artifact === "sheet" ? (torrent.previewSheet?.mimeType ?? "image/jpeg") : "image/jpeg",
+  };
+}
+
 export async function listTorrents() {
   await connectMongo();
   const torrents = (await TorrentModel.find().lean().exec()) as TorrentDoc[];
@@ -234,6 +260,25 @@ export async function deleteTorrent(torrentId: string) {
 
   const videos = (await VideoModel.find({ torrentId }).lean().exec()) as VideoDoc[];
   await deleteTorrentRecord(torrent, videos.map((video) => video._id));
+}
+
+export async function resetTorrentPreview(torrentId: string) {
+  await connectMongo();
+  const result = await TorrentModel.updateOne(
+    { _id: torrentId },
+    {
+      $set: {
+        previewStatus: "pending",
+        previewAttempts: 0,
+        previewLastAttemptAt: null,
+        previewUpdatedAt: new Date(),
+        previewDiagnostics: {},
+      },
+    },
+  ).exec();
+  if (result.matchedCount === 0) {
+    throw new NotFoundError("Torrent was not found.");
+  }
 }
 
 export async function enqueueTorrentMetadata(torrentId: string) {
@@ -637,7 +682,6 @@ function toPreview(torrent: TorrentDoc): PreviewRead {
   const status = torrent.previewStatus ?? "pending";
   return {
     status,
-    error: torrent.previewError ?? null,
     attempts: torrent.previewAttempts ?? 0,
     lastAttemptAt: torrent.previewLastAttemptAt?.toISOString() ?? null,
     updatedAt: torrent.previewUpdatedAt?.toISOString() ?? null,
@@ -646,8 +690,6 @@ function toPreview(torrent: TorrentDoc): PreviewRead {
       width: frame.width,
       height: frame.height,
       timestampSeconds: frame.timestampSeconds,
-      score: frame.score,
-      metadata: normalizeStringRecord(frame.metadata),
     })),
     sheet: torrent.previewSheet
       ? ({
@@ -655,7 +697,6 @@ function toPreview(torrent: TorrentDoc): PreviewRead {
           width: torrent.previewSheet.width,
           height: torrent.previewSheet.height,
           mimeType: torrent.previewSheet.mimeType,
-          metadata: normalizeStringRecord(torrent.previewSheet.metadata),
         } satisfies PreviewSheetRead)
       : null,
     diagnostics: toPreviewDiagnostics(torrent),
@@ -667,25 +708,14 @@ function toPreviewDiagnostics(torrent: TorrentDoc): PreviewDiagnosticsRead {
   return {
     artifactVersion: diagnostics.artifactVersion ?? null,
     artifactFingerprint: diagnostics.artifactFingerprint ?? null,
+    statusReason: diagnostics.statusReason ?? null,
     downloadedBytes: diagnostics.downloadedBytes ?? null,
     elapsedSeconds: diagnostics.elapsedSeconds ?? null,
-    attempts: diagnostics.attempts ?? null,
-    strategyName: diagnostics.strategyName ?? null,
     selectedFilePath: diagnostics.selectedFilePath ?? null,
     selectedFileSizeBytes: diagnostics.selectedFileSizeBytes ?? null,
-    failureReason: diagnostics.failureReason ?? null,
     warnings: Array.isArray(diagnostics.warnings) ? diagnostics.warnings : [],
     details: normalizeUnknownRecord(diagnostics.details),
   };
-}
-
-function normalizeStringRecord(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
 }
 
 function normalizeUnknownRecord(value: unknown): Record<string, unknown> {

@@ -13,7 +13,7 @@ export function VideoPreviewCarousel({
   preview: PreviewRead;
   videoId: string;
 }) {
-  const images = useMemo(() => previewImages(videoId, preview), [preview, videoId]);
+  const images = useMemo(() => previewImages(`/api/videos/${videoId}/preview`, preview), [preview, videoId]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 

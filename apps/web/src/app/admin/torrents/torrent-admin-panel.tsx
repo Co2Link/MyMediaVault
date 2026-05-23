@@ -1,5 +1,6 @@
 import type { TorrentSummary } from "@/lib/types";
-import { deleteTorrentAction } from "@/app/admin/torrents/actions";
+import { deleteTorrentAction, retryTorrentPreviewAction } from "@/app/admin/torrents/actions";
+import { VideoPreviewGallery } from "@/components/video-preview-gallery";
 
 export function TorrentAdminPanel({
   torrents,
@@ -21,6 +22,10 @@ export function TorrentAdminPanel({
               <p className="muted-copy">
                 {torrent.videoCount} video{torrent.videoCount === 1 ? "" : "s"} · {torrent.metadataStatus}
               </p>
+              <VideoPreviewGallery
+                artifactBasePath={`/api/admin/torrents/${torrent.id}/preview`}
+                preview={torrent.preview}
+              />
               <details className="admin-diagnostics">
                 <summary>Preview: {torrent.preview.status}</summary>
                 <dl className="diagnostics-grid">
@@ -29,16 +34,13 @@ export function TorrentAdminPanel({
                   <DiagnosticTerm label="Updated" value={formatDate(torrent.preview.updatedAt)} />
                   <DiagnosticTerm label="Artifact version" value={torrent.preview.diagnostics.artifactVersion} />
                   <DiagnosticTerm label="Fingerprint" value={torrent.preview.diagnostics.artifactFingerprint} />
+                  <DiagnosticTerm label="Status reason" value={torrent.preview.diagnostics.statusReason} />
                   <DiagnosticTerm label="Downloaded" value={formatBytes(torrent.preview.diagnostics.downloadedBytes)} />
                   <DiagnosticTerm label="Elapsed" value={formatSeconds(torrent.preview.diagnostics.elapsedSeconds)} />
-                  <DiagnosticTerm label="Engine attempts" value={torrent.preview.diagnostics.attempts} />
-                  <DiagnosticTerm label="Strategy" value={torrent.preview.diagnostics.strategyName} />
                   <DiagnosticTerm label="Selected file" value={torrent.preview.diagnostics.selectedFilePath} />
                   <DiagnosticTerm label="Selected file size" value={formatBytes(torrent.preview.diagnostics.selectedFileSizeBytes)} />
                   <DiagnosticTerm label="Frames" value={torrent.preview.frames.length} />
                   <DiagnosticTerm label="Sheet" value={torrent.preview.sheet ? torrent.preview.sheet.key : null} />
-                  <DiagnosticTerm label="Error" value={torrent.preview.error} />
-                  <DiagnosticTerm label="Failure reason" value={torrent.preview.diagnostics.failureReason} />
                 </dl>
                 {torrent.preview.diagnostics.warnings.length > 0 ? (
                   <div className="diagnostics-block">
@@ -57,11 +59,18 @@ export function TorrentAdminPanel({
                 ) : null}
               </details>
             </div>
-            <form action={deleteTorrentAction.bind(null, torrent.id)}>
-              <button className="ghost-button danger-button" type="submit">
-                Delete torrent
-              </button>
-            </form>
+            <div className="admin-actions">
+              <form action={retryTorrentPreviewAction.bind(null, torrent.id)}>
+                <button className="ghost-button" type="submit">
+                  Retry preview
+                </button>
+              </form>
+              <form action={deleteTorrentAction.bind(null, torrent.id)}>
+                <button className="ghost-button danger-button" type="submit">
+                  Delete torrent
+                </button>
+              </form>
+            </div>
           </li>
         ))}
       </ul>

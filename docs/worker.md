@@ -63,15 +63,17 @@ torrent preview fields, then supplies a MongoDB job source to the
 `torrents` collection for torrents whose metadata has succeeded and whose raw
 torrent blob is available. It claims eligible torrents atomically by setting
 `previewStatus = "processing"`, increments `previewAttempts`, runs
-`torrent-preview` 3.2.0 with the Pydantic AI ranker, uploads the contact sheet
-and nine selected frames to R2, and writes status, artifact keys, dimensions,
-warnings, LLM acceptance metadata, and diagnostics back to the torrent document.
+`torrent-preview` 4.0.0, uploads the generated contact sheet and frames to R2
+while the v4 artifact paths are available, and writes status, artifact keys,
+dimensions, warnings, status reason, and diagnostics back to the torrent
+document.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
-preview status). It also regenerates `succeeded` and `partial` previews when
-the recorded `torrent-preview` artifact contract version or fingerprint is
-stale for the current worker. Current `failed` results are treated as degraded
-terminal states and are not retried automatically.
+preview status). It automatically retries `failed` and `partial` previews until
+the configured maximum attempt count is reached, defaulting to three total
+attempts. It also regenerates `succeeded` previews when the recorded
+`torrent-preview` artifact contract version or fingerprint is stale for the
+current worker. Admins can reset preview attempts from torrent management.
 
 Run locally:
 
@@ -96,6 +98,7 @@ Preview worker environment:
 | `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. Defaults to `20`. |
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle polling interval. Defaults to `5`. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing threshold. Defaults to `120`. |
+| `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum total automatic attempts for pending, failed, and partial previews. Defaults to `3`. |
 
 The VM image must include Python 3.13, `libtorrent`, `ffmpeg`, and preferably
 `ffprobe`.

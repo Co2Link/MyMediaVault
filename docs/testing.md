@@ -91,10 +91,11 @@ that unpushed local changes passed dev smoke. The smoke verifies the full user
 add-video path through the web app, Cosmos DB, the worker job, Cloudflare R2,
 preview generation, preview UI behavior, and the UI metadata-ready state.
 Preview UI assertions cover collection carousel navigation and full-size
-preview navigation. The script starts `apps/preview-worker` locally against the
-dev MongoDB/R2 environment before Playwright runs, and shuts it down on success
-or failure. The smoke deletes the created video, torrent, raw blob, and preview
-artifacts after the assertions finish.
+preview navigation, accepting both complete and degraded preview artifacts when
+the worker returns a usable v4 result. The script starts `apps/preview-worker`
+locally against the dev MongoDB/R2 environment before Playwright runs, and
+shuts it down on success or failure. The smoke deletes the created video,
+torrent, raw blob, and preview artifacts after the assertions finish.
 
 `apps/e2e/.env.dev` must set the Entra test-user credentials and `E2E_BASE_URL`
 to the deployed dev web URL. Source values in `apps/web/.env.local` and

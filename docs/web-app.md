@@ -38,6 +38,8 @@ application.
   private blob-store objects.
 - `/api/videos/[id]/preview/[artifact]`: authenticated preview artifact proxy
   for torrent preview sheets and frames stored in R2.
+- `/api/admin/torrents/[id]/preview/[artifact]`: admin-only preview artifact
+  proxy by canonical torrent ID for torrent management.
 
 ## Data Flow
 
@@ -54,15 +56,19 @@ application.
   referencing the canonical torrent, deletes the torrent metadata and raw blob.
 - Admin torrent deletion removes the torrent, its dependent videos and video
   tags, the metadata job records, the stored raw blob, and preview artifacts.
+- Admin torrent management can view stored preview sheets and frames by torrent
+  ID and reset preview attempts, which returns preview status to `pending`
+  without deleting existing artifacts.
 - Admin actor deletion removes the actor, pulls it from all torrent actor lists,
   and deletes the stored profile image.
 - Detail and admin changes revalidate the affected routes so the server-rendered
   views stay current.
 - Preview sheets and frames are served through authenticated route handlers so
   private R2 object keys are never exposed as public URLs.
-- Collection and detail preview images open a centered full-size lightbox with
-  previous/next navigation. Detail torrent file folders render collapsed by
-  default so long file lists do not dominate the page.
+- Collection, detail, and admin preview images use consistent full-size
+  lightbox navigation with prominent side-aligned previous/next controls.
+  Detail torrent file folders render collapsed by default so long file lists do
+  not dominate the page.
 
 ## Worker Boundary
 

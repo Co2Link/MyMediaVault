@@ -217,14 +217,9 @@ button {
 }
 
 .preview-controls {
-  align-items: center;
-  bottom: 10px;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-  left: 10px;
+  inset: 0;
+  pointer-events: none;
   position: absolute;
-  right: 10px;
 }
 
 .video-preview-carousel .preview-controls {
@@ -241,8 +236,8 @@ button {
 
 .preview-arrow,
 .preview-counter {
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(8, 12, 16, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.42);
   border-radius: 999px;
   color: #fff;
   font-family: var(--font-mono), monospace;
@@ -253,21 +248,39 @@ button {
 .preview-arrow {
   align-items: center;
   display: inline-flex;
-  height: 36px;
+  font-size: 1.45rem;
+  height: 52px;
   justify-content: center;
   padding: 0;
-  width: 36px;
+  pointer-events: auto;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+}
+
+.preview-arrow:first-of-type {
+  left: 12px;
+}
+
+.preview-arrow:last-of-type {
+  right: 12px;
 }
 
 .preview-arrow:hover,
 .preview-arrow:focus-visible {
+  background: rgba(8, 12, 16, 0.82);
   border-color: rgba(255, 255, 255, 0.72);
   outline: 0;
 }
 
 .preview-counter {
   font-size: 0.78rem;
+  left: 50%;
   padding: 9px 10px;
+  position: absolute;
+  bottom: 12px;
+  transform: translateX(-50%);
 }
 
 .preview-gallery {
@@ -362,14 +375,14 @@ button {
 }
 
 .preview-lightbox-controls {
-  align-items: center;
-  bottom: 0;
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  left: 50%;
+  inset: 0;
+  pointer-events: none;
   position: absolute;
-  transform: translateX(-50%);
+}
+
+.preview-lightbox-controls .preview-arrow {
+  height: 60px;
+  width: 60px;
 }
 
 .preview-partial,
@@ -583,6 +596,23 @@ h2 {
   gap: 12px;
   justify-content: space-between;
   padding: 14px 16px;
+}
+
+.tag-list li:has(.preview-gallery) {
+  align-items: start;
+}
+
+.tag-list li:has(.preview-gallery) > div:first-child {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.admin-actions {
+  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .admin-diagnostics {

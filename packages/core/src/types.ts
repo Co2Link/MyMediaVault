@@ -31,8 +31,6 @@ export type PreviewFrameRead = {
   width: number;
   height: number;
   timestampSeconds: number;
-  score: number;
-  metadata: Record<string, string>;
 };
 
 export type PreviewSheetRead = {
@@ -40,26 +38,22 @@ export type PreviewSheetRead = {
   width: number;
   height: number;
   mimeType: string;
-  metadata: Record<string, string>;
 };
 
 export type PreviewDiagnosticsRead = {
   artifactVersion: string | null;
   artifactFingerprint: string | null;
+  statusReason: string | null;
   downloadedBytes: number | null;
   elapsedSeconds: number | null;
-  attempts: number | null;
-  strategyName: string | null;
   selectedFilePath: string | null;
   selectedFileSizeBytes: number | null;
-  failureReason: string | null;
   warnings: string[];
   details: Record<string, unknown>;
 };
 
 export type PreviewRead = {
   status: PreviewStatus;
-  error: string | null;
   attempts: number;
   lastAttemptAt: string | null;
   updatedAt: string | null;

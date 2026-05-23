@@ -7,13 +7,16 @@ import { VideoPreviewLightbox } from "@/components/video-preview-lightbox";
 import type { PreviewRead } from "@/lib/types";
 
 export function VideoPreviewGallery({
+  artifactBasePath,
   preview,
   videoId,
 }: {
+  artifactBasePath?: string;
   preview: PreviewRead;
-  videoId: string;
+  videoId?: string;
 }) {
-  const images = useMemo(() => previewImages(videoId, preview), [preview, videoId]);
+  const basePath = artifactBasePath ?? `/api/videos/${videoId}/preview`;
+  const images = useMemo(() => previewImages(basePath, preview), [basePath, preview]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
