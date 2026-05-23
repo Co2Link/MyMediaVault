@@ -222,18 +222,6 @@ button {
   position: absolute;
 }
 
-.video-preview-carousel .preview-controls {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 160ms ease;
-}
-
-.video-preview-carousel:hover .preview-controls,
-.video-preview-carousel:focus-within .preview-controls {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .preview-arrow,
 .preview-counter {
   background: rgba(8, 12, 16, 0.66);
