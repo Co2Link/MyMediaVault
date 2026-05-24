@@ -62,18 +62,20 @@ torrent preview fields, then supplies a MongoDB job source to the
 `torrent-preview` worker harness. The app-owned source continuously polls the
 `torrents` collection for torrents whose metadata has succeeded and whose raw
 torrent blob is available. It claims eligible torrents atomically by setting
-`previewStatus = "processing"`, increments `previewAttempts`, runs
-`torrent-preview` 4.0.0, uploads the generated contact sheet and frames to R2
-while the v4 artifact paths are available, and writes status, artifact keys,
-dimensions, warnings, status reason, and diagnostics back to the torrent
-document.
+`previewStatus = "processing"`, increments `previewAttempts`, runs the pinned
+`torrent-preview` version, uploads the generated contact sheet and frames to R2,
+and writes status, artifact keys, dimensions, warnings, status reason, and
+diagnostics back to the torrent document.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
 preview status). It automatically retries `failed` and `partial` previews until
 the configured maximum attempt count is reached, defaulting to three total
-attempts. It also regenerates `succeeded` previews when the recorded
-`torrent-preview` artifact contract version or fingerprint is stale for the
-current worker. Admins can reset preview attempts from torrent management.
+attempts. It also regenerates `succeeded`, `partial`, and `failed` previews when
+the recorded `torrent-preview` artifact contract version or fingerprint is
+missing or stale for the current worker, resetting the attempt count for that new
+artifact recipe. If a regeneration run produces no replacement frame or sheet
+artifacts, the worker keeps any existing preview artifact keys. Admins can reset
+preview attempts from torrent management.
 
 Run locally:
 
@@ -99,6 +101,7 @@ Preview worker environment:
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle polling interval. Defaults to `5`. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing threshold. Defaults to `120`. |
 | `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum total automatic attempts for pending, failed, and partial previews. Defaults to `3`. |
+| `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. Defaults to `9`; supported values are `3`, `9`, and `16`. |
 
 The VM image must include Python 3.13, `libtorrent`, `ffmpeg`, and preferably
 `ffprobe`.

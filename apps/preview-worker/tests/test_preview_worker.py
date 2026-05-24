@@ -23,6 +23,17 @@ from mymediavault_preview_worker import (
 )
 
 
+def _preview_diagnostics(**overrides: object) -> PreviewDiagnostics:
+    values = {
+        "torrent_cache_dir": ".cache/torrent-preview",
+        "torrent_cache_max_mb": 512.0,
+        "torrent_cache_entry_exists_before": False,
+        "resume_data_exists_before": False,
+    }
+    values.update(overrides)
+    return PreviewDiagnostics(**values)
+
+
 def test_settings_require_openai_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -41,6 +52,16 @@ def test_settings_reject_blank_openai_api_key() -> None:
         )
 
 
+def test_settings_reject_unsupported_target_frames() -> None:
+    with pytest.raises(ValidationError, match="MMV_PREVIEW_TARGET_FRAMES"):
+        PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            openai_api_key="test-key",
+            preview_target_frames=7,
+            _env_file=None,
+        )
+
+
 def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
     source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
 
@@ -52,14 +73,68 @@ def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
     assert queries[0]["previewAttempts"] == {"$lt": 3}
     assert queries[1]["previewStatus"] == {"$in": ["failed", "partial"]}
     assert queries[1]["previewAttempts"] == {"$lt": 3}
-    stale_query = queries[2]
-    assert stale_query["previewStatus"] == "succeeded"
+
+
+def test_artifact_stale_query_includes_completed_statuses_and_missing_fields() -> None:
+    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+
+    stale_query = source._artifact_stale_query(
+        artifact_version="preview-v5",
+        artifact_fingerprint="sha256:current",
+    )
+
+    assert stale_query["previewStatus"] == {
+        "$in": ["succeeded", "failed", "partial"]
+    }
+    assert {"previewDiagnostics.artifactVersion": {"$exists": False}} in stale_query[
+        "$or"
+    ]
     assert {"previewDiagnostics.artifactVersion": {"$ne": "preview-v5"}} in stale_query[
         "$or"
     ]
     assert {
+        "previewDiagnostics.artifactFingerprint": {"$exists": False}
+    } in stale_query["$or"]
+    assert {
         "previewDiagnostics.artifactFingerprint": {"$ne": "sha256:current"}
     } in stale_query["$or"]
+
+
+def test_claim_plans_reset_attempts_for_artifact_stale_rows() -> None:
+    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+
+    plans = source._claim_plans(
+        artifact_version="preview-v5",
+        artifact_fingerprint="sha256:current",
+    )
+
+    assert [reset_attempts for _, reset_attempts in plans] == [False, True, False]
+    assert plans[1][0]["previewStatus"] == {"$in": ["succeeded", "failed", "partial"]}
+
+
+def test_artifact_stale_claim_resets_attempts_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeCollection:
+        def __init__(self) -> None:
+            self.update: dict[str, object] | None = None
+
+        async def find_one_and_update(
+            self, _query: object, update: dict[str, object], **_kwargs: object
+        ) -> None:
+            self.update = update
+            return None
+
+    collection = FakeCollection()
+    monkeypatch.setattr(
+        "mymediavault_preview_worker.Torrent.get_pymongo_collection",
+        lambda: collection,
+    )
+    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+
+    asyncio.run(source._claim_one({}, reset_attempts=True))
+
+    assert collection.update is not None
+    assert "$inc" not in collection.update
+    assert collection.update["$set"]["previewAttempts"] == 1  # type: ignore[index]
 
 
 def test_success_update_persists_preview_result_artifact_fields() -> None:
@@ -78,11 +153,10 @@ def test_success_update_persists_preview_result_artifact_fields() -> None:
             ],
             sheet=GeneratedSheet(path=Path("sheet.jpg"), width=960, height=540),
         ),
-        diagnostics=PreviewDiagnostics(
+        diagnostics=_preview_diagnostics(
             selected_file=SelectedFile(index=0, path="movie.mkv", length=123),
             downloaded_bytes=456,
             elapsed_seconds=7.8,
-            torrent_cache_enabled=True,
         ),
     )
 
@@ -114,7 +188,32 @@ def test_success_update_persists_preview_result_artifact_fields() -> None:
     assert update["previewSheet"]["key"] == "previews/abc/preview_sheet.jpg"
 
 
-def test_job_lease_uploads_v4_artifacts(tmp_path: Path) -> None:
+def test_success_update_can_preserve_existing_artifacts_when_no_replacement() -> None:
+    result = PreviewResult(
+        status="failed",
+        status_reason="No replacement artifacts were generated.",
+        info_hash="abc",
+        artifact=PreviewArtifact(frames=[], sheet=None),
+        diagnostics=_preview_diagnostics(),
+    )
+
+    update = _success_update(
+        result,
+        stored_frames=[],
+        stored_sheet=None,
+        artifact_version="preview-v6",
+        artifact_fingerprint="sha256:current",
+        replace_artifacts=False,
+    )["$set"]
+
+    assert update["previewStatus"] == "failed"
+    assert update["previewDiagnostics"]["artifactVersion"] == "preview-v6"
+    assert update["previewDiagnostics"]["artifactFingerprint"] == "sha256:current"
+    assert "previewFrames" not in update
+    assert "previewSheet" not in update
+
+
+def test_job_lease_uploads_preview_artifacts(tmp_path: Path) -> None:
     frame_path = tmp_path / "frame.jpg"
     frame_path.write_bytes(b"frame")
     sheet_path = tmp_path / "sheet.jpg"

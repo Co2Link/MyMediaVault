@@ -8,10 +8,12 @@ import type { PreviewRead } from "@/lib/types";
 
 export function VideoPreviewGallery({
   artifactBasePath,
+  defaultOpen = true,
   preview,
   videoId,
 }: {
   artifactBasePath?: string;
+  defaultOpen?: boolean;
   preview: PreviewRead;
   videoId?: string;
 }) {
@@ -22,16 +24,12 @@ export function VideoPreviewGallery({
 
   if (images.length === 0) {
     return (
-      <section className={`preview-gallery preview-${preview.status}`}>
-        <div>
-          <h2>Torrent preview</h2>
-          <p className="muted-copy">
-            {preview.status === "processing"
-              ? "Preview generation is running."
-              : "Preview images are not available yet."}
-          </p>
-        </div>
-      </section>
+      <details className={`preview-gallery preview-${preview.status}`} open={defaultOpen}>
+        <summary>Torrent preview</summary>
+        <p className="muted-copy">
+          {preview.status === "processing" ? "Preview generation is running." : "Preview images are not available yet."}
+        </p>
+      </details>
     );
   }
 
@@ -43,44 +41,44 @@ export function VideoPreviewGallery({
   };
 
   return (
-    <section className={`preview-gallery preview-${preview.status}`}>
-      <div className="preview-gallery-header">
+    <details className={`preview-gallery preview-${preview.status}`} open={defaultOpen}>
+      <summary>Torrent preview</summary>
+      <div className="preview-gallery-body">
         <div>
-          <h2>Torrent preview</h2>
           {preview.status === "partial" || preview.status === "failed" ? (
             <p className="error-copy">Preview generation degraded or failed.</p>
           ) : null}
         </div>
+        <div className="preview-frame-grid">
+          {images.map((image, index) => (
+            <button
+              aria-label={`Open ${image.alt.toLowerCase()}`}
+              className="preview-frame-button"
+              key={image.src}
+              onClick={() => openLightbox(index)}
+              type="button"
+            >
+              <Image
+                alt={image.alt}
+                className="preview-frame"
+                height={image.height}
+                src={image.src}
+                unoptimized
+                width={image.width}
+              />
+            </button>
+          ))}
+        </div>
+        {isLightboxOpen ? (
+          <VideoPreviewLightbox
+            currentIndex={currentIndex}
+            images={images}
+            onClose={() => setIsLightboxOpen(false)}
+            onNext={showNext}
+            onPrevious={showPrevious}
+          />
+        ) : null}
       </div>
-      <div className="preview-frame-grid">
-        {images.map((image, index) => (
-          <button
-            aria-label={`Open ${image.alt.toLowerCase()}`}
-            className="preview-frame-button"
-            key={image.src}
-            onClick={() => openLightbox(index)}
-            type="button"
-          >
-            <Image
-              alt={image.alt}
-              className="preview-frame"
-              height={image.height}
-              src={image.src}
-              unoptimized
-              width={image.width}
-            />
-          </button>
-        ))}
-      </div>
-      {isLightboxOpen ? (
-        <VideoPreviewLightbox
-          currentIndex={currentIndex}
-          images={images}
-          onClose={() => setIsLightboxOpen(false)}
-          onNext={showNext}
-          onPrevious={showPrevious}
-        />
-      ) : null}
-    </section>
+    </details>
   );
 }
