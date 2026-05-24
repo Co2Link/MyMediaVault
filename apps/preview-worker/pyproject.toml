@@ -28,4 +28,4 @@ requires = ["uv_build>=0.11.14,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-torrent-preview = { git = "https://github.com/Co2Link/torrent-preview", rev = "v4.0.0" }
+torrent-preview = { git = "https://github.com/Co2Link/torrent-preview", rev = "v5.0.0" }

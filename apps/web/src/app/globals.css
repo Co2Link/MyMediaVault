@@ -279,10 +279,15 @@ button {
   padding: 16px;
 }
 
-.preview-gallery-header {
-  align-items: start;
-  display: flex;
-  justify-content: space-between;
+.preview-gallery summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.preview-gallery-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
 }
 
 .preview-frame {

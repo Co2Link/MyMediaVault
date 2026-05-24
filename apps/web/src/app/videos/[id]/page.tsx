@@ -37,7 +37,7 @@ export default async function VideoDetailPage({
           <MetadataStatusBadge error={video.metadataError} status={video.metadataStatus} />
         </div>
         {query.created === "1" ? <p className="success-copy">Video added. Metadata processing has been queued.</p> : null}
-        <VideoPreviewGallery preview={video.preview} videoId={video.id} />
+        <VideoPreviewGallery defaultOpen={false} preview={video.preview} videoId={video.id} />
         <dl className="detail-meta-grid">
           <div>
             <dt>Actors</dt>

@@ -43,6 +43,17 @@ const preview: PreviewRead = {
 };
 
 describe("VideoPreviewGallery", () => {
+  it("can render collapsed by default", async () => {
+    const user = userEvent.setup();
+    const { container, getByText } = render(<VideoPreviewGallery defaultOpen={false} preview={preview} videoId="video-1" />);
+
+    expect(container.querySelector("details")?.open).toBe(false);
+
+    await user.click(getByText("Torrent preview"));
+
+    expect(container.querySelector("details")?.open).toBe(true);
+  });
+
   it("treats the sheet as a gallery image and opens full size navigation", async () => {
     const user = userEvent.setup();
     const { findByRole, getAllByRole, getByRole, getByText } = render(

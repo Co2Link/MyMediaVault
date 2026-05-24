@@ -88,6 +88,7 @@ The preview worker automatically retries `failed` and `partial` previews while
 `previewAttempts` is below the configured maximum, which defaults to three total
 attempts. Admins can reset a torrent preview attempt count from torrent
 management, which sets the preview status back to `pending` without deleting
-existing artifacts. The worker regenerates `succeeded` previews when their
-recorded `torrent-preview` artifact contract version or fingerprint differs
-from the worker's current library recipe.
+existing artifacts. The worker regenerates `succeeded`, `partial`, and `failed`
+previews when their recorded `torrent-preview` artifact contract version or
+fingerprint is missing or differs from the worker's current library recipe.
+Artifact-stale claims reset `previewAttempts` for the new recipe.

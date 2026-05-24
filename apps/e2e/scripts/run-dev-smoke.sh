@@ -98,6 +98,8 @@ source_optional_file "$WEB_DIR/.env.local"
 source_optional_file "$PREVIEW_WORKER_DIR/.env.dev"
 source_optional_file "$E2E_DIR/.env.dev"
 
+export MMV_PREVIEW_TARGET_FRAMES="${MMV_PREVIEW_TARGET_FRAMES:-3}"
+
 : "${E2E_BASE_URL:?Set E2E_BASE_URL to the deployed dev web URL.}"
 : "${E2E_USER_USERNAME:?Missing E2E_USER_USERNAME in apps/e2e/.env.dev.}"
 : "${E2E_USER_PASSWORD:?Missing E2E_USER_PASSWORD in apps/e2e/.env.dev.}"

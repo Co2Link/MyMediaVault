@@ -31,6 +31,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
 DEFAULT_MAX_ATTEMPTS = 3
+DEFAULT_TARGET_FRAMES = 9
 
 
 class PreviewWorkerSettings(BaseSettings):
@@ -58,6 +59,9 @@ class PreviewWorkerSettings(BaseSettings):
     preview_max_attempts: int = Field(
         default=DEFAULT_MAX_ATTEMPTS, alias="MMV_PREVIEW_MAX_ATTEMPTS"
     )
+    preview_target_frames: int = Field(
+        default=DEFAULT_TARGET_FRAMES, alias="MMV_PREVIEW_TARGET_FRAMES"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", populate_by_name=True
@@ -75,6 +79,9 @@ class PreviewWorkerSettings(BaseSettings):
             raise ValueError(msg)
         if not self.openai_api_key.strip():
             msg = "OPENAI_API_KEY must be set for torrent-preview Pydantic AI ranking"
+            raise ValueError(msg)
+        if self.preview_target_frames not in {3, 9, 16}:
+            msg = "MMV_PREVIEW_TARGET_FRAMES must be one of 3, 9, or 16"
             raise ValueError(msg)
         return self
 
@@ -208,6 +215,7 @@ class MongoPreviewJobLease(PreviewJobLease):
     async def complete(self, result: PreviewResult) -> None:
         stored_frames = await self._store_frames(result.info_hash, result.artifact.frames)
         stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
+        has_replacement_artifacts = bool(stored_frames or stored_sheet)
         await Torrent.get_pymongo_collection().update_one(
             {"_id": self._torrent.id},
             _success_update(
@@ -216,9 +224,13 @@ class MongoPreviewJobLease(PreviewJobLease):
                 stored_sheet=stored_sheet,
                 artifact_version=self._artifact_version,
                 artifact_fingerprint=self._artifact_fingerprint,
+                replace_artifacts=has_replacement_artifacts,
             ),
         )
-        await self._delete_old_keys(_preview_keys_from_stored(stored_frames, stored_sheet))
+        if has_replacement_artifacts:
+            await self._delete_old_keys(
+                _preview_keys_from_stored(stored_frames, stored_sheet)
+            )
 
     async def fail(self, error: Exception) -> None:
         message = str(error) or error.__class__.__name__
@@ -229,6 +241,8 @@ class MongoPreviewJobLease(PreviewJobLease):
                     "previewStatus": "failed",
                     "previewUpdatedAt": datetime.now(UTC),
                     "previewDiagnostics.statusReason": message,
+                    "previewDiagnostics.artifactVersion": self._artifact_version,
+                    "previewDiagnostics.artifactFingerprint": self._artifact_fingerprint,
                 }
             },
         )
@@ -290,12 +304,12 @@ class MongoPreviewJobSource(PreviewJobSource):
     ) -> list[MongoPreviewJobLease]:
         await self._repair_stale_processing()
         claimed: list[MongoPreviewJobLease] = []
-        for query in self._claim_queries(
+        for query, reset_attempts in self._claim_plans(
             artifact_version=artifact_version,
             artifact_fingerprint=artifact_fingerprint,
         ):
             while len(claimed) < limit:
-                torrent = await self._claim_one(query)
+                torrent = await self._claim_one(query, reset_attempts=reset_attempts)
                 if torrent is None:
                     break
                 claimed.append(
@@ -309,6 +323,28 @@ class MongoPreviewJobSource(PreviewJobSource):
             if len(claimed) >= limit:
                 break
         return claimed
+
+    def _claim_plans(
+        self,
+        *,
+        artifact_version: str,
+        artifact_fingerprint: str,
+    ) -> list[tuple[dict[str, Any], bool]]:
+        pending_query, retry_query = self._claim_queries(
+            artifact_version=artifact_version,
+            artifact_fingerprint=artifact_fingerprint,
+        )
+        return [
+            (pending_query, False),
+            (
+                self._artifact_stale_query(
+                    artifact_version=artifact_version,
+                    artifact_fingerprint=artifact_fingerprint,
+                ),
+                True,
+            ),
+            (retry_query, False),
+        ]
 
     def _claim_queries(
         self,
@@ -333,33 +369,57 @@ class MongoPreviewJobSource(PreviewJobSource):
                 **retryable,
                 "previewStatus": {"$in": ["failed", "partial"]},
             },
-            {
-                **base,
-                "previewStatus": "succeeded",
-                "$or": [
-                    {"previewDiagnostics.artifactVersion": {"$exists": False}},
-                    {"previewDiagnostics.artifactVersion": {"$ne": artifact_version}},
-                    {"previewDiagnostics.artifactFingerprint": {"$exists": False}},
-                    {
-                        "previewDiagnostics.artifactFingerprint": {
-                            "$ne": artifact_fingerprint
-                        }
-                    },
-                ],
-            },
         ]
 
-    async def _claim_one(self, query: dict[str, Any]) -> Torrent | None:
+    def _artifact_stale_query(
+        self,
+        *,
+        artifact_version: str,
+        artifact_fingerprint: str,
+    ) -> dict[str, Any]:
+        base = {
+            "metadataStatus": "succeeded",
+            "rawBlobKey": {"$type": "string", "$ne": ""},
+        }
+        return {
+            **base,
+            "previewStatus": {"$in": ["succeeded", "failed", "partial"]},
+            "$or": [
+                {"previewDiagnostics.artifactVersion": {"$exists": False}},
+                {"previewDiagnostics.artifactVersion": {"$ne": artifact_version}},
+                {"previewDiagnostics.artifactFingerprint": {"$exists": False}},
+                {
+                    "previewDiagnostics.artifactFingerprint": {
+                        "$ne": artifact_fingerprint
+                    }
+                },
+            ],
+        }
+
+    async def _claim_one(
+        self, query: dict[str, Any], *, reset_attempts: bool = False
+    ) -> Torrent | None:
         now = datetime.now(UTC)
-        document = await Torrent.get_pymongo_collection().find_one_and_update(
-            query,
+        attempt_update = (
             {
+                "$set": {
+                    "previewStatus": "processing",
+                    "previewLastAttemptAt": now,
+                    "previewAttempts": 1,
+                },
+            }
+            if reset_attempts
+            else {
                 "$set": {
                     "previewStatus": "processing",
                     "previewLastAttemptAt": now,
                 },
                 "$inc": {"previewAttempts": 1},
-            },
+            }
+        )
+        document = await Torrent.get_pymongo_collection().find_one_and_update(
+            query,
+            attempt_update,
             sort=[("updatedAt", 1), ("_id", 1)],
             return_document=ReturnDocument.AFTER,
         )
@@ -409,7 +469,9 @@ class PreviewWorker:
         )
         self._database = self._client[settings.mongodb_database]
         self._blob_store = BlobStore(settings)
-        self._config = PreviewEngineConfig()
+        self._config = PreviewEngineConfig(
+            target_frames=settings.preview_target_frames,
+        )
         self._engine = PreviewEngine(config=self._config)
         self._harness: PreviewWorkerHarness | None = None
 
@@ -452,6 +514,7 @@ def _success_update(
     stored_sheet: dict[str, Any] | None,
     artifact_version: str,
     artifact_fingerprint: str,
+    replace_artifacts: bool = True,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     selected_file = result.diagnostics.selected_file
@@ -466,15 +529,15 @@ def _success_update(
         "warnings": result.diagnostics.warnings,
         "details": _to_plain_dict(result.diagnostics),
     }
-    return {
-        "$set": {
+    values: dict[str, Any] = {
             "previewStatus": result.status,
             "previewUpdatedAt": now,
-            "previewFrames": stored_frames,
-            "previewSheet": stored_sheet,
             "previewDiagnostics": diagnostics,
-        }
     }
+    if replace_artifacts:
+        values["previewFrames"] = stored_frames
+        values["previewSheet"] = stored_sheet
+    return {"$set": values}
 
 
 def _preview_keys(torrent: Torrent) -> set[str]:
