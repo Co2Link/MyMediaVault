@@ -30,14 +30,17 @@ CI publishes its path-filter results as a short-lived artifact for successful
 deployment work.
 
 1. It builds and pushes the web Docker image from `apps/web/Dockerfile` only
-   when the web app or shared core package changes.
+   when the web app or shared core package changes. The public image uses
+   Next.js standalone output so only traced production runtime files are copied
+   into the final image.
 1. It builds and pushes the worker Docker image from `apps/worker/Dockerfile`
-   whenever the Dev workflow runs.
+   only when the worker app or shared core package changes. The public image
+   copies compiled worker/core output and production dependencies only.
 2. It runs `terraform init -reconfigure`, `terraform plan`, and
    `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
    workflows change. Infra-only runs query the currently deployed web image and
-   commit metadata inside the Terraform job instead of publishing a new app
-   revision.
+   commit metadata, plus the currently deployed worker image, inside the
+   Terraform job instead of publishing a new app revision.
 3. It deploys the Container App only when a new web image was pushed. If
    Terraform also ran, Terraform applies the new image; otherwise Azure CLI
    updates the Container App image and commit environment variable.
