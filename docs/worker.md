@@ -67,6 +67,10 @@ torrent blob is available. It claims eligible torrents atomically by setting
 and writes status, artifact keys, dimensions, warnings, status reason, and
 diagnostics back to the torrent document.
 
+The pinned `torrent-preview` engine uses bounded in-attempt anchor retry to
+fill missing LLM-visible timeline anchors before ranking. Retry diagnostics are
+stored in the existing preview diagnostics details payload.
+
 The worker prioritizes torrents with no generated preview (`pending` or missing
 preview status). It automatically retries `failed` and `partial` previews until
 the configured maximum attempt count is reached, defaulting to three total

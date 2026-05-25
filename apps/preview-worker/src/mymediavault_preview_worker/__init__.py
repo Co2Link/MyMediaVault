@@ -558,11 +558,20 @@ def _preview_keys_from_stored(
 
 
 def _to_plain_dict(value: Any) -> dict[str, Any]:
-    if is_dataclass(value):
-        return asdict(value)
-    if isinstance(value, dict):
-        return value
+    plain = _to_plain_value(value)
+    if isinstance(plain, dict):
+        return plain
     return {}
+
+
+def _to_plain_value(value: Any) -> Any:
+    if is_dataclass(value):
+        return _to_plain_value(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _to_plain_value(child) for key, child in value.items()}
+    if isinstance(value, list | tuple):
+        return [_to_plain_value(child) for child in value]
+    return value
 
 
 def main() -> None:

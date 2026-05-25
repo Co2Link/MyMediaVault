@@ -80,9 +80,10 @@ users.
 
 `previewDiagnostics` stores the `torrent-preview` artifact contract version and
 fingerprint, selected file, downloaded bytes, elapsed time, status reason,
-warnings, and low-level torrent diagnostics. The worker increments
-`previewAttempts` and updates `previewLastAttemptAt` whenever it claims a
-torrent.
+warnings, and low-level torrent diagnostics. Engine-specific diagnostic details,
+including bounded anchor retry summaries, live in the mixed `details` payload.
+The worker increments `previewAttempts` and updates `previewLastAttemptAt`
+whenever it claims a torrent.
 
 The preview worker automatically retries `failed` and `partial` previews while
 `previewAttempts` is below the configured maximum, which defaults to three total

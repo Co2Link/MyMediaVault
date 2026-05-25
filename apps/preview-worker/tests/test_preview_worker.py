@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 from torrent_preview import (
+    AnchorRetryAttemptDiagnostics,
+    AnchorRetryDiagnostics,
     GeneratedFrame,
     GeneratedSheet,
     PreviewArtifact,
@@ -186,6 +188,60 @@ def test_success_update_persists_preview_result_artifact_fields() -> None:
     assert update["previewDiagnostics"]["selectedFilePath"] == "movie.mkv"
     assert update["previewFrames"][0]["key"] == "previews/abc/frame_001.jpg"
     assert update["previewSheet"]["key"] == "previews/abc/preview_sheet.jpg"
+
+
+def test_success_update_serializes_integer_diagnostic_keys_as_strings(
+    tmp_path: Path,
+) -> None:
+    frame_path = tmp_path / "frame.jpg"
+    sheet_path = tmp_path / "sheet.jpg"
+    result = PreviewResult(
+        status="partial",
+        status_reason="Only 1 of 3 target anchors produced LLM-accepted frames",
+        info_hash="abc",
+        artifact=PreviewArtifact(
+            frames=[
+                GeneratedFrame(
+                    path=frame_path,
+                    width=1920,
+                    height=1080,
+                    timestamp_seconds=12.5,
+                )
+            ],
+            sheet=GeneratedSheet(path=sheet_path, width=960, height=540),
+        ),
+        diagnostics=_preview_diagnostics(
+            anchor_retry=AnchorRetryDiagnostics(
+                range_mb_ladder=(64.0, 128.0),
+                initial_missing_anchor_indexes=[1],
+                final_missing_anchor_indexes=[1],
+                attempts=[
+                    AnchorRetryAttemptDiagnostics(
+                        range_mb=64.0,
+                        target_anchor_indexes=[1],
+                        decoded_candidate_counts_by_anchor={1: 2},
+                        llm_visible_candidate_counts_by_anchor={1: 0},
+                        remaining_missing_anchor_indexes=[1],
+                        downloaded_bytes=123,
+                    )
+                ],
+            )
+        ),
+    )
+
+    update = _success_update(
+        result,
+        stored_frames=[],
+        stored_sheet=None,
+        artifact_version="preview-v7",
+        artifact_fingerprint="sha256:current",
+    )["$set"]
+
+    retry_attempt = update["previewDiagnostics"]["details"]["anchor_retry"][
+        "attempts"
+    ][0]
+    assert retry_attempt["decoded_candidate_counts_by_anchor"] == {"1": 2}
+    assert retry_attempt["llm_visible_candidate_counts_by_anchor"] == {"1": 0}
 
 
 def test_success_update_can_preserve_existing_artifacts_when_no_replacement() -> None:

@@ -403,7 +403,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.43.9" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pymongo", specifier = ">=4.17.0" },
-    { name = "torrent-preview", git = "https://github.com/Co2Link/torrent-preview?rev=v5.0.0" },
+    { name = "torrent-preview", git = "https://github.com/Co2Link/torrent-preview?rev=v5.1.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -920,8 +920,8 @@ wheels = [
 
 [[package]]
 name = "torrent-preview"
-version = "5.0.0"
-source = { git = "https://github.com/Co2Link/torrent-preview?rev=v5.0.0#df629376c1c940a9e3afa5b162fc4cbfd7948a2c" }
+version = "5.1.0"
+source = { git = "https://github.com/Co2Link/torrent-preview?rev=v5.1.0#a3bbe81c937140c5b63407290b6922c993e56d6d" }
 dependencies = [
     { name = "libtorrent" },
     { name = "loguru" },
