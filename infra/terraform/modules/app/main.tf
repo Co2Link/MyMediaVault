@@ -150,12 +150,10 @@ resource "azurerm_container_app" "web" {
     cooldown_period_in_seconds = 300
 
     container {
-      name    = "web"
-      image   = var.app_image
-      cpu     = 0.25
-      memory  = "0.5Gi"
-      command = ["npm"]
-      args    = ["run", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+      name   = "web"
+      image  = var.app_image
+      cpu    = 0.25
+      memory = "0.5Gi"
 
       env {
         name  = "NODE_ENV"
