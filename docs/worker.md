@@ -111,5 +111,6 @@ Preview worker environment:
 The deployed VM runs the preview worker with Docker and systemd. The container
 image includes Python 3.13, `libtorrent`, `ffmpeg`, and `ffprobe`, runs the
 application as a non-root user, and is published by the dev workflow with the
-`-preview-worker:<commit-sha>` suffix. The VM service stores the full image
-reference in `/etc/mymediavault/preview-worker.env`.
+`-preview-worker:<commit-sha>` suffix for `linux/amd64` and `linux/arm64`.
+The VM service stores the full image reference in
+`/etc/mymediavault/preview-worker.env`.

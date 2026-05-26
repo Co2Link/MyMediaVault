@@ -26,6 +26,9 @@ same Docker Hub namespace as the web image:
 <web-image-repo>-preview-worker:<commit-sha>
 ```
 
+The tag is published for `linux/amd64` and `linux/arm64`; Docker pulls the VM's
+matching platform automatically.
+
 The VM must have Docker and systemd. If the Docker Hub repository is private,
 authenticate Docker on the VM with a read-scoped token:
 

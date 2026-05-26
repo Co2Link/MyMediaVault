@@ -40,8 +40,8 @@ deployment work.
 1. It builds and pushes the preview worker Docker image from
    `apps/preview-worker/Dockerfile` only when preview worker code or workflows
    change. The image is published to the same Docker Hub namespace as the web
-   image, using the `-preview-worker:<commit-sha>` suffix. VM deployment remains
-   manual.
+   image, using the `-preview-worker:<commit-sha>` suffix. The tag supports
+   `linux/amd64` and `linux/arm64` VMs. VM deployment remains manual.
 2. It runs `terraform init -reconfigure`, `terraform plan`, and
    `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
    workflows change. Infra-only runs query the currently deployed web image and
