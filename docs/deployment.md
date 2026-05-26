@@ -13,6 +13,7 @@ dev deployment workflow.
 
 - Web job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
 - Worker job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
+- Preview worker job: Python 3.13, `uv sync --locked`, and `uv run pytest`.
 - Terraform job: `terraform fmt -check -recursive ../..`,
   `terraform init -backend=false`, and `terraform validate`.
 - CI result job: verifies that every required or skipped validation job reached
@@ -36,6 +37,11 @@ deployment work.
 1. It builds and pushes the worker Docker image from `apps/worker/Dockerfile`
    only when the worker app or shared core package changes. The public image
    copies compiled worker/core output and production dependencies only.
+1. It builds and pushes the preview worker Docker image from
+   `apps/preview-worker/Dockerfile` only when preview worker code or workflows
+   change. The image is published to the same Docker Hub namespace as the web
+   image, using the `-preview-worker:<commit-sha>` suffix. VM deployment remains
+   manual.
 2. It runs `terraform init -reconfigure`, `terraform plan`, and
    `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
    workflows change. Infra-only runs query the currently deployed web image and
@@ -73,6 +79,12 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   scaler to start when queued torrent metadata jobs exist. It uses the same auth
   settings as the web app because the shared core environment loader is used by
   both HTTP and worker code paths.
+- Preview worker: long-running Docker container on a manually managed Azure
+  Linux VM. The VM runs a root-owned systemd service that pulls the exact Docker
+  Hub image tag from `/etc/mymediavault/preview-worker.env` and starts the
+  container in the foreground. The container image runs the Python worker as a
+  non-root user and includes Python 3.13, `libtorrent`, `ffmpeg`, and
+  `ffprobe`; preview artifacts are stored in R2 so the VM stays stateless.
 - Database: Azure Cosmos DB for MongoDB vCore free-tier cluster created by this
   repository, configured for MongoDB 8.0 so the Node MongoDB driver can connect
   through Mongoose. The Mongo vCore firewall includes the Azure-services rule
@@ -113,8 +125,12 @@ traces
 ## Required Secrets and Variables
 
 GitHub Actions expects Docker Hub credentials, Azure credentials, `AUTH_SECRET`,
-Entra client credentials, and optional admin object/group IDs. Keep all secrets
-in GitHub or local `.env` files; never commit them.
+Entra client credentials, optional admin object/group IDs, and
+`uv_index_lingxt_password` for installing the `torrent-preview` package from the
+Azure Artifacts `lingxt` feed. The Azure Artifacts username is the dummy value
+`az`. The preview worker VM also needs its own root-owned environment file with
+MongoDB, R2, OpenAI, and image reference settings. Keep all secrets in GitHub,
+VM-local secret files, or local `.env` files; never commit them.
 
 ## GitHub Actions Configuration Policy
 

@@ -11,6 +11,7 @@ jobs:
     outputs:
       web: ${{ steps.filter.outputs.web }}
       worker: ${{ steps.filter.outputs.worker }}
+      preview_worker: ${{ steps.filter.outputs.preview_worker }}
       terraform: ${{ steps.filter.outputs.terraform }}
     steps:
       - uses: actions/checkout@v5
@@ -28,6 +29,9 @@ jobs:
               - '.github/workflows/**'
               - 'apps/worker/**'
               - 'packages/core/**'
+            preview_worker:
+              - '.github/workflows/**'
+              - 'apps/preview-worker/**'
             terraform:
               - '.github/workflows/**'
               - 'infra/terraform/**'
@@ -38,6 +42,7 @@ jobs:
           {
             echo "web=${{ steps.filter.outputs.web }}"
             echo "worker=${{ steps.filter.outputs.worker }}"
+            echo "preview_worker=${{ steps.filter.outputs.preview_worker }}"
             echo "terraform=${{ steps.filter.outputs.terraform }}"
           } > dev-change-flags/flags.env
       - uses: actions/upload-artifact@v4
@@ -103,6 +108,25 @@ jobs:
       - run: npm run build
       - run: npm run test
 
+  preview_worker:
+    needs: changes
+    if: ${{ needs.changes.outputs.preview_worker == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/preview-worker
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+        env:
+          UV_INDEX_LINGXT_USERNAME: az
+          UV_INDEX_LINGXT_PASSWORD: ${{ secrets.uv_index_lingxt_password }}
+      - run: uv run pytest
+
   terraform:
     needs: changes
     if: ${{ needs.changes.outputs.terraform == 'true' }}
@@ -136,6 +160,7 @@ jobs:
       - changes
       - web
       - worker
+      - preview_worker
       - terraform
     runs-on: ubuntu-latest
     steps:
@@ -145,11 +170,12 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB_RESULT: ${{ needs.web.result }}
           WORKER_RESULT: ${{ needs.worker.result }}
+          PREVIEW_WORKER_RESULT: ${{ needs.preview_worker.result }}
           TERRAFORM_RESULT: ${{ needs.terraform.result }}
         run: |
           test "$CHANGES_RESULT" = "success"
 
-          for result in "$WEB_RESULT" "$WORKER_RESULT" "$TERRAFORM_RESULT"; do
+          for result in "$WEB_RESULT" "$WORKER_RESULT" "$PREVIEW_WORKER_RESULT" "$TERRAFORM_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) exit 1 ;;

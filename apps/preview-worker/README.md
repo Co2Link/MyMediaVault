@@ -13,55 +13,29 @@ cp .env.example .env
 uv run mymediavault-preview-worker
 ```
 
-Environment variables are documented in `.env.example`. Copy that file for
-local runs, and use the same names when rendering deployment configuration on
-the VM.
-
-The VM runtime must provide Python 3.13, `libtorrent`, `ffmpeg`, and preferably
-`ffprobe`. `OPENAI_API_KEY` is required by the default `torrent-preview` engine.
+Local native runs require Python 3.13, `libtorrent`, `ffmpeg`, and preferably
+`ffprobe`. Environment variables are documented in `.env.example`.
 
 ## Deploy
 
-The preview worker is intentionally hosted on a VM instead of the repository's
-Terraform-managed Azure Container Apps environment. It runs as a long-lived
-polling process, generates previews with native media tooling, and needs a host
-with predictable CPU, disk, `ffmpeg`, `ffprobe`, and `libtorrent` support.
+The preview worker runs on a manually managed VM, outside Terraform-managed
+Azure Container Apps. The dev workflow builds and pushes the Docker image to the
+same Docker Hub namespace as the web image:
 
-Use an Azure Linux VM in the same environment as the dev app. Start with a small
-VM and set `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` conservatively, then increase it
-after observing CPU, memory, disk, network, R2, MongoDB, and OpenAI API usage.
-
-### Provision the host
-
-Install the host packages and `uv`:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y git curl ffmpeg libtorrent-rasterbar-dev
-curl -LsSf https://astral.sh/uv/install.sh | sh
+```text
+<web-image-repo>-preview-worker:<commit-sha>
 ```
 
-Install Python 3.13 through `uv` if the image does not already provide it:
+The VM must have Docker and systemd. If the Docker Hub repository is private,
+authenticate Docker on the VM with a read-scoped token:
 
 ```bash
-uv python install 3.13
+sudo docker login
 ```
-
-Create an application directory and install the worker dependencies:
-
-```bash
-sudo mkdir -p /opt/mymediavault
-sudo chown "$USER":"$USER" /opt/mymediavault
-git clone https://github.com/<owner>/<repo>.git /opt/mymediavault
-cd /opt/mymediavault/apps/preview-worker
-uv sync --locked
-```
-
-Replace `<owner>/<repo>` with the repository remote used for the deployment.
 
 ### Configure environment
 
-Store deployment configuration outside the repository in a root-owned file:
+Store deployment config outside the repository:
 
 ```bash
 sudo mkdir -p /etc/mymediavault
@@ -69,10 +43,14 @@ sudo install -m 600 /dev/null /etc/mymediavault/preview-worker.env
 sudo editor /etc/mymediavault/preview-worker.env
 ```
 
-Use `.env.example` as the source of truth for the expected variable names and
-defaults. Do not commit real environment files or secrets. Prefer Azure Key
-Vault or another secret store for long-lived environments, and render only the
-values the service needs onto the VM.
+Use `.env.example` for worker variables. Add the exact image tag:
+
+```bash
+MMV_PREVIEW_WORKER_IMAGE=<web-image-repo>-preview-worker:<commit-sha>
+```
+
+Deployment should be stateless: configure R2 for artifacts, MongoDB/Cosmos for
+status, and treat container-local files as disposable.
 
 ### Install the service
 
@@ -86,18 +64,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/mymediavault/apps/preview-worker
 EnvironmentFile=/etc/mymediavault/preview-worker.env
-ExecStart=/home/azureuser/.local/bin/uv run mymediavault-preview-worker
+ExecStartPre=-/usr/bin/docker rm -f mymediavault-preview-worker
+ExecStartPre=/usr/bin/docker pull ${MMV_PREVIEW_WORKER_IMAGE}
+ExecStart=/usr/bin/docker run --rm --name mymediavault-preview-worker --env-file /etc/mymediavault/preview-worker.env ${MMV_PREVIEW_WORKER_IMAGE}
+ExecStop=/usr/bin/docker stop mymediavault-preview-worker
 Restart=always
 RestartSec=10
-User=azureuser
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Adjust `User` and the `uv` path for the VM account. Then enable and start it:
+Enable and start:
 
 ```bash
 sudo systemctl daemon-reload
@@ -105,49 +84,22 @@ sudo systemctl enable --now mymediavault-preview-worker
 sudo systemctl status mymediavault-preview-worker
 ```
 
-View logs with:
+Logs:
 
 ```bash
-journalctl -u mymediavault-preview-worker -f
+sudo journalctl -u mymediavault-preview-worker -f
+sudo docker logs -f mymediavault-preview-worker
 ```
-
-For Azure operations, attach Azure Monitor Agent or another log collector after
-the service is stable.
 
 ## Update
 
-Before updating, check the current worker state and logs:
+Set `MMV_PREVIEW_WORKER_IMAGE` to the new full image reference, then restart:
 
 ```bash
-sudo systemctl status mymediavault-preview-worker
-journalctl -u mymediavault-preview-worker -n 100 --no-pager
-```
-
-Deploy a new revision:
-
-```bash
-cd /opt/mymediavault
-git fetch --prune
-git checkout <branch-or-tag>
-git pull --ff-only
-cd apps/preview-worker
-uv sync --locked
+sudo editor /etc/mymediavault/preview-worker.env
 sudo systemctl restart mymediavault-preview-worker
 sudo systemctl status mymediavault-preview-worker
+sudo journalctl -u mymediavault-preview-worker -f
 ```
 
-Use the same branch or tag strategy as the web and worker deployment. If
-`pyproject.toml` or `uv.lock` changes, `uv sync --locked` updates the virtual
-environment to the pinned dependency set.
-
-After restarting, confirm that the service is polling cleanly and writing
-preview results:
-
-```bash
-journalctl -u mymediavault-preview-worker -f
-```
-
-If an update changes environment variables, edit
-`/etc/mymediavault/preview-worker.env`, then restart the service. If an update
-changes native runtime requirements, install the host packages first and restart
-only after `uv sync --locked` succeeds.
+Roll back by restoring the previous image tag and restarting the service.

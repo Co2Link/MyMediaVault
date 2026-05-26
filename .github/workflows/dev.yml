@@ -29,6 +29,7 @@ jobs:
     outputs:
       web: ${{ steps.flags.outputs.web }}
       worker: ${{ steps.flags.outputs.worker }}
+      preview_worker: ${{ steps.flags.outputs.preview_worker }}
       terraform: ${{ steps.flags.outputs.terraform }}
     steps:
       - name: Download CI change flags
@@ -47,6 +48,7 @@ jobs:
           {
             echo "web=${web}"
             echo "worker=${worker}"
+            echo "preview_worker=${preview_worker}"
             echo "terraform=${terraform}"
           } >> "$GITHUB_OUTPUT"
 
@@ -58,6 +60,7 @@ jobs:
           {
             echo "web=false"
             echo "worker=false"
+            echo "preview_worker=false"
             echo "terraform=${FORCE_TERRAFORM_APPLY}"
           } >> "$GITHUB_OUTPUT"
         env:
@@ -69,14 +72,17 @@ jobs:
           {
             echo "web=${CI_WEB:-${MANUAL_WEB}}"
             echo "worker=${CI_WORKER:-${MANUAL_WORKER}}"
+            echo "preview_worker=${CI_PREVIEW_WORKER:-${MANUAL_PREVIEW_WORKER}}"
             echo "terraform=${CI_TERRAFORM:-${MANUAL_TERRAFORM}}"
           } >> "$GITHUB_OUTPUT"
         env:
           CI_WEB: ${{ steps.ci-flags.outputs.web }}
           CI_WORKER: ${{ steps.ci-flags.outputs.worker }}
+          CI_PREVIEW_WORKER: ${{ steps.ci-flags.outputs.preview_worker }}
           CI_TERRAFORM: ${{ steps.ci-flags.outputs.terraform }}
           MANUAL_WEB: ${{ steps.manual-flags.outputs.web }}
           MANUAL_WORKER: ${{ steps.manual-flags.outputs.worker }}
+          MANUAL_PREVIEW_WORKER: ${{ steps.manual-flags.outputs.preview_worker }}
           MANUAL_TERRAFORM: ${{ steps.manual-flags.outputs.terraform }}
 
   image:
@@ -153,13 +159,53 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.image }}
 
+  preview_worker_image:
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.preview_worker == 'true' }}
+    runs-on: ubuntu-latest
+    needs: changes
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - id: meta
+        shell: bash
+        run: |
+          repo="${IMAGE_REPOSITORY}"
+          if [[ "${repo##*/}" == *:* ]]; then
+            repo="${repo%:*}"
+          fi
+          echo "image=${repo}-preview-worker:${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/preview-worker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          secrets: |
+            uv_index_lingxt_password=${{ secrets.uv_index_lingxt_password }}
+          tags: ${{ steps.meta.outputs.image }}
+
   terraform:
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && needs.changes.outputs.terraform == 'true' && (needs.image.result == 'success' || needs.image.result == 'skipped') && (needs.changes.outputs.worker != 'true' || needs.worker_image.result == 'success') }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && needs.changes.outputs.terraform == 'true' && (needs.image.result == 'success' || needs.image.result == 'skipped') && (needs.changes.outputs.worker != 'true' || needs.worker_image.result == 'success') && (needs.changes.outputs.preview_worker != 'true' || needs.preview_worker_image.result == 'success') }}
     runs-on: ubuntu-latest
     needs:
       - changes
       - image
       - worker_image
+      - preview_worker_image
     defaults:
       run:
         working-directory: infra/terraform/envs/dev
@@ -303,12 +349,13 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
   container_app_deploy:
-    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' && needs.image.result == 'success' && (needs.changes.outputs.worker != 'true' || needs.worker_image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
+    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.web == 'true' && needs.image.result == 'success' && (needs.changes.outputs.worker != 'true' || needs.worker_image.result == 'success') && (needs.changes.outputs.preview_worker != 'true' || needs.preview_worker_image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - changes
       - image
       - worker_image
+      - preview_worker_image
       - terraform
     steps:
       - uses: azure/login@v2
@@ -338,11 +385,12 @@ jobs:
         run: echo "Terraform applied the new image and commit."
 
   worker_job_deploy:
-    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.worker == 'true' && needs.worker_image.result == 'success' && needs.terraform.result == 'skipped' }}
+    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.worker == 'true' && needs.worker_image.result == 'success' && (needs.changes.outputs.preview_worker != 'true' || needs.preview_worker_image.result == 'success') && needs.terraform.result == 'skipped' }}
     runs-on: ubuntu-latest
     needs:
       - changes
       - worker_image
+      - preview_worker_image
       - terraform
     steps:
       - uses: azure/login@v2
@@ -366,12 +414,13 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
 
   smoke:
-    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && needs.changes.outputs.terraform == 'true') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) && (needs.changes.outputs.web != 'true' || needs.image.result == 'success') && (needs.changes.outputs.worker != 'true' || needs.worker_image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.container_app_deploy.result == 'success' || needs.container_app_deploy.result == 'skipped') && (needs.worker_job_deploy.result == 'success' || needs.worker_job_deploy.result == 'skipped') }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && needs.changes.outputs.terraform == 'true') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) && (needs.changes.outputs.web != 'true' || needs.image.result == 'success') && (needs.changes.outputs.worker != 'true' || needs.worker_image.result == 'success') && (needs.changes.outputs.preview_worker != 'true' || needs.preview_worker_image.result == 'success') && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.container_app_deploy.result == 'success' || needs.container_app_deploy.result == 'skipped') && (needs.worker_job_deploy.result == 'success' || needs.worker_job_deploy.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - changes
       - image
       - worker_image
+      - preview_worker_image
       - terraform
       - container_app_deploy
       - worker_job_deploy

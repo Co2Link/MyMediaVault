@@ -5,7 +5,8 @@ Container Apps job. Locally, the same package can run as a long-lived Node.js
 process for the e2e harness.
 
 The torrent preview worker lives separately in `apps/preview-worker`. It is a
-Python process intended to run on a VM, not infrastructure managed by this repo.
+Python process packaged as a Docker image for a manually managed VM, not
+infrastructure managed by this repo.
 
 ## Responsibilities
 
@@ -107,5 +108,8 @@ Preview worker environment:
 | `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum total automatic attempts for pending, failed, and partial previews. Defaults to `3`. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. Defaults to `9`; supported values are `3`, `9`, and `16`. |
 
-The VM image must include Python 3.13, `libtorrent`, `ffmpeg`, and preferably
-`ffprobe`.
+The deployed VM runs the preview worker with Docker and systemd. The container
+image includes Python 3.13, `libtorrent`, `ffmpeg`, and `ffprobe`, runs the
+application as a non-root user, and is published by the dev workflow with the
+`-preview-worker:<commit-sha>` suffix. The VM service stores the full image
+reference in `/etc/mymediavault/preview-worker.env`.

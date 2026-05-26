@@ -12,7 +12,7 @@ dependencies = [
     "boto3>=1.43.9",
     "pydantic-settings>=2.14.1",
     "pymongo>=4.17.0",
-    "torrent-preview",
+    "torrent-preview==5.1.1",
 ]
 
 [dependency-groups]
@@ -27,5 +27,10 @@ mymediavault-preview-worker = "mymediavault_preview_worker:main"
 requires = ["uv_build>=0.11.14,<0.12.0"]
 build-backend = "uv_build"
 
+[[tool.uv.index]]
+name = "lingxt"
+url = "https://pkgs.dev.azure.com/lingxt/_packaging/lingxt/pypi/simple/"
+explicit = true
+
 [tool.uv.sources]
-torrent-preview = { git = "https://github.com/Co2Link/torrent-preview", rev = "v5.1.0" }
+torrent-preview = { index = "lingxt" }
