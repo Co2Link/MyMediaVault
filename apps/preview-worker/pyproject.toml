@@ -12,7 +12,7 @@ dependencies = [
     "boto3>=1.43.9",
     "pydantic-settings>=2.14.1",
     "pymongo>=4.17.0",
-    "torrent-preview==5.1.1",
+    "torrent-preview==5.2.0",
 ]
 
 [dependency-groups]
