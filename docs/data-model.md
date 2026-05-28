@@ -10,7 +10,6 @@ erDiagram
   User ||--o{ Video : owns
   Torrent ||--o{ Video : referenced_by
   Torrent ||--o{ TorrentFile : contains
-  Torrent ||--o{ TorrentMetadataJob : processed_by
   Torrent }o--o{ Actor : features
   Video ||--o{ VideoTag : has
   Tag ||--o{ VideoTag : labels
@@ -32,8 +31,6 @@ erDiagram
 - `tags`: global tag catalog keyed by unique tag name.
 - `video_tags`: many-to-many links between videos and tags, replaced from the
   add and detail forms when a user saves tag selections.
-- `torrent_metadata_jobs`: queue and audit records for metadata processing
-  attempts.
 
 ## Important Constraints
 
@@ -41,11 +38,11 @@ Canonical torrent reuse is enforced by `torrents.infoHash`. User isolation is
 enforced by querying videos with both `video._id` and `video.userId`; multiple
 users may reference the same torrent while keeping private video fields.
 Deleting the last video that references a torrent removes the orphan torrent
-record, its metadata job history, stored raw blob, and stored preview artifacts. Admin torrent
-deletion cascades through dependent videos and their tag links before removing
-the torrent blob and preview artifacts. Tag selections are validated against the global `tags`
-catalog before write operations, so the add/detail forms can only attach tags
-that already exist.
+record, stored raw blob, and stored preview artifacts. Admin torrent deletion
+cascades through dependent videos and their tag links before removing the
+torrent blob and preview artifacts. Tag selections are validated against the
+global `tags` catalog before write operations, so the add/detail forms can only
+attach tags that already exist.
 
 Rating is optional and constrained to 1 through 5 in validation code before
 write operations. Tag names are trimmed, whitespace-normalized, non-empty, and
@@ -61,17 +58,18 @@ ID from every torrent before deleting the actor's profile image blob.
 ## Metadata State
 
 `Torrent.metadataStatus` tracks `pending`, `processing`, `succeeded`, or
-`failed`. Failed metadata processing stores `metadataError`; successful
-processing stores `name`, `sizeBytes`, `rawBlobKey`, and ordered files.
-`TorrentMetadataJob` records `queued`, `processing`, `succeeded`, and
-`failed` attempts. `queueEnqueuedAt` records when the job last became eligible
-for the event-driven worker. Timing fields (`lastDequeuedAt`, `startedAt`, and
-`finishedAt`) support duplicate-job handling and stale processing repair.
+`failed`. Failed metadata processing stores `metadataError` and
+`metadataFailureKind`; successful processing stores `name`, `sizeBytes`,
+`rawBlobKey`, and ordered files. The VM worker uses the `torrents` collection as
+the metadata queue. `metadataNextAttemptAt` controls retry scheduling,
+`metadataLeaseUntil` protects in-flight claims, attempt and timing fields record
+processing progress, and `metadataDiagnostics` stores resolver-level failure
+details.
 
 ## Preview State
 
 `Torrent.previewStatus` tracks `pending`, `processing`, `succeeded`, `partial`,
-or `failed`. The VM-hosted preview worker only claims torrents whose metadata
+or `failed`. The VM worker preview pipeline only claims torrents whose metadata
 has succeeded and whose raw torrent blob is available. Successful preview output
 stores a contact sheet in `previewSheet` and up to nine frame records in
 `previewFrames`; both store private R2 object keys and dimensions. Partial
@@ -85,7 +83,7 @@ including bounded anchor retry summaries, live in the mixed `details` payload.
 The worker increments `previewAttempts` and updates `previewLastAttemptAt`
 whenever it claims a torrent.
 
-The preview worker automatically retries `failed` and `partial` previews while
+The VM worker automatically retries `failed` and `partial` previews while
 `previewAttempts` is below the configured maximum, which defaults to three total
 attempts. Admins can reset a torrent preview attempt count from torrent
 management, which sets the preview status back to `pending` without deleting

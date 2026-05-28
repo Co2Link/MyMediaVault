@@ -17,11 +17,13 @@ from torrent_preview import (
     SelectedFile,
 )
 
-from mymediavault_preview_worker import (
+from mymediavault_vm_worker import (
+    FakeTorrentMetadataResolver,
     MongoPreviewJobLease,
     MongoPreviewJobSource,
     PreviewWorkerSettings,
     _success_update,
+    parse_torrent,
 )
 
 
@@ -36,7 +38,7 @@ def _preview_diagnostics(**overrides: object) -> PreviewDiagnostics:
     return PreviewDiagnostics(**values)
 
 
-def test_settings_require_openai_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_require_openai_api_key_for_preview(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
@@ -54,6 +56,32 @@ def test_settings_reject_blank_openai_api_key() -> None:
         )
 
 
+def test_settings_allow_metadata_only_without_openai_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    settings = PreviewWorkerSettings(
+        mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+        preview_worker_enabled=False,
+        _env_file=None,
+    )
+
+    assert settings.metadata_worker_enabled is True
+    assert settings.preview_worker_enabled is False
+
+
+def test_fake_metadata_resolver_returns_valid_torrent_payload() -> None:
+    metadata = asyncio.run(
+        FakeTorrentMetadataResolver().fetch("abcdef0123456789abcdef0123456789abcdef01")
+    )
+
+    assert metadata["name"] == "Fake Torrent abcdef01"
+    assert metadata["sizeBytes"] == 1048576
+    assert metadata["files"] == [
+        {"path": "Fake Torrent abcdef01", "sizeBytes": 1048576, "position": 0}
+    ]
+    assert metadata["resolverDiagnostics"] == [{"url": "fake", "kind": "success"}]
+
+
 def test_settings_reject_unsupported_target_frames() -> None:
     with pytest.raises(ValidationError, match="MMV_PREVIEW_TARGET_FRAMES"):
         PreviewWorkerSettings(
@@ -62,6 +90,19 @@ def test_settings_reject_unsupported_target_frames() -> None:
             preview_target_frames=7,
             _env_file=None,
         )
+
+
+def test_parse_torrent_reads_single_file_payload() -> None:
+    raw = b"d4:infod6:lengthi123e4:name9:movie.mkv6:pieces0:ee"
+
+    metadata = parse_torrent(raw)
+
+    assert metadata["name"] == "movie.mkv"
+    assert metadata["sizeBytes"] == 123
+    assert metadata["files"] == [
+        {"path": "movie.mkv", "sizeBytes": 123, "position": 0}
+    ]
+    assert metadata["raw"] == raw
 
 
 def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
@@ -127,7 +168,7 @@ def test_artifact_stale_claim_resets_attempts_to_one(monkeypatch: pytest.MonkeyP
 
     collection = FakeCollection()
     monkeypatch.setattr(
-        "mymediavault_preview_worker.Torrent.get_pymongo_collection",
+        "mymediavault_vm_worker.Torrent.get_pymongo_collection",
         lambda: collection,
     )
     source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]

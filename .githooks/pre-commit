@@ -35,11 +35,11 @@ else
   skip_section "web checks"
 fi
 
-if has_staged_changes_in "apps/worker" || has_staged_changes_in "packages/core"; then
-  run_in apps/worker npm run build
-  run_in apps/worker npm run test
+if has_staged_changes_in "apps/vm-worker"; then
+  run_in apps/vm-worker uv sync --locked
+  run_in apps/vm-worker uv run pytest
 else
-  skip_section "worker checks"
+  skip_section "VM worker checks"
 fi
 
 if has_staged_changes_in "infra/terraform"; then

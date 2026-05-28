@@ -6,14 +6,12 @@ release workflows are intentionally out of scope until requested.
 ## CI
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `develop` or
-`main`. It uses path filters so the web and worker jobs only run when the
-shared app/core code changes, and the Terraform job only runs when infrastructure
-changes. Pushes to `develop` also publish the same path-filter results for the
-dev deployment workflow.
+`main`. It uses path filters so the web, VM worker, and Terraform jobs only run
+when their inputs change. Pushes to `develop` also publish the same path-filter
+results for the dev deployment workflow.
 
 - Web job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
-- Worker job: Node 24, `npm ci`, `npm run build`, and `npm run test`.
-- Preview worker job: Python 3.13, `uv sync --locked`, and `uv run pytest`.
+- VM worker job: Python 3.13, `uv sync --locked`, and `uv run pytest`.
 - Terraform job: `terraform fmt -check -recursive ../..`,
   `terraform init -backend=false`, and `terraform validate`.
 - CI result job: verifies that every required or skipped validation job reached
@@ -34,26 +32,22 @@ deployment work.
    when the web app or shared core package changes. The public image uses
    Next.js standalone output so only traced production runtime files are copied
    into the final image.
-1. It builds and pushes the worker Docker image from `apps/worker/Dockerfile`
-   only when the worker app or shared core package changes. The public image
-   copies compiled worker/core output and production dependencies only.
-1. It builds and pushes the preview worker Docker image from
-   `apps/preview-worker/Dockerfile` only when preview worker code or workflows
+1. It builds and pushes the VM worker Docker image from
+   `apps/vm-worker/Dockerfile` only when VM worker code or workflows
    change. The image is published to the same Docker Hub namespace as the web
-   image, using the `-preview-worker:<commit-sha>` suffix. The tag supports
+   image, using the `-vm-worker:<commit-sha>` suffix. The tag supports
    `linux/amd64` and `linux/arm64` VMs. VM deployment remains manual.
 2. It runs `terraform init -reconfigure`, `terraform plan`, and
    `terraform apply` in `infra/terraform/envs/dev` only when Terraform files or
    workflows change. Infra-only runs query the currently deployed web image and
-   commit metadata, plus the currently deployed worker image, inside the
-   Terraform job instead of publishing a new app revision.
+   commit metadata inside the Terraform job instead of publishing a new app
+   revision.
 3. It deploys the Container App only when a new web image was pushed. If
    Terraform also ran, Terraform applies the new image; otherwise Azure CLI
    updates the Container App image and commit environment variable.
-4. It smoke-checks `GET /api/health` on the deployed web app and verifies that
-   the event-driven worker job exists after successful CI and successful or
-   skipped deploy prerequisites. The smoke check validates the new commit only
-   when a web image was deployed.
+4. It smoke-checks `GET /api/health` on the deployed web app after successful
+   CI and successful or skipped deploy prerequisites. The smoke check validates
+   the new commit only when a web image was deployed.
 
 The dev Terraform stack uses Cloudflare R2-backed remote state:
 
@@ -75,13 +69,9 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   redirects return to the deployed app instead of an internal runtime address.
   The app can scale to zero and now uses a 300-second scale-in cooldown so it
   stops billing idle replicas sooner.
-- Worker: event-driven Azure Container Apps job that uses the KEDA MongoDB
-  scaler to start when queued torrent metadata jobs exist. It uses the same auth
-  settings as the web app because the shared core environment loader is used by
-  both HTTP and worker code paths.
-- Preview worker: long-running Docker container on a manually managed Azure
-  Linux VM. The VM runs a root-owned systemd service that pulls the exact Docker
-  Hub image tag from `/etc/mymediavault/preview-worker.env` and starts the
+- VM worker: long-running Docker container on a manually managed Oracle Cloud
+  VM. The VM runs a root-owned systemd service that pulls the exact Docker
+  Hub image tag from `/etc/mymediavault/vm-worker.env` and starts the
   container in the foreground. The container image runs the Python worker as a
   non-root user and includes Python 3.13, `libtorrent`, `ffmpeg`, and
   `ffprobe`; preview artifacts are stored in R2 so the VM stays stateless.
@@ -92,33 +82,14 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   per-revision outbound IP allowlists.
 - Storage: raw torrent blobs live in Cloudflare R2, and Terraform state uses
   the R2 backend.
-- Observability: Log Analytics workspace with 30-day retention for the worker
-  job and web app.
+- Observability: Log Analytics workspace with 30-day retention for the web app.
 
-## Worker KQL
+## Web KQL
 
 Useful starter queries in the Log Analytics workspace:
 
 ```kusto
-traces
-| where message has "Torrent metadata"
-| order by timestamp desc
-```
-
-```kusto
 exceptions
-| order by timestamp desc
-```
-
-```kusto
-traces
-| where message has "Torrent metadata jobs repaired"
-| order by timestamp desc
-```
-
-```kusto
-traces
-| where customDimensions.jobId != ""
 | order by timestamp desc
 ```
 
@@ -128,7 +99,7 @@ GitHub Actions expects Docker Hub credentials, Azure credentials, `AUTH_SECRET`,
 Entra client credentials, optional admin object/group IDs, and
 `uv_index_lingxt_password` for installing the `torrent-preview` package from the
 Azure Artifacts `lingxt` feed. The Azure Artifacts username is the dummy value
-`az`. The preview worker VM also needs its own root-owned environment file with
+`az`. The VM worker VM also needs its own root-owned environment file with
 MongoDB, R2, OpenAI, and image reference settings. Keep all secrets in GitHub,
 VM-local secret files, or local `.env` files; never commit them.
 
@@ -138,8 +109,7 @@ The dev workflows intentionally use a simple repo-level configuration model.
 Application configuration that is not sensitive is stored as GitHub repository
 variables, and sensitive application configuration is stored as GitHub
 repository secrets. Azure CLI is used only for operational deployment lookups,
-such as the current Container App image, worker job, and smoke-test resource
-discovery.
+such as the current Container App image and smoke-test resource discovery.
 
 Do not duplicate Terraform-owned resource values in GitHub variables. Values
 created or owned by Terraform should flow through Terraform resources, data

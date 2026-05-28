@@ -10,9 +10,9 @@ description, and rating.
 
 ```text
 apps/web          Next.js full-stack app
-apps/worker       Container Apps worker job
+apps/vm-worker    VM-hosted metadata and preview worker
 apps/e2e          Playwright tests
-packages/core     Shared Mongoose/domain/storage/torrent logic
+packages/core     Shared Mongoose/domain/storage logic
 docs              Project docs
 infra/terraform   Azure infrastructure
 ```
@@ -33,7 +33,7 @@ Enable the tracked pre-commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook runs core, web, worker, e2e, and Terraform checks selectively based
+The hook runs core, web, VM worker, e2e, and Terraform checks selectively based
 on staged paths. The local authenticated Playwright browser suite uses
 `apps/e2e/.env.local`, so Entra test-user credentials must be available there.
 Use `apps/e2e/.env.example` as the template for the e2e env files.
@@ -51,9 +51,9 @@ Run locally:
 
 ```bash
 npm run dev
-cd ../worker
-npm ci
-npm run manual-worker
+cd ../vm-worker
+uv sync
+uv run mymediavault-vm-worker
 ```
 
 ## End-to-End Tests
@@ -65,7 +65,7 @@ npm run test:local
 ```
 
 `npm run test:local` expects a reachable MongoDB database, starts the Next.js
-app and local queue worker automatically when needed, loads env from
+app and local VM worker automatically when needed, loads env from
 `apps/web/.env.local` and `apps/e2e/.env.local`, cleans documents owned by the
 Playwright test users, performs real Entra login, and runs the browser suite
 against the local stack. To verify the deployed dev environment after GitHub

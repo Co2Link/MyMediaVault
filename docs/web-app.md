@@ -47,15 +47,14 @@ application.
   flag, name, email, and image.
 - Adding a video normalizes the info hash, reuses or creates the canonical
   torrent, applies selected actors to the shared torrent actor list, creates the
-  user-owned video, attaches any selected tags, and creates a MongoDB-backed
-  metadata job.
+  user-owned video, attaches any selected tags, and marks metadata as pending.
 - Updating a video detail view can change the private fields, replace the
   video's existing tag links with the selected catalog tags, and replace the
   canonical torrent's shared actor list.
 - Deleting a video removes its private tags and, when it was the last video
   referencing the canonical torrent, deletes the torrent metadata and raw blob.
 - Admin torrent deletion removes the torrent, its dependent videos and video
-  tags, the metadata job records, the stored raw blob, and preview artifacts.
+  tags, the stored raw blob, and preview artifacts.
 - Admin torrent management can view stored preview sheets and frames by torrent
   ID and reset preview attempts, which returns preview status to `pending`
   without deleting existing artifacts.
@@ -72,10 +71,10 @@ application.
 
 ## Worker Boundary
 
-The web app creates metadata jobs for `apps/worker`, but it does not process
-torrent metadata or preview images itself. Preview generation is handled by the
-VM-hosted `apps/preview-worker` process. Shared domain logic for the web app and
-Node worker stays in `packages/core`.
+The web app marks torrent metadata as pending, but it does not process torrent
+metadata or preview images itself. Metadata and preview generation are handled
+by the VM-hosted `apps/vm-worker` process. Shared domain logic for the web app
+stays in `packages/core`.
 
 ## Environment Variables
 
@@ -95,10 +94,6 @@ Auth.js config in `apps/web/src/auth.ts`.
 | `MMV_COMMIT_SHA` | Commit label for health/debug output. |
 | `MMV_ADMIN_OBJECT_IDS` | Entra object IDs with admin access. |
 | `MMV_ADMIN_GROUP_OBJECT_IDS` | Entra group IDs with admin access. |
-| `MMV_TORRENT_PROVIDER` | Torrent provider mode. |
-| `MMV_TORRENT_RESOLVER_URLS` | HTTP resolver URL templates. |
-| `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | HTTP torrent fetch timeout. |
-| `MMV_TORRENT_REPAIR_STALE_PROCESSING_MINUTES` | Stale processing-job threshold. |
 | `R2_ENDPOINT` | Cloudflare R2 S3-compatible endpoint. |
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 access key ID. |
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import mongoose, { Schema, type Model } from "mongoose";
 import { getDatabaseEnv } from "./env.js";
-import type { JobStatus, MetadataStatus, PreviewStatus } from "./types.js";
+import type { MetadataFailureKind, MetadataStatus, PreviewStatus } from "./types.js";
 
 export type UserDoc = {
   _id: string;
@@ -104,8 +104,14 @@ export type TorrentDoc = {
   rawBlobKey: string | null;
   metadataStatus: MetadataStatus;
   metadataError: string | null;
+  metadataFailureKind: MetadataFailureKind | null;
   metadataAttempts: number;
+  metadataNextAttemptAt: Date | null;
   metadataLastAttemptAt: Date | null;
+  metadataStartedAt: Date | null;
+  metadataFinishedAt: Date | null;
+  metadataLeaseUntil: Date | null;
+  metadataDiagnostics: Record<string, unknown>;
   files: TorrentFileDoc[];
   actorIds: string[];
   previewStatus: PreviewStatus;
@@ -135,20 +141,6 @@ export type VideoTagDoc = {
   videoId: string;
   tagId: string;
   createdAt: Date;
-};
-
-export type TorrentMetadataJobDoc = {
-  _id: string;
-  torrentId: string;
-  status: JobStatus;
-  attempt: number;
-  error: string | null;
-  queueEnqueuedAt: Date;
-  lastDequeuedAt: Date | null;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
 };
 
 type GlobalMongoose = {
@@ -292,8 +284,14 @@ const torrentSchema = new Schema<TorrentDoc>(
     rawBlobKey: { type: String, default: null },
     metadataStatus: { type: String, enum: ["pending", "processing", "succeeded", "failed"], default: "pending" },
     metadataError: { type: String, default: null },
+    metadataFailureKind: { type: String, enum: ["transient", "permanent"], default: null },
     metadataAttempts: { type: Number, default: 0 },
+    metadataNextAttemptAt: { type: Date, default: null, index: true },
     metadataLastAttemptAt: { type: Date, default: null },
+    metadataStartedAt: { type: Date, default: null },
+    metadataFinishedAt: { type: Date, default: null },
+    metadataLeaseUntil: { type: Date, default: null, index: true },
+    metadataDiagnostics: { type: Schema.Types.Mixed, default: () => ({}) },
     files: { type: [torrentFileSchema], default: [] },
     actorIds: { type: [String], default: [], index: true },
     previewStatus: {
@@ -338,28 +336,6 @@ const videoTagSchema = new Schema<VideoTagDoc>(
 );
 videoTagSchema.index({ videoId: 1, tagId: 1 }, { unique: true });
 
-const torrentMetadataJobSchema = new Schema<TorrentMetadataJobDoc>(
-  {
-    _id: { type: String, default: newId },
-    torrentId: { type: String, required: true, index: true },
-    status: {
-      type: String,
-      enum: ["queued", "processing", "succeeded", "failed"],
-      required: true,
-      index: true,
-    },
-    attempt: { type: Number, required: true },
-    error: { type: String, default: null },
-    queueEnqueuedAt: { type: Date, default: Date.now },
-    lastDequeuedAt: { type: Date, default: null },
-    startedAt: { type: Date, default: null },
-    finishedAt: { type: Date, default: null },
-  },
-  schemaOptions,
-);
-torrentMetadataJobSchema.index({ torrentId: 1, status: 1 });
-torrentMetadataJobSchema.index({ status: 1, createdAt: 1, _id: 1 });
-
 export const UserModel = model<UserDoc>("User", userSchema);
 export const AccountModel = model<AccountDoc>("Account", accountSchema);
 export const SessionModel = model<SessionDoc>("Session", sessionSchema);
@@ -369,7 +345,6 @@ export const ActorModel = model<ActorDoc>("Actor", actorSchema);
 export const TorrentModel = model<TorrentDoc>("Torrent", torrentSchema);
 export const VideoModel = model<VideoDoc>("Video", videoSchema);
 export const VideoTagModel = model<VideoTagDoc>("VideoTag", videoTagSchema);
-export const TorrentMetadataJobModel = model<TorrentMetadataJobDoc>("TorrentMetadataJob", torrentMetadataJobSchema);
 
 export const db = {
   mongoose,
@@ -382,7 +357,6 @@ export const db = {
   Torrent: TorrentModel,
   Video: VideoModel,
   VideoTag: VideoTagModel,
-  TorrentMetadataJob: TorrentMetadataJobModel,
   connect: connectMongo,
   disconnect: disconnectMongo,
   ensureIndexes,
@@ -448,7 +422,6 @@ export async function ensureIndexes() {
     TorrentModel.init(),
     VideoModel.init(),
     VideoTagModel.init(),
-    TorrentMetadataJobModel.init(),
   ]);
 }
 
@@ -515,10 +488,7 @@ export async function resetE2EState(usernames: string[]) {
     }
     const torrent = await TorrentModel.findById(torrentId).lean().exec();
     blobKeys.push(...torrentBlobKeys(torrent));
-    await Promise.all([
-      TorrentModel.deleteOne({ _id: torrentId }).exec(),
-      TorrentMetadataJobModel.deleteMany({ torrentId }).exec(),
-    ]);
+    await TorrentModel.deleteOne({ _id: torrentId }).exec();
   }
 
   return { blobKeys, rawBlobKeys: blobKeys };

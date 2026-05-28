@@ -1,8 +1,8 @@
 # Local Development
 
 Use the dev container when available. The repository expects Node.js 24 for the
-web app, worker, and e2e packages, access to MongoDB or Azure Cosmos DB for
-MongoDB, Cloudflare R2 credentials when you want to
+web app and e2e packages, Python 3.13 with `uv` for the VM worker, access to
+MongoDB or Azure Cosmos DB for MongoDB, Cloudflare R2 credentials when you want to
 exercise remote blob storage, and Terraform for infrastructure validation.
 
 ## Web App
@@ -20,25 +20,22 @@ you want to use. Set `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 and `R2_BUCKET_NAME` when you want blob reads and writes to go through
 Cloudflare R2 instead of the local filesystem fallback.
 
-The worker uses the fake torrent metadata provider by default. Set
-`MMV_TORRENT_PROVIDER=http` and provide `MMV_TORRENT_RESOLVER_URLS` as a JSON
-array of base URLs or `{info_hash}` templates only when you want to exercise a
-real resolver during local development.
-
-Run the worker in a second terminal after exporting the same database, torrent,
-and optional R2 variables used by the web app. Auth.js and Entra variables are
-only required by the web app.
+Run the worker in a second terminal after exporting the same database and
+optional R2 variables used by the web app. Auth.js and Entra variables are only
+required by the web app. Use `MMV_TORRENT_PROVIDER=fake` for deterministic local
+metadata or `MMV_TORRENT_PROVIDER=http` with `MMV_TORRENT_RESOLVER_URLS` to
+exercise real resolvers and DHT fallback.
 
 ```bash
-cd apps/worker
-npm ci
-npm run manual-worker
+cd apps/vm-worker
+uv sync
+uv run mymediavault-vm-worker
 ```
 
-For local e2e runs, the harness builds `apps/worker` and runs
-`npm run manual-worker`. That process polls MongoDB directly, which keeps the
-web -> database -> worker smoke reliable even when the Container Apps job
-runtime is not part of the local test loop.
+For local e2e runs, the harness starts `apps/vm-worker` in metadata-only mode
+with the fake provider. That process polls MongoDB directly, which keeps the
+web -> database -> worker smoke deterministic without requiring OpenAI, live
+DHT, or the deployed VM.
 
 ## End-to-End Local Stack
 
@@ -50,7 +47,7 @@ npm run test:local
 
 `test:local` sources `apps/web/.env.local` and `apps/e2e/.env.local`, deletes
 the Playwright test users' existing documents plus any now-orphaned torrent
-metadata, starts the Next.js app and local worker, then executes Playwright.
+metadata, starts the Next.js app and local VM worker, then executes Playwright.
 The database must already be reachable via `MONGODB_URI`.
 `apps/e2e/.env.local` must define `E2E_USER_USERNAME`, `E2E_USER_PASSWORD`,
 `E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use
@@ -100,5 +97,5 @@ git config core.hooksPath .githooks
 
 Pre-commit runs the faster package and Terraform checks that match staged
 paths. Pre-push runs the expensive gates for pushed changes: authenticated
-local e2e tests plus the web and worker Docker image builds. Docker must be
+local e2e tests plus the web and VM worker Docker image builds. Docker must be
 available in the dev container for the pre-push image checks.

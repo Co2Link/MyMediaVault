@@ -12,7 +12,6 @@ export function getEnv() {
     ...getDatabaseEnv(),
     ...getAppEnv(),
     ...getStorageEnv(),
-    ...getTorrentEnv(),
   };
 }
 
@@ -47,15 +46,6 @@ export function getStorageEnv() {
     r2AccessKeyId: process.env.R2_ACCESS_KEY_ID,
     r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     r2BucketName: process.env.R2_BUCKET_NAME ?? "torrent-raw",
-  };
-}
-
-export function getTorrentEnv() {
-  return {
-    torrentProvider: process.env.MMV_TORRENT_PROVIDER ?? "fake",
-    torrentResolverUrls: parseJsonArray("MMV_TORRENT_RESOLVER_URLS"),
-    torrentFetchTimeoutSeconds: Number(process.env.MMV_TORRENT_FETCH_TIMEOUT_SECONDS ?? "20"),
-    torrentRepairStaleProcessingMinutes: Number(process.env.MMV_TORRENT_REPAIR_STALE_PROCESSING_MINUTES ?? "30"),
   };
 }
 

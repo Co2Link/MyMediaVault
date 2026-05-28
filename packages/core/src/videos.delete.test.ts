@@ -44,9 +44,6 @@ const mocks = vi.hoisted(() => {
     VideoTagModel: {
       deleteMany: vi.fn(() => query({ deletedCount: 1 })),
     },
-    TorrentMetadataJobModel: {
-      deleteMany: vi.fn(() => query({ deletedCount: 1 })),
-    },
   };
 
   return { blobStore, connectMongo, models, state };
@@ -59,19 +56,10 @@ vi.mock("./db.js", () => ({
   TorrentModel: mocks.models.TorrentModel,
   VideoModel: mocks.models.VideoModel,
   VideoTagModel: mocks.models.VideoTagModel,
-  TorrentMetadataJobModel: mocks.models.TorrentMetadataJobModel,
 }));
 
 vi.mock("./storage.js", () => ({
   buildBlobStore: () => mocks.blobStore,
-}));
-
-vi.mock("./torrent-provider.js", () => ({
-  buildTorrentProvider: vi.fn(),
-}));
-
-vi.mock("./env.js", () => ({
-  getTorrentEnv: vi.fn(() => ({})),
 }));
 
 describe("torrent and video deletion", () => {
@@ -173,7 +161,6 @@ describe("torrent and video deletion", () => {
 
     expect(mocks.models.VideoTagModel.deleteMany).toHaveBeenCalledWith({ videoId: "video-1" });
     expect(mocks.models.VideoModel.deleteOne).toHaveBeenCalledWith({ _id: "video-1", userId: "user-1" });
-    expect(mocks.models.TorrentMetadataJobModel.deleteMany).toHaveBeenCalledWith({ torrentId: "torrent-1" });
     expect(mocks.models.TorrentModel.deleteOne).toHaveBeenCalledWith({ _id: "torrent-1" });
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("torrents/abc.torrent");
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/abc/frame-1.jpg");
@@ -230,7 +217,6 @@ describe("torrent and video deletion", () => {
     expect(mocks.models.VideoModel.deleteMany).toHaveBeenCalledWith({
       _id: { $in: ["video-a", "video-b"] },
     });
-    expect(mocks.models.TorrentMetadataJobModel.deleteMany).toHaveBeenCalledWith({ torrentId: "torrent-2" });
     expect(mocks.models.TorrentModel.deleteOne).toHaveBeenCalledWith({ _id: "torrent-2" });
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("torrents/def.torrent");
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("previews/def/frame-1.jpg");

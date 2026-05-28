@@ -2,22 +2,18 @@ import {
   ActorModel,
   connectMongo,
   TagModel,
-  TorrentMetadataJobModel,
   TorrentModel,
   VideoModel,
   VideoTagModel,
   type ActorDoc,
   type TagDoc,
   type TorrentDoc,
-  type TorrentMetadataJobDoc,
   type VideoDoc,
   type VideoTagDoc,
 } from "./db.js";
 import { resolveActorIds } from "./actors.js";
-import { getTorrentEnv } from "./env.js";
 import { ConflictError, NotFoundError } from "./errors.js";
 import { buildBlobStore } from "./storage.js";
-import { buildTorrentProvider, type TorrentMetadata } from "./torrent-provider.js";
 import type {
   PreviewDiagnosticsRead,
   PreviewFrameRead,
@@ -291,195 +287,21 @@ export async function enqueueTorrentMetadata(torrentId: string) {
     return null;
   }
 
-  let job = (
-    await TorrentMetadataJobModel.find({ torrentId, status: { $in: ["queued", "processing"] } }).lean().exec()
-  ).sort(compareNewestJobFirst)[0];
-
-  if (!job) {
-    await TorrentModel.updateOne({ _id: torrentId }, { $set: { metadataStatus: "pending", metadataError: null } }).exec();
-    const created = await TorrentMetadataJobModel.create({
-      torrentId,
-      status: "queued",
-      attempt: torrent.metadataAttempts + 1,
-    });
-    job = created.toObject();
-  }
-
-  return job;
-}
-
-export async function claimNextTorrentMetadataJob(now = new Date()) {
-  await connectMongo();
-  const job = await TorrentMetadataJobModel.findOneAndUpdate(
-    { status: "queued" },
+  await TorrentModel.updateOne(
+    { _id: torrentId },
     {
       $set: {
-        status: "processing",
-        error: null,
-        lastDequeuedAt: now,
+        metadataStatus: "pending",
+        metadataError: null,
+        metadataFailureKind: null,
+        metadataNextAttemptAt: null,
+        metadataLeaseUntil: null,
+        metadataFinishedAt: null,
       },
     },
-    {
-      new: true,
-      sort: { createdAt: 1, _id: 1 },
-    },
-  )
-    .lean()
-    .exec();
+  ).exec();
 
-  return job as TorrentMetadataJobDoc | null;
-}
-
-export async function processPendingTorrentMetadataJobs(limit = 10) {
-  let processed = 0;
-  while (processed < limit) {
-    const job = await claimNextTorrentMetadataJob();
-    if (!job) {
-      break;
-    }
-    await processTorrentMetadataJob(job._id);
-    processed += 1;
-  }
-  return { processed };
-}
-
-export async function processTorrentMetadataJob(jobId: string) {
-  await connectMongo();
-  const now = new Date();
-  const job = await TorrentMetadataJobModel.findById(jobId).lean().exec();
-  if (!job) {
-    throw new NotFoundError("Torrent processing job was not found.");
-  }
-  if (isFinalJobStatus(job.status)) {
-    return { status: "skipped" as const, jobId };
-  }
-
-  const torrent = await TorrentModel.findById(job.torrentId).lean().exec();
-  if (!torrent) {
-    throw new NotFoundError("Torrent was not found.");
-  }
-
-  await Promise.all([
-    TorrentMetadataJobModel.updateOne(
-      { _id: job._id },
-      {
-        $set: {
-          status: "processing",
-          error: null,
-          lastDequeuedAt: now,
-          startedAt: job.startedAt ?? now,
-          finishedAt: null,
-        },
-      },
-    ).exec(),
-    TorrentModel.updateOne(
-      { _id: job.torrentId },
-      {
-        $set: {
-          metadataStatus: "processing",
-          metadataAttempts: Math.max(job.attempt, 1),
-          metadataLastAttemptAt: now,
-        },
-      },
-    ).exec(),
-  ]);
-
-  const provider = buildTorrentProvider();
-  const blobStore = buildBlobStore();
-  let metadata: TorrentMetadata;
-
-  try {
-    metadata = await provider.fetch(torrent.infoHash);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to resolve torrent metadata.";
-    await markTorrentMetadataFailed(job._id, torrent._id, message);
-    return { status: "failed" as const, jobId };
-  }
-
-  const blobKey = `torrents/${torrent.infoHash}.torrent`;
-  await blobStore.putBytes(blobKey, metadata.raw);
-
-  await Promise.all([
-    TorrentModel.updateOne(
-      { _id: torrent._id },
-      {
-        $set: {
-          name: metadata.name,
-          sizeBytes: metadata.sizeBytes,
-          rawBlobKey: blobKey,
-          metadataStatus: "succeeded",
-          metadataError: null,
-          files: metadata.files.map((file, index) => ({
-            path: file.path,
-            sizeBytes: file.sizeBytes,
-            position: index,
-          })),
-        },
-      },
-    ).exec(),
-    TorrentMetadataJobModel.updateOne(
-      { _id: job._id },
-      {
-        $set: {
-          status: "succeeded",
-          error: null,
-          finishedAt: new Date(),
-        },
-      },
-    ).exec(),
-  ]);
-
-  return { status: "succeeded" as const, jobId };
-}
-
-export async function repairStaleTorrentMetadataJobs(now = new Date()) {
-  await connectMongo();
-  const env = getTorrentEnv();
-  const processingBefore = new Date(now.getTime() - env.torrentRepairStaleProcessingMinutes * 60 * 1000);
-  const jobs = (
-    await TorrentMetadataJobModel.find({
-      $or: [
-        { status: "processing", $or: [{ lastDequeuedAt: null }, { lastDequeuedAt: { $lt: processingBefore } }] },
-      ],
-    })
-      .lean()
-      .exec()
-  )
-    .sort(compareOldestJobFirst)
-    .slice(0, 25);
-
-  for (const job of jobs) {
-    await TorrentMetadataJobModel.updateOne(
-      { _id: job._id },
-      { $set: { status: "queued", error: null, queueEnqueuedAt: now } },
-    ).exec();
-  }
-
-  return { repaired: jobs.length };
-}
-
-async function markTorrentMetadataFailed(jobId: string, torrentId: string, message: string) {
-  await Promise.all([
-    TorrentModel.updateOne(
-      { _id: torrentId },
-      {
-        $set: {
-          metadataStatus: "failed",
-          metadataError: message,
-        },
-      },
-    ).exec(),
-    TorrentMetadataJobModel.updateOne(
-      { _id: jobId },
-      {
-        $set: {
-          status: "failed",
-          error: message,
-          finishedAt: new Date(),
-        },
-      },
-    ).exec(),
-  ]);
+  return { torrentId };
 }
 
 async function hydrateVideos(videos: VideoDoc[]): Promise<VideoRecord[]> {
@@ -560,15 +382,7 @@ function groupVideoTags(videoTags: VideoTagDoc[]) {
   return grouped;
 }
 
-function isFinalJobStatus(status: string) {
-  return status === "succeeded" || status === "failed";
-}
-
 function compareNewestVideoFirst(a: VideoDoc, b: VideoDoc) {
-  return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
-}
-
-function compareNewestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDoc) {
   return b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id);
 }
 
@@ -578,10 +392,6 @@ function compareNewestTorrentFirst(a: TorrentDoc, b: TorrentDoc) {
 
 function compareActorNames(a: ActorDoc, b: ActorDoc) {
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-}
-
-function compareOldestJobFirst(a: TorrentMetadataJobDoc, b: TorrentMetadataJobDoc) {
-  return a.createdAt.getTime() - b.createdAt.getTime() || a._id.localeCompare(b._id);
 }
 
 function isDuplicateKeyError(error: unknown) {
@@ -662,7 +472,6 @@ async function deleteTorrentRecord(torrent: TorrentDoc, videoIds: string[]) {
   await Promise.all([
     videoIds.length > 0 ? VideoTagModel.deleteMany({ videoId: { $in: videoIds } }).exec() : Promise.resolve(),
     videoIds.length > 0 ? VideoModel.deleteMany({ _id: { $in: videoIds } }).exec() : Promise.resolve(),
-    TorrentMetadataJobModel.deleteMany({ torrentId: torrent._id }).exec(),
     TorrentModel.deleteOne({ _id: torrent._id }).exec(),
   ]);
 

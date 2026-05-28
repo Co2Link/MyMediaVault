@@ -157,20 +157,6 @@ const mocks = vi.hoisted(() => {
         return docs;
       }),
     },
-    TorrentMetadataJobModel: {
-      find: vi.fn(() => query([])),
-      create: vi.fn(async (doc: Record<string, unknown>) => ({
-        _id: "job-1",
-        ...doc,
-        createdAt: new Date("2024-01-01T00:00:00Z"),
-        updatedAt: new Date("2024-01-01T00:00:00Z"),
-        toObject() {
-          return this;
-        },
-      })),
-      updateOne: vi.fn(() => query({ acknowledged: true })),
-      findById: vi.fn(() => query(null)),
-    },
   };
 
   return { connectMongo, models, state };
@@ -183,19 +169,10 @@ vi.mock("./db.js", () => ({
   TorrentModel: mocks.models.TorrentModel,
   VideoModel: mocks.models.VideoModel,
   VideoTagModel: mocks.models.VideoTagModel,
-  TorrentMetadataJobModel: mocks.models.TorrentMetadataJobModel,
 }));
 
 vi.mock("./storage.js", () => ({
   buildBlobStore: () => ({ putBytes: vi.fn(), deleteIfExists: vi.fn() }),
-}));
-
-vi.mock("./torrent-provider.js", () => ({
-  buildTorrentProvider: vi.fn(),
-}));
-
-vi.mock("./env.js", () => ({
-  getTorrentEnv: vi.fn(() => ({})),
 }));
 
 describe("video tag persistence", () => {

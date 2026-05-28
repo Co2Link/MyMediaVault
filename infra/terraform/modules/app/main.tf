@@ -61,10 +61,6 @@ variable "r2_bucket_name" {
   type = string
 }
 
-variable "worker_image" {
-  type = string
-}
-
 variable "entra_tenant_id" {
   type = string
 }
@@ -77,21 +73,6 @@ variable "admin_object_ids" {
 variable "admin_group_object_ids" {
   type    = list(string)
   default = []
-}
-
-variable "torrent_provider" {
-  type    = string
-  default = "http"
-}
-
-variable "torrent_resolver_urls" {
-  type    = list(string)
-  default = ["https://itorrents.org/torrent/{info_hash}.torrent"]
-}
-
-variable "torrent_fetch_timeout_seconds" {
-  type    = number
-  default = 20
 }
 
 resource "azurerm_log_analytics_workspace" "main" {
@@ -216,129 +197,6 @@ resource "azurerm_container_app" "web" {
       }
 
       env {
-        name  = "MMV_TORRENT_PROVIDER"
-        value = var.torrent_provider
-      }
-
-      env {
-        name  = "MMV_TORRENT_RESOLVER_URLS"
-        value = jsonencode(var.torrent_resolver_urls)
-      }
-
-      env {
-        name  = "MMV_TORRENT_FETCH_TIMEOUT_SECONDS"
-        value = tostring(var.torrent_fetch_timeout_seconds)
-      }
-
-      env {
-        name  = "R2_ENDPOINT"
-        value = var.r2_endpoint
-      }
-
-      env {
-        name  = "R2_ACCESS_KEY_ID"
-        value = var.r2_access_key_id
-      }
-
-      env {
-        name        = "R2_SECRET_ACCESS_KEY"
-        secret_name = "r2-secret-access-key"
-      }
-
-      env {
-        name  = "R2_BUCKET_NAME"
-        value = var.r2_bucket_name
-      }
-    }
-  }
-}
-
-resource "azurerm_container_app_job" "torrent_metadata" {
-  name                         = "${var.prefix}-worker"
-  location                     = var.location
-  resource_group_name          = var.resource_group_name
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  replica_timeout_in_seconds   = 3600
-  replica_retry_limit          = 1
-
-  secret {
-    name  = "mongodb-uri"
-    value = var.mongodb_uri
-  }
-
-  secret {
-    name  = "r2-secret-access-key"
-    value = var.r2_secret_access_key
-  }
-
-  event_trigger_config {
-    parallelism              = 1
-    replica_completion_count = 1
-
-    scale {
-      min_executions              = 0
-      max_executions              = 1
-      polling_interval_in_seconds = 60
-
-      rules {
-        name             = "queued-torrent-metadata"
-        custom_rule_type = "mongodb"
-        metadata = {
-          activationQueryValue = "0"
-          collection           = "torrentmetadatajobs"
-          dbName               = var.mongodb_database
-          query                = jsonencode({ status = "queued" })
-          queryValue           = "1"
-        }
-
-        authentication {
-          secret_name       = "mongodb-uri"
-          trigger_parameter = "connectionString"
-        }
-      }
-    }
-  }
-
-  template {
-    container {
-      name    = "worker"
-      image   = var.worker_image
-      cpu     = 0.25
-      memory  = "0.5Gi"
-      command = ["node"]
-      args    = ["dist/event-worker.js"]
-
-      env {
-        name  = "NODE_ENV"
-        value = "production"
-      }
-
-      env {
-        name        = "MONGODB_URI"
-        secret_name = "mongodb-uri"
-      }
-
-      env {
-        name  = "MMV_MONGODB_DB_NAME"
-        value = var.mongodb_database
-      }
-
-      env {
-        name  = "MMV_TORRENT_PROVIDER"
-        value = var.torrent_provider
-      }
-
-      env {
-        name  = "MMV_TORRENT_RESOLVER_URLS"
-        value = jsonencode(var.torrent_resolver_urls)
-      }
-
-      env {
-        name  = "MMV_TORRENT_FETCH_TIMEOUT_SECONDS"
-        value = tostring(var.torrent_fetch_timeout_seconds)
-      }
-
-      env {
         name  = "R2_ENDPOINT"
         value = var.r2_endpoint
       }
@@ -363,10 +221,6 @@ resource "azurerm_container_app_job" "torrent_metadata" {
 
 output "web_fqdn" {
   value = azurerm_container_app.web.ingress[0].fqdn
-}
-
-output "worker_job_name" {
-  value = azurerm_container_app_job.torrent_metadata.name
 }
 
 output "log_analytics_workspace_name" {

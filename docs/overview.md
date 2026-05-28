@@ -9,9 +9,8 @@ normalized info hash.
 
 - `apps/web`: Next.js app that owns the UI, Auth.js, server actions, and most
   write paths.
-- `packages/core`: shared models, validation, storage, torrent provider, and
-  torrent metadata processing logic.
-- `apps/worker`: Container Apps job worker code for torrent metadata
+- `packages/core`: shared models, validation, storage, and domain logic.
+- `apps/vm-worker`: long-running VM worker for torrent metadata and preview
   processing.
 - `apps/e2e`: Playwright coverage for local-stack and deployed-dev verification.
 - `infra/terraform`: dev environment and Azure resource definitions.
@@ -20,8 +19,9 @@ normalized info hash.
 
 1. The user signs in through Auth.js and Entra.
 2. The user adds a video by torrent info hash.
-3. The web app writes user-owned video rows and creates a torrent metadata job.
-4. The event-driven worker job starts when MongoDB has queued metadata work,
-   claims queued jobs atomically, resolves the torrent, stores the raw payload
-   in Cloudflare R2, and writes parsed metadata back to Cosmos DB.
+3. The web app writes user-owned video rows and marks the canonical torrent as
+   pending metadata.
+4. The VM worker claims pending torrent documents atomically, resolves the
+   torrent, stores the raw payload in Cloudflare R2, writes parsed metadata
+   back to Cosmos DB, and then generates preview artifacts.
 5. The UI shows metadata-ready state once processing completes.

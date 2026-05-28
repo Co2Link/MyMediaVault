@@ -72,7 +72,7 @@ skip_section() {
   printf '\n[skip] %s\n' "$label"
 }
 
-if has_changes_in "^(apps/web|apps/worker|apps/e2e|packages/core)(/|$)"; then
+if has_changes_in "^(apps/web|apps/vm-worker|apps/e2e|packages/core)(/|$)"; then
   run_in apps/e2e npm run test:local
 else
   skip_section "e2e checks"
@@ -84,8 +84,8 @@ else
   skip_section "web Docker build"
 fi
 
-if has_changes_in "^(\\.dockerignore|\\.npmrc|apps/worker/Dockerfile|apps/worker/|packages/core/)"; then
-  run_at_root docker build -f apps/worker/Dockerfile .
+if has_changes_in "^(\\.dockerignore|apps/vm-worker/Dockerfile|apps/vm-worker/)"; then
+  run_at_root docker build -f apps/vm-worker/Dockerfile --secret id=uv_index_lingxt_password,env=UV_INDEX_LINGXT_PASSWORD .
 else
-  skip_section "worker Docker build"
+  skip_section "VM worker Docker build"
 fi

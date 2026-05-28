@@ -45,11 +45,6 @@
       "import": "./dist/tags.js",
       "default": "./dist/tags.js"
     },
-    "./torrent-provider": {
-      "types": "./dist/torrent-provider.d.ts",
-      "import": "./dist/torrent-provider.js",
-      "default": "./dist/torrent-provider.js"
-    },
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js",
@@ -75,12 +70,10 @@
   "dependencies": {
     "@auth/core": "^0.41.0",
     "@aws-sdk/client-s3": "^3.850.0",
-    "bencode": "^4.0.0",
     "mongoose": "^8.20.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bencode": "^2.0.4",
     "@types/node": "^20",
     "typescript": "^5",
     "vitest": "^4.1.5"

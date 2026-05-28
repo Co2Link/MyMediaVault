@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import {
   connectMongo,
   disconnectMongo,
-  TorrentMetadataJobModel,
   type TorrentDoc,
   TorrentModel,
   UserModel,
@@ -17,7 +16,7 @@ test.afterAll(async () => {
   await disconnectMongo();
 });
 
-test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cleanup", async ({ page }) => {
+test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cleanup", async ({ page }) => {
   test.setTimeout(900_000);
 
   const userEmail = requireEnv("E2E_USER_USERNAME");
@@ -57,17 +56,7 @@ test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cl
     );
     torrentId = torrent._id;
 
-    const queuedJob = await waitForDocument(
-      async () => {
-        const [job] = (await TorrentMetadataJobModel.find({ torrentId: torrent._id }).lean().exec()).sort(
-          (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b._id.localeCompare(a._id),
-        );
-        return job;
-      },
-      `torrent metadata job for ${torrent._id} to exist`,
-    );
-
-    expect(queuedJob.queueEnqueuedAt).not.toBeNull();
+    expect(torrent.metadataStatus).toBe("pending");
 
     const finishedTorrent = await waitForDocument(
       async () => {
@@ -83,23 +72,9 @@ test("dev smoke verifies web, Cosmos DB, worker job, R2 storage, preview, and cl
 
     expect(finishedTorrent.rawBlobKey).toBeTruthy();
     expect(finishedTorrent.files.length).toBeGreaterThan(0);
-
-    const finishedJob = await waitForDocument(
-      async () => {
-        const current = await TorrentMetadataJobModel.findById(queuedJob._id).lean().exec();
-        if (current?.status === "failed") {
-          throw new Error(`Torrent metadata job ${queuedJob._id} ended in ${current.status}: ${current.error ?? "unknown error"}`);
-        }
-        return current?.status === "succeeded" ? current : null;
-      },
-      `torrent metadata job ${queuedJob._id} to finish processing`,
-      { timeoutMs: 150_000 },
-    );
-
-    expect(finishedJob.queueEnqueuedAt).not.toBeNull();
-    expect(finishedJob.lastDequeuedAt).not.toBeNull();
-    expect(finishedJob.startedAt).not.toBeNull();
-    expect(finishedJob.finishedAt).not.toBeNull();
+    expect(finishedTorrent.metadataAttempts).toBeGreaterThan(0);
+    expect(finishedTorrent.metadataLastAttemptAt).not.toBeNull();
+    expect(finishedTorrent.metadataFinishedAt).not.toBeNull();
 
     const rawTorrentBytes = await buildBlobStore().getBytes(finishedTorrent.rawBlobKey!);
     expect(rawTorrentBytes.byteLength).toBeGreaterThan(0);
@@ -189,7 +164,6 @@ async function resetSmokeTorrentForUser(userEmail: string, userName: string, inf
 
   const keys = torrentBlobKeys(torrent);
   await Promise.all([
-    TorrentMetadataJobModel.deleteMany({ torrentId: torrent._id }).exec(),
     TorrentModel.deleteOne({ _id: torrent._id }).exec(),
   ]);
   await deleteBlobKeys(keys);
@@ -214,10 +188,7 @@ async function cleanupSmokeTorrent(userId: string | null, torrentId: string | nu
 
   const remainingVideos = await VideoModel.countDocuments({ torrentId }).exec();
   if (remainingVideos === 0) {
-    await Promise.all([
-      TorrentMetadataJobModel.deleteMany({ torrentId }).exec(),
-      TorrentModel.deleteOne({ _id: torrentId }).exec(),
-    ]);
+    await TorrentModel.deleteOne({ _id: torrentId }).exec();
     await deleteBlobKeys(keys);
   } else {
     await requeuePreviewIfNeeded(torrentId);

@@ -6,7 +6,7 @@ where practical.
 The tracked hooks run these check groups selectively. Pre-commit keeps the
 fast package and Terraform checks close to the commit. Pre-push runs the
 expensive gates for pushed changes, including authenticated local e2e tests and
-the web/worker Docker builds.
+the web/VM worker Docker builds.
 
 ## Web App
 
@@ -21,24 +21,24 @@ component, or domain modules as `*.test.tsx` or `*.test.ts`. Favor direct tests
 of validation and domain helpers for server actions and route handlers. Actor
 selection and preview lightbox behavior are covered with component tests.
 
-## Core and Worker
+## Core and VM Worker
 
 ```bash
 cd packages/core
 npm run build
 npm run test
 
-cd apps/worker
-npm run build
-npm run test
+cd apps/vm-worker
+uv sync --locked
+uv run pytest
 ```
 
-`packages/core` owns shared domain logic, Mongoose access, job scheduling, and
-torrent metadata processing. `apps/worker` owns the worker entrypoints for
-local polling, event-driven queue draining, and repair paths.
+`packages/core` owns shared domain logic and Mongoose access. `apps/vm-worker`
+owns long-running metadata polling, resolver/DHT fallback, retry scheduling, and
+preview generation.
 
-`apps/e2e/scripts/run-local.sh` starts the Next.js app and local worker on top
-of the local MongoDB/Cosmos stack.
+`apps/e2e/scripts/run-local.sh` starts the Next.js app and local VM worker on
+top of the local MongoDB/Cosmos stack.
 
 ## End-to-End
 
@@ -49,7 +49,7 @@ npm run test:local
 
 Playwright tests cover the authenticated header/account menu, add-video with
 actor and tag selection, detail-page actor/tag editing, collection search, and
-admin actor/tag flows against the Next.js app plus local worker. Separate setup
+admin actor/tag flows against the Next.js app plus local VM worker. Separate setup
 projects log in
 through Entra for the normal user and admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
@@ -88,33 +88,29 @@ The script checks workflow results with GitHub CLI before running Playwright
 against the deployed dev URL. `DEV_SMOKE_COMMIT_SHA` is a diagnostic override
 for investigating a specific deployed commit; it should not be used to claim
 that unpushed local changes passed dev smoke. The smoke verifies the full user
-add-video path through the web app, Cosmos DB, the worker job, Cloudflare R2,
+add-video path through the web app, Cosmos DB, the VM worker, Cloudflare R2,
 preview generation, preview UI behavior, and the UI metadata-ready state.
 Preview UI assertions cover collection carousel navigation and full-size
 preview navigation, accepting both complete and degraded preview artifacts when
-the worker returns a usable v4 result. The script starts `apps/preview-worker`
-locally against the dev MongoDB/R2 environment before Playwright runs, and
-shuts it down on success or failure. The smoke deletes the created video,
-torrent, raw blob, and preview artifacts after the assertions finish.
+the VM worker returns a usable result. The smoke expects the Oracle VM worker to
+be running separately against the dev MongoDB/R2 environment. The smoke deletes
+the created video, torrent, raw blob, and preview artifacts after the assertions
+finish.
 
-`apps/e2e/.env.dev` must set the Entra test-user credentials and `E2E_BASE_URL`
-to the deployed dev web URL. Source values in `apps/web/.env.local` and
-`apps/preview-worker/.env.dev` must point to the dev Cosmos DB and Cloudflare R2
-so the smoke can verify database records, raw torrent blobs, run the preview
-worker, and verify preview artifacts. It must also include `OPENAI_API_KEY` so
-the preview worker can run the required Pydantic AI ranker. The script runs the
+`apps/e2e/.env.dev` must set the Entra test-user credentials, `E2E_BASE_URL`,
+dev Cosmos DB connection, and Cloudflare R2 settings so the smoke can verify
+database records, raw torrent blobs, and preview artifacts. The script runs the
 dedicated `smoke-dev-chromium` Playwright project so deployed-dev checks stay
 out of normal local runs.
 
 ## Environment Variables
 
 The local test harness sources `apps/web/.env.local` and `apps/e2e/.env.local`.
-The deployed-dev smoke harness sources `apps/web/.env.local`,
-`apps/preview-worker/.env.dev`, and `apps/e2e/.env.dev`. Use
+The deployed-dev smoke harness sources `apps/web/.env.local` and
+`apps/e2e/.env.dev`. Use
 `apps/e2e/.env.example` as the template for e2e variables. The tables below
-list the test-specific variables; the web and worker variables documented in
-their own docs are also required when the harness talks to the live app or
-worker.
+list the test-specific variables; the web and VM worker variables documented in
+their own docs are also required for local or deployed worker verification.
 
 | Variable | Purpose |
 | --- | --- |
@@ -134,11 +130,13 @@ worker.
 | `MMV_TORRENT_PROVIDER` | Local torrent provider mode. |
 | `MMV_TORRENT_RESOLVER_URLS` | Local HTTP resolver URLs. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | Local HTTP fetch timeout. |
+| `MMV_PREVIEW_WORKER_ENABLED` | Local switch for preview processing. Defaults to `false` in local e2e. |
+| `MMV_METADATA_WORKER_ENABLED` | Local switch for metadata processing. Defaults to `true` in local e2e. |
 | `R2_ENDPOINT` | Local R2 endpoint when you want remote blob storage. |
 | `R2_ACCESS_KEY_ID` | Local R2 access key ID. |
 | `R2_SECRET_ACCESS_KEY` | Local R2 secret access key. |
 | `R2_BUCKET_NAME` | Local R2 bucket name. |
-| `OPENAI_API_KEY` | Required for dev smoke preview generation with the Pydantic AI ranker. |
+| `OPENAI_API_KEY` | Required when local preview processing is enabled. |
 | `HEALTH_URL` | Optional local health-check URL. |
 
 ## Infrastructure Checks

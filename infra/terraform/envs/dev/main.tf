@@ -25,11 +25,6 @@ variable "app_image" {
   description = "Docker image to deploy to the web container app."
 }
 
-variable "worker_image" {
-  type        = string
-  description = "Docker image to deploy to the event-driven worker job."
-}
-
 variable "app_commit_sha" {
   type        = string
   default     = "local"
@@ -63,21 +58,6 @@ variable "admin_group_object_ids" {
   description = "Entra group object IDs that should receive MyMediaVault admin rights."
 }
 
-variable "torrent_provider" {
-  type    = string
-  default = "http"
-}
-
-variable "torrent_resolver_urls" {
-  type    = list(string)
-  default = ["https://itorrents.org/torrent/{info_hash}.torrent"]
-}
-
-variable "torrent_fetch_timeout_seconds" {
-  type    = number
-  default = 20
-}
-
 variable "r2_endpoint" {
   type    = string
   default = ""
@@ -108,28 +88,24 @@ module "database" {
 }
 
 module "app" {
-  source                        = "../../modules/app"
-  prefix                        = var.prefix
-  location                      = var.location
-  resource_group_name           = azurerm_resource_group.main.name
-  app_image                     = var.app_image
-  worker_image                  = var.worker_image
-  app_commit_sha                = var.app_commit_sha
-  mongodb_uri                   = module.database.mongodb_uri
-  mongodb_database              = module.database.database_name
-  auth_secret                   = var.auth_secret
-  auth_entra_client_id          = var.auth_entra_client_id
-  auth_entra_client_secret      = var.auth_entra_client_secret
-  entra_tenant_id               = var.entra_tenant_id
-  admin_object_ids              = var.admin_object_ids
-  admin_group_object_ids        = var.admin_group_object_ids
-  torrent_provider              = var.torrent_provider
-  torrent_resolver_urls         = var.torrent_resolver_urls
-  torrent_fetch_timeout_seconds = var.torrent_fetch_timeout_seconds
-  r2_endpoint                   = var.r2_endpoint
-  r2_access_key_id              = var.r2_access_key_id
-  r2_secret_access_key          = var.r2_secret_access_key
-  r2_bucket_name                = var.r2_bucket_name
+  source                   = "../../modules/app"
+  prefix                   = var.prefix
+  location                 = var.location
+  resource_group_name      = azurerm_resource_group.main.name
+  app_image                = var.app_image
+  app_commit_sha           = var.app_commit_sha
+  mongodb_uri              = module.database.mongodb_uri
+  mongodb_database         = module.database.database_name
+  auth_secret              = var.auth_secret
+  auth_entra_client_id     = var.auth_entra_client_id
+  auth_entra_client_secret = var.auth_entra_client_secret
+  entra_tenant_id          = var.entra_tenant_id
+  admin_object_ids         = var.admin_object_ids
+  admin_group_object_ids   = var.admin_group_object_ids
+  r2_endpoint              = var.r2_endpoint
+  r2_access_key_id         = var.r2_access_key_id
+  r2_secret_access_key     = var.r2_secret_access_key
+  r2_bucket_name           = var.r2_bucket_name
 }
 
 resource "azurerm_resource_group" "main" {
@@ -139,10 +115,6 @@ resource "azurerm_resource_group" "main" {
 
 output "web_url" {
   value = "https://${module.app.web_fqdn}"
-}
-
-output "worker_job_name" {
-  value = module.app.worker_job_name
 }
 
 output "log_analytics_workspace_name" {

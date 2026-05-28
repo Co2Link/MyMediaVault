@@ -10,8 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.filter.outputs.web }}
-      worker: ${{ steps.filter.outputs.worker }}
-      preview_worker: ${{ steps.filter.outputs.preview_worker }}
+      vm_worker: ${{ steps.filter.outputs.vm_worker }}
       terraform: ${{ steps.filter.outputs.terraform }}
     steps:
       - uses: actions/checkout@v5
@@ -25,13 +24,9 @@ jobs:
               - '.github/workflows/**'
               - 'apps/web/**'
               - 'packages/core/**'
-            worker:
+            vm_worker:
               - '.github/workflows/**'
-              - 'apps/worker/**'
-              - 'packages/core/**'
-            preview_worker:
-              - '.github/workflows/**'
-              - 'apps/preview-worker/**'
+              - 'apps/vm-worker/**'
             terraform:
               - '.github/workflows/**'
               - 'infra/terraform/**'
@@ -41,8 +36,7 @@ jobs:
           mkdir -p dev-change-flags
           {
             echo "web=${{ steps.filter.outputs.web }}"
-            echo "worker=${{ steps.filter.outputs.worker }}"
-            echo "preview_worker=${{ steps.filter.outputs.preview_worker }}"
+            echo "vm_worker=${{ steps.filter.outputs.vm_worker }}"
             echo "terraform=${{ steps.filter.outputs.terraform }}"
           } > dev-change-flags/flags.env
       - uses: actions/upload-artifact@v4
@@ -83,38 +77,13 @@ jobs:
       - run: npm run build
       - run: npm run test
 
-  worker:
+  vm_worker:
     needs: changes
-    if: ${{ needs.changes.outputs.worker == 'true' }}
+    if: ${{ needs.changes.outputs.vm_worker == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/worker
-    env:
-      MONGODB_URI: mongodb://127.0.0.1:27017/mymediavault
-      MMV_MONGODB_DB_NAME: mymediavault
-      MMV_TORRENT_PROVIDER: fake
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: |
-            apps/worker/package-lock.json
-            packages/core/package-lock.json
-      - run: npm --prefix ../../packages/core ci
-      - run: npm ci
-      - run: npm run build
-      - run: npm run test
-
-  preview_worker:
-    needs: changes
-    if: ${{ needs.changes.outputs.preview_worker == 'true' }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/preview-worker
+        working-directory: apps/vm-worker
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -136,7 +105,6 @@ jobs:
         working-directory: infra/terraform/envs/dev
     env:
       TF_VAR_app_image: docker.io/example/mymediavault:validate
-      TF_VAR_worker_image: docker.io/example/mymediavault-worker:validate
       TF_VAR_app_commit_sha: validate
       TF_VAR_auth_secret: test-auth-secret
       TF_VAR_entra_tenant_id: ${{ vars.AUTH_MICROSOFT_ENTRA_ID_TENANT }}
@@ -159,8 +127,7 @@ jobs:
     needs:
       - changes
       - web
-      - worker
-      - preview_worker
+      - vm_worker
       - terraform
     runs-on: ubuntu-latest
     steps:
@@ -169,13 +136,12 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB_RESULT: ${{ needs.web.result }}
-          WORKER_RESULT: ${{ needs.worker.result }}
-          PREVIEW_WORKER_RESULT: ${{ needs.preview_worker.result }}
+          VM_WORKER_RESULT: ${{ needs.vm_worker.result }}
           TERRAFORM_RESULT: ${{ needs.terraform.result }}
         run: |
           test "$CHANGES_RESULT" = "success"
 
-          for result in "$WEB_RESULT" "$WORKER_RESULT" "$PREVIEW_WORKER_RESULT" "$TERRAFORM_RESULT"; do
+          for result in "$WEB_RESULT" "$VM_WORKER_RESULT" "$TERRAFORM_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) exit 1 ;;

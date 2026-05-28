@@ -1,11 +1,11 @@
 export const metadataStatuses = ["pending", "processing", "succeeded", "failed"] as const;
 export type MetadataStatus = (typeof metadataStatuses)[number];
 
+export const metadataFailureKinds = ["transient", "permanent"] as const;
+export type MetadataFailureKind = (typeof metadataFailureKinds)[number];
+
 export const previewStatuses = ["pending", "processing", "succeeded", "partial", "failed"] as const;
 export type PreviewStatus = (typeof previewStatuses)[number];
-
-export const jobStatuses = ["queued", "processing", "succeeded", "failed"] as const;
-export type JobStatus = (typeof jobStatuses)[number];
 
 export type TagRead = {
   id: string;
