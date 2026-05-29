@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +26,7 @@ from mymediavault_vm_worker import (
     MongoPreviewJobSource,
     PreviewWorkerSettings,
     _configure_vm_worker_logging,
+    _preview_next_attempt_at,
     _success_update,
     parse_torrent,
 )
@@ -133,6 +135,26 @@ def test_settings_accept_preview_progress_timeout_override() -> None:
     assert settings.preview_download_progress_timeout_seconds == 900
 
 
+def test_settings_default_preview_retry_delays() -> None:
+    settings = PreviewWorkerSettings(
+        mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+        openai_api_key="test-key",
+        _env_file=None,
+    )
+
+    assert settings.preview_retry_delays_seconds == [900, 3600, 14400]
+
+
+def test_settings_reject_non_positive_preview_retry_delay() -> None:
+    with pytest.raises(ValidationError, match="MMV_PREVIEW_RETRY_DELAYS_SECONDS"):
+        PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            openai_api_key="test-key",
+            preview_retry_delays_seconds=[900, 0],
+            _env_file=None,
+        )
+
+
 def test_settings_reject_non_positive_preview_progress_timeout() -> None:
     with pytest.raises(
         ValidationError, match="MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS"
@@ -169,6 +191,7 @@ def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
     assert queries[0]["previewAttempts"] == {"$lt": 3}
     assert queries[1]["previewStatus"] == {"$in": ["failed", "partial"]}
     assert queries[1]["previewAttempts"] == {"$lt": 3}
+    assert {"previewNextAttemptAt": {"$exists": False}} in queries[1]["$or"]
 
 
 def test_artifact_stale_query_includes_completed_statuses_and_missing_fields() -> None:
@@ -400,10 +423,43 @@ def test_success_update_can_preserve_existing_artifacts_when_no_replacement() ->
     )["$set"]
 
     assert update["previewStatus"] == "failed"
+    assert update["previewNextAttemptAt"] is None
     assert update["previewDiagnostics"]["artifactVersion"] == "preview-v6"
     assert update["previewDiagnostics"]["artifactFingerprint"] == "sha256:current"
     assert "previewFrames" not in update
     assert "previewSheet" not in update
+
+
+def test_preview_next_attempt_at_uses_progressive_retry_delays() -> None:
+    now = datetime(2026, 5, 29, tzinfo=UTC)
+
+    first_retry = _preview_next_attempt_at(
+        status="failed",
+        attempts=1,
+        max_attempts=3,
+        retry_delays_seconds=[900, 3600],
+        now=now,
+    )
+    second_retry = _preview_next_attempt_at(
+        status="partial",
+        attempts=2,
+        max_attempts=3,
+        retry_delays_seconds=[900, 3600],
+        now=now,
+    )
+
+    assert first_retry == now + timedelta(seconds=900)
+    assert second_retry == now + timedelta(seconds=3600)
+    assert (
+        _preview_next_attempt_at(
+            status="failed",
+            attempts=3,
+            max_attempts=3,
+            retry_delays_seconds=[900, 3600],
+            now=now,
+        )
+        is None
+    )
 
 
 def test_job_lease_uploads_preview_artifacts(tmp_path: Path) -> None:
@@ -431,6 +487,8 @@ def test_job_lease_uploads_preview_artifacts(tmp_path: Path) -> None:
         blob_store=blob_store,  # type: ignore[arg-type]
         artifact_version="preview-v6",
         artifact_fingerprint="sha256:current",
+        max_attempts=3,
+        retry_delays_seconds=[900, 3600],
     )
 
     frames = asyncio.run(lease._store_frames(

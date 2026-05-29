@@ -40,6 +40,7 @@ DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_TARGET_FRAMES = 9
 DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
 DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 300.0
+DEFAULT_PREVIEW_RETRY_DELAYS_SECONDS = (900, 3600, 14400)
 DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
 DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
@@ -114,6 +115,10 @@ class PreviewWorkerSettings(BaseSettings):
         default=DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
         alias="MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS",
     )
+    preview_retry_delays_seconds: list[int] = Field(
+        default_factory=lambda: list(DEFAULT_PREVIEW_RETRY_DELAYS_SECONDS),
+        alias="MMV_PREVIEW_RETRY_DELAYS_SECONDS",
+    )
     vm_worker_debug_log_path: Path = Field(
         default=DEFAULT_DEBUG_LOG_PATH, alias="MMV_VM_WORKER_DEBUG_LOG_PATH"
     )
@@ -186,6 +191,9 @@ class PreviewWorkerSettings(BaseSettings):
         if self.preview_download_progress_timeout_seconds <= 0:
             msg = "MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS must be greater than 0"
             raise ValueError(msg)
+        if any(delay <= 0 for delay in self.preview_retry_delays_seconds):
+            msg = "MMV_PREVIEW_RETRY_DELAYS_SECONDS values must be positive"
+            raise ValueError(msg)
         if not self.metadata_resolver_urls:
             msg = "MMV_TORRENT_RESOLVER_URLS must include at least one resolver URL"
             raise ValueError(msg)
@@ -250,6 +258,7 @@ class Torrent(Document):
     previewStatus: str = "pending"
     previewAttempts: int = 0
     previewLastAttemptAt: datetime | None = None
+    previewNextAttemptAt: datetime | None = None
     previewUpdatedAt: datetime | None = None
     previewFrames: list[TorrentPreviewFrame] = Field(default_factory=list)
     previewSheet: TorrentPreviewSheet | None = None
@@ -810,11 +819,15 @@ class MongoPreviewJobLease(PreviewJobLease):
         blob_store: BlobStore,
         artifact_version: str,
         artifact_fingerprint: str,
+        max_attempts: int,
+        retry_delays_seconds: list[int],
     ) -> None:
         self._torrent = torrent
         self._blob_store = blob_store
         self._artifact_version = artifact_version
         self._artifact_fingerprint = artifact_fingerprint
+        self._max_attempts = max_attempts
+        self._retry_delays_seconds = retry_delays_seconds
         self._old_keys = _preview_keys(torrent)
 
     @property
@@ -850,6 +863,12 @@ class MongoPreviewJobLease(PreviewJobLease):
         stored_frames = await self._store_frames(result.info_hash, result.artifact.frames)
         stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
         has_replacement_artifacts = bool(stored_frames or stored_sheet)
+        next_attempt_at = _preview_next_attempt_at(
+            status=result.status,
+            attempts=self._torrent.previewAttempts,
+            max_attempts=self._max_attempts,
+            retry_delays_seconds=self._retry_delays_seconds,
+        )
         await Torrent.get_pymongo_collection().update_one(
             {"_id": self._torrent.id},
             _success_update(
@@ -859,6 +878,7 @@ class MongoPreviewJobLease(PreviewJobLease):
                 artifact_version=self._artifact_version,
                 artifact_fingerprint=self._artifact_fingerprint,
                 replace_artifacts=has_replacement_artifacts,
+                next_attempt_at=next_attempt_at,
             ),
         )
         if has_replacement_artifacts:
@@ -868,6 +888,12 @@ class MongoPreviewJobLease(PreviewJobLease):
 
     async def fail(self, error: Exception) -> None:
         message = str(error) or error.__class__.__name__
+        next_attempt_at = _preview_next_attempt_at(
+            status="failed",
+            attempts=self._torrent.previewAttempts,
+            max_attempts=self._max_attempts,
+            retry_delays_seconds=self._retry_delays_seconds,
+        )
         logger.bind(
             job_id=self._torrent.id,
             info_hash=self._torrent.infoHash,
@@ -880,6 +906,7 @@ class MongoPreviewJobLease(PreviewJobLease):
                 "$set": {
                     "previewStatus": "failed",
                     "previewUpdatedAt": datetime.now(UTC),
+                    "previewNextAttemptAt": next_attempt_at,
                     "previewDiagnostics.statusReason": message,
                     "previewDiagnostics.artifactVersion": self._artifact_version,
                     "previewDiagnostics.artifactFingerprint": self._artifact_fingerprint,
@@ -930,10 +957,14 @@ class MongoPreviewJobSource(PreviewJobSource):
         blob_store: BlobStore,
         stale_processing_minutes: int,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        retry_delays_seconds: list[int] | None = None,
     ) -> None:
         self._blob_store = blob_store
         self._stale_processing_minutes = max(1, stale_processing_minutes)
         self._max_attempts = max(1, max_attempts)
+        self._retry_delays_seconds = list(
+            retry_delays_seconds or DEFAULT_PREVIEW_RETRY_DELAYS_SECONDS
+        )
 
     async def claim_batch(
         self,
@@ -968,6 +999,8 @@ class MongoPreviewJobSource(PreviewJobSource):
                         blob_store=self._blob_store,
                         artifact_version=artifact_version,
                         artifact_fingerprint=artifact_fingerprint,
+                        max_attempts=self._max_attempts,
+                        retry_delays_seconds=self._retry_delays_seconds,
                     )
                 )
             if len(claimed) >= limit:
@@ -1020,6 +1053,14 @@ class MongoPreviewJobSource(PreviewJobSource):
             "metadataStatus": "succeeded",
             "rawBlobKey": {"$type": "string", "$ne": ""},
         }
+        now = datetime.now(UTC)
+        retry_schedule = {
+            "$or": [
+                {"previewNextAttemptAt": None},
+                {"previewNextAttemptAt": {"$lte": now}},
+                {"previewNextAttemptAt": {"$exists": False}},
+            ]
+        }
         retryable = {**base, "previewAttempts": {"$lt": self._max_attempts}}
         return [
             {
@@ -1032,6 +1073,7 @@ class MongoPreviewJobSource(PreviewJobSource):
             {
                 **retryable,
                 "previewStatus": {"$in": ["failed", "partial"]},
+                **retry_schedule,
             },
         ]
 
@@ -1069,6 +1111,7 @@ class MongoPreviewJobSource(PreviewJobSource):
                 "$set": {
                     "previewStatus": "processing",
                     "previewLastAttemptAt": now,
+                    "previewNextAttemptAt": None,
                     "previewAttempts": 1,
                 },
             }
@@ -1077,6 +1120,7 @@ class MongoPreviewJobSource(PreviewJobSource):
                 "$set": {
                     "previewStatus": "processing",
                     "previewLastAttemptAt": now,
+                    "previewNextAttemptAt": None,
                 },
                 "$inc": {"previewAttempts": 1},
             }
@@ -1170,6 +1214,7 @@ class PreviewWorker:
                 blob_store=self._blob_store,
                 stale_processing_minutes=self._stale_processing_minutes,
                 max_attempts=self._max_attempts,
+                retry_delays_seconds=self._settings.preview_retry_delays_seconds,
             )
             self._harness = PreviewWorkerHarness(
                 engine=self._engine,
@@ -1217,6 +1262,7 @@ def _success_update(
     artifact_version: str,
     artifact_fingerprint: str,
     replace_artifacts: bool = True,
+    next_attempt_at: datetime | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     selected_file = result.diagnostics.selected_file
@@ -1232,14 +1278,35 @@ def _success_update(
         "details": _to_plain_dict(result.diagnostics),
     }
     values: dict[str, Any] = {
-            "previewStatus": result.status,
-            "previewUpdatedAt": now,
-            "previewDiagnostics": diagnostics,
+        "previewStatus": result.status,
+        "previewUpdatedAt": now,
+        "previewNextAttemptAt": next_attempt_at,
+        "previewDiagnostics": diagnostics,
     }
     if replace_artifacts:
         values["previewFrames"] = stored_frames
         values["previewSheet"] = stored_sheet
     return {"$set": values}
+
+
+def _preview_next_attempt_at(
+    *,
+    status: str,
+    attempts: int,
+    max_attempts: int,
+    retry_delays_seconds: list[int],
+    now: datetime | None = None,
+) -> datetime | None:
+    if status not in {"failed", "partial"}:
+        return None
+    if attempts >= max_attempts:
+        return None
+    if not retry_delays_seconds:
+        return None
+    delay_index = min(max(0, attempts - 1), len(retry_delays_seconds) - 1)
+    return (now or datetime.now(UTC)) + timedelta(
+        seconds=retry_delays_seconds[delay_index]
+    )
 
 
 def _preview_keys(torrent: Torrent) -> set[str]:

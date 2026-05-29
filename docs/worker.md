@@ -137,12 +137,14 @@ slowly in the target environment.
 The worker prioritizes torrents with no generated preview (`pending` or missing
 preview status). It automatically retries `failed` and `partial` previews until
 the configured maximum attempt count is reached, defaulting to three total
-attempts. It also regenerates `succeeded`, `partial`, and `failed` previews when
-the recorded `torrent-preview` artifact contract version or fingerprint is
-missing or stale for the current worker, resetting the attempt count for that new
-artifact recipe. If a regeneration run produces no replacement frame or sheet
-artifacts, the worker keeps any existing preview artifact keys. Admins can reset
-preview attempts from torrent management.
+attempts. Retryable failures are delayed by `MMV_PREVIEW_RETRY_DELAYS_SECONDS`,
+defaulting to 15 minutes, 1 hour, then 4 hours, so zero-peer torrents do not burn
+all attempts in one worker cycle. It also regenerates `succeeded`, `partial`, and
+`failed` previews when the recorded `torrent-preview` artifact contract version
+or fingerprint is missing or stale for the current worker, resetting the attempt
+count for that new artifact recipe. If a regeneration run produces no
+replacement frame or sheet artifacts, the worker keeps any existing preview
+artifact keys. Admins can reset preview attempts from torrent management.
 
 The deployed VM runs the VM worker with Docker and systemd. The container image
 includes Python 3.13, `libtorrent`, `ffmpeg`, and `ffprobe`, runs the
