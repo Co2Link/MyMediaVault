@@ -95,6 +95,56 @@ def test_settings_reject_unsupported_target_frames() -> None:
         )
 
 
+def test_settings_default_wider_anchor_retry_ladder() -> None:
+    settings = PreviewWorkerSettings(
+        mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+        openai_api_key="test-key",
+        _env_file=None,
+    )
+
+    assert settings.preview_anchor_retry_range_mb == (
+        64.0,
+        128.0,
+        256.0,
+        384.0,
+        512.0,
+        768.0,
+    )
+
+
+def test_settings_reject_non_widening_anchor_retry_ladder() -> None:
+    with pytest.raises(ValidationError, match="MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB"):
+        PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            openai_api_key="test-key",
+            preview_anchor_retry_range_mb=(64.0, 64.0),
+            _env_file=None,
+        )
+
+
+def test_settings_accept_preview_progress_timeout_override() -> None:
+    settings = PreviewWorkerSettings(
+        mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+        openai_api_key="test-key",
+        preview_download_progress_timeout_seconds=900,
+        _env_file=None,
+    )
+
+    assert settings.preview_download_progress_timeout_seconds == 900
+
+
+def test_settings_reject_non_positive_preview_progress_timeout() -> None:
+    with pytest.raises(
+        ValidationError, match="MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS"
+    ):
+        PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            openai_api_key="test-key",
+            preview_download_progress_timeout_seconds=0,
+            _env_file=None,
+        )
+
+
 def test_parse_torrent_reads_single_file_payload() -> None:
     raw = b"d4:infod6:lengthi123e4:name9:movie.mkv6:pieces0:ee"
 

@@ -54,6 +54,8 @@ VM worker environment:
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
 | `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
+| `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
+| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `300`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
 | `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
@@ -96,6 +98,13 @@ does not require Auth.js or Entra variables.
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |
 | `OPENAI_API_KEY` | Required by the preview ranking path. |
+| `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. |
+| `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle preview polling interval. |
+| `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
+| `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
+| `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
+| `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
+| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `300`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
 | `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
@@ -116,8 +125,14 @@ and writes status, artifact keys, dimensions, warnings, status reason, and
 diagnostics back to the torrent document.
 
 The pinned `torrent-preview` engine uses bounded in-attempt anchor retry to
-fill missing LLM-visible timeline anchors before ranking. Retry diagnostics are
-stored in the existing preview diagnostics details payload.
+fill missing LLM-visible timeline anchors before ranking. The VM worker defaults
+the retry ladder to `64`, `128`, `256`, `384`, `512`, and `768` MiB windows because real sparse
+MP4 torrents can map timestamps later than proportional byte planning. Retry
+diagnostics are stored in the existing preview diagnostics details payload.
+`MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` controls the per-attempt stall
+timer. Keep the default short enough for zero-peer torrents to release worker
+capacity; use a larger value only when tracker diagnostics show peers appear
+slowly in the target environment.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
 preview status). It automatically retries `failed` and `partial` previews until

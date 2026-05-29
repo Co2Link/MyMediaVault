@@ -38,6 +38,8 @@ DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_TARGET_FRAMES = 9
+DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
+DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 300.0
 DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
 DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
@@ -104,6 +106,14 @@ class PreviewWorkerSettings(BaseSettings):
     preview_target_frames: int = Field(
         default=DEFAULT_TARGET_FRAMES, alias="MMV_PREVIEW_TARGET_FRAMES"
     )
+    preview_anchor_retry_range_mb: tuple[float, ...] = Field(
+        default=DEFAULT_ANCHOR_RETRY_RANGE_MB,
+        alias="MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB",
+    )
+    preview_download_progress_timeout_seconds: float = Field(
+        default=DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
+        alias="MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS",
+    )
     vm_worker_debug_log_path: Path = Field(
         default=DEFAULT_DEBUG_LOG_PATH, alias="MMV_VM_WORKER_DEBUG_LOG_PATH"
     )
@@ -163,6 +173,18 @@ class PreviewWorkerSettings(BaseSettings):
             raise ValueError(msg)
         if self.preview_target_frames not in {3, 9, 16}:
             msg = "MMV_PREVIEW_TARGET_FRAMES must be one of 3, 9, or 16"
+            raise ValueError(msg)
+        previous_retry_range = 32.0
+        for value in self.preview_anchor_retry_range_mb:
+            if value <= previous_retry_range:
+                msg = (
+                    "MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB values must be greater "
+                    "than 32 and strictly increasing"
+                )
+                raise ValueError(msg)
+            previous_retry_range = value
+        if self.preview_download_progress_timeout_seconds <= 0:
+            msg = "MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS must be greater than 0"
             raise ValueError(msg)
         if not self.metadata_resolver_urls:
             msg = "MMV_TORRENT_RESOLVER_URLS must include at least one resolver URL"
@@ -1122,6 +1144,10 @@ class PreviewWorker:
         self._config = (
             PreviewEngineConfig(
                 target_frames=settings.preview_target_frames,
+                anchor_retry_range_mb=settings.preview_anchor_retry_range_mb,
+                download_progress_timeout_seconds=(
+                    settings.preview_download_progress_timeout_seconds
+                ),
             )
             if settings.preview_worker_enabled
             else None
