@@ -75,6 +75,9 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   container in the foreground. The container image runs the Python worker as a
   non-root user and includes Python 3.13, `libtorrent`, `ffmpeg`, and
   `ffprobe`; preview artifacts are stored in R2 so the VM stays stateless.
+  Routine Docker logs stay at `INFO`, while redacted JSON Lines `DEBUG` logs are
+  written to the VM host at `/var/log/mymediavault/vm-worker/debug.log`, rotated
+  at `100 MB`, and retained for `7 days`.
 - Database: Azure Cosmos DB for MongoDB vCore free-tier cluster created by this
   repository, configured for MongoDB 8.0 so the Node MongoDB driver can connect
   through Mongoose. The Mongo vCore firewall includes the Azure-services rule

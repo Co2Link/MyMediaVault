@@ -54,6 +54,9 @@ VM worker environment:
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
 | `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
+| `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
+| `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
+| `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
 
 ## Responsibilities
 
@@ -93,6 +96,9 @@ does not require Auth.js or Entra variables.
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name. |
 | `OPENAI_API_KEY` | Required by the preview ranking path. |
+| `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
+| `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
+| `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
 
 Use the same database, torrent, and optional R2 environment variables as the web
 app when running the VM worker locally.
@@ -128,3 +134,11 @@ includes Python 3.13, `libtorrent`, `ffmpeg`, and `ffprobe`, runs the
 application as a non-root user, and is published by the dev workflow with the
 `-vm-worker:<commit-sha>` suffix for `linux/amd64` and `linux/arm64`. The VM
 service stores the full image reference in `/etc/mymediavault/vm-worker.env`.
+Docker stdout/stderr remains at `INFO` for routine service logs. The worker also
+writes redacted `DEBUG` logs as JSON Lines. Native local runs write to
+`.local/logs/vm-worker-debug.log` by default; the Docker image sets
+`MMV_VM_WORKER_DEBUG_LOG_PATH` to
+`/var/log/mymediavault/vm-worker/debug.log`. Debug logs rotate at `100 MB` and
+retain plain rotated files for `7 days`. The systemd service should create and
+bind mount that host directory with UID/GID `10001:10001` because the container
+runs as the non-root `mymediavault-vm` user.

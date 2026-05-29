@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import random
+import re
+import sys
 import tempfile
 import urllib.error
 import urllib.request
@@ -36,8 +38,27 @@ DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_TARGET_FRAMES = 9
+DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
+DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
+DEFAULT_DEBUG_LOG_RETENTION = "7 days"
 DEFAULT_METADATA_RETRY_DELAYS_SECONDS = (60, 120, 240, 480, 960, 1920)
 DEFAULT_METADATA_LEASE_SECONDS = 1800
+REDACTED_LOG_VALUE = "[redacted]"
+SENSITIVE_LOG_KEYS = {
+    "authorization",
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "cookie",
+    "mongodb_uri",
+    "openai_api_key",
+    "r2_access_key_id",
+    "r2_secret_access_key",
+    "set_cookie",
+}
+OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+MONGODB_CREDENTIAL_PATTERN = re.compile(
+    r"(mongodb(?:\+srv)?://[^:/@\s]+:)([^@\s]+)(@)"
+)
 
 
 class MetadataResolutionError(Exception):
@@ -82,6 +103,17 @@ class PreviewWorkerSettings(BaseSettings):
     )
     preview_target_frames: int = Field(
         default=DEFAULT_TARGET_FRAMES, alias="MMV_PREVIEW_TARGET_FRAMES"
+    )
+    vm_worker_debug_log_path: Path = Field(
+        default=DEFAULT_DEBUG_LOG_PATH, alias="MMV_VM_WORKER_DEBUG_LOG_PATH"
+    )
+    vm_worker_debug_log_rotation: str = Field(
+        default=DEFAULT_DEBUG_LOG_ROTATION,
+        alias="MMV_VM_WORKER_DEBUG_LOG_ROTATION",
+    )
+    vm_worker_debug_log_retention: str = Field(
+        default=DEFAULT_DEBUG_LOG_RETENTION,
+        alias="MMV_VM_WORKER_DEBUG_LOG_RETENTION",
     )
     metadata_worker_poll_interval_seconds: float = Field(
         default=5.0, alias="MMV_METADATA_WORKER_POLL_INTERVAL_SECONDS"
@@ -772,9 +804,27 @@ class MongoPreviewJobLease(PreviewJobLease):
         if raw_blob_key is None:
             msg = f"Torrent {self._torrent.id} does not have a raw blob key"
             raise ValueError(msg)
-        return await asyncio.to_thread(self._blob_store.get_bytes, raw_blob_key)
+        torrent_bytes = await asyncio.to_thread(
+            self._blob_store.get_bytes, raw_blob_key
+        )
+        logger.bind(
+            job_id=self._torrent.id,
+            info_hash=self._torrent.infoHash,
+            raw_blob_key=raw_blob_key,
+            torrent_blob_bytes=len(torrent_bytes),
+        ).debug("Loaded preview torrent bytes")
+        return torrent_bytes
 
     async def complete(self, result: PreviewResult) -> None:
+        logger.bind(
+            job_id=self._torrent.id,
+            expected_info_hash=self._torrent.infoHash,
+            result_info_hash=result.info_hash,
+            status=result.status,
+            status_reason=result.status_reason,
+            downloaded_bytes=result.diagnostics.downloaded_bytes,
+            elapsed_seconds=round(result.diagnostics.elapsed_seconds, 2),
+        ).debug("Completing preview job")
         stored_frames = await self._store_frames(result.info_hash, result.artifact.frames)
         stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
         has_replacement_artifacts = bool(stored_frames or stored_sheet)
@@ -796,6 +846,12 @@ class MongoPreviewJobLease(PreviewJobLease):
 
     async def fail(self, error: Exception) -> None:
         message = str(error) or error.__class__.__name__
+        logger.bind(
+            job_id=self._torrent.id,
+            info_hash=self._torrent.infoHash,
+            error_type=error.__class__.__name__,
+            status_reason=message,
+        ).debug("Failing preview job")
         await Torrent.get_pymongo_collection().update_one(
             {"_id": self._torrent.id},
             {
@@ -866,7 +922,7 @@ class MongoPreviewJobSource(PreviewJobSource):
     ) -> list[MongoPreviewJobLease]:
         await self._repair_stale_processing()
         claimed: list[MongoPreviewJobLease] = []
-        for query, reset_attempts in self._claim_plans(
+        for query, reset_attempts, claim_reason in self._claim_plans(
             artifact_version=artifact_version,
             artifact_fingerprint=artifact_fingerprint,
         ):
@@ -874,6 +930,16 @@ class MongoPreviewJobSource(PreviewJobSource):
                 torrent = await self._claim_one(query, reset_attempts=reset_attempts)
                 if torrent is None:
                     break
+                logger.bind(
+                    job_id=torrent.id,
+                    info_hash=torrent.infoHash,
+                    claim_reason=claim_reason,
+                    preview_attempts=torrent.previewAttempts,
+                    preview_status=torrent.previewStatus,
+                    reset_attempts=reset_attempts,
+                    artifact_version=artifact_version,
+                    artifact_fingerprint=artifact_fingerprint,
+                ).debug("Claimed preview job")
                 claimed.append(
                     MongoPreviewJobLease(
                         torrent=torrent,
@@ -884,6 +950,19 @@ class MongoPreviewJobSource(PreviewJobSource):
                 )
             if len(claimed) >= limit:
                 break
+        if claimed:
+            logger.bind(
+                claimed_count=len(claimed),
+                limit=limit,
+            ).debug("Preview job claim scan finished")
+        else:
+            logger.bind(
+                limit=limit,
+                max_attempts=self._max_attempts,
+                claim_reasons=["pending", "artifact_stale", "retry"],
+                artifact_version=artifact_version,
+                artifact_fingerprint=artifact_fingerprint,
+            ).debug("No preview jobs claimed")
         return claimed
 
     def _claim_plans(
@@ -891,21 +970,22 @@ class MongoPreviewJobSource(PreviewJobSource):
         *,
         artifact_version: str,
         artifact_fingerprint: str,
-    ) -> list[tuple[dict[str, Any], bool]]:
+    ) -> list[tuple[dict[str, Any], bool, str]]:
         pending_query, retry_query = self._claim_queries(
             artifact_version=artifact_version,
             artifact_fingerprint=artifact_fingerprint,
         )
         return [
-            (pending_query, False),
+            (pending_query, False, "pending"),
             (
                 self._artifact_stale_query(
                     artifact_version=artifact_version,
                     artifact_fingerprint=artifact_fingerprint,
                 ),
                 True,
+                "artifact_stale",
             ),
-            (retry_query, False),
+            (retry_query, False, "retry"),
         ]
 
     def _claim_queries(
@@ -1170,8 +1250,61 @@ def _to_plain_value(value: Any) -> Any:
     return value
 
 
+def _configure_vm_worker_logging(settings: PreviewWorkerSettings) -> None:
+    configure_default_logging(debug=False, sink=sys.stdout)
+    logger.configure(patcher=_redact_log_record)
+    settings.vm_worker_debug_log_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.add(
+        settings.vm_worker_debug_log_path,
+        level="DEBUG",
+        rotation=settings.vm_worker_debug_log_rotation,
+        retention=settings.vm_worker_debug_log_retention,
+        compression=None,
+        serialize=True,
+        backtrace=False,
+        diagnose=False,
+    )
+
+
+def _redact_log_record(record: dict[str, Any]) -> None:
+    record["message"] = _redact_text(str(record["message"]))
+    record["extra"] = _redact_log_value(record["extra"], key=None)
+
+
+def _redact_log_value(value: Any, *, key: str | None) -> Any:
+    if key is not None and _is_sensitive_log_key(key):
+        return REDACTED_LOG_VALUE
+    if isinstance(value, dict):
+        return {
+            str(child_key): _redact_log_value(child_value, key=str(child_key))
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_log_value(item, key=None) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_log_value(item, key=None) for item in value)
+    if isinstance(value, str):
+        return _redact_text(value)
+    return value
+
+
+def _is_sensitive_log_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return (
+        normalized in SENSITIVE_LOG_KEYS
+        or normalized.endswith("_api_key")
+        or normalized.endswith("_password")
+        or normalized.endswith("_secret")
+        or normalized.endswith("_token")
+    )
+
+
+def _redact_text(value: str) -> str:
+    redacted = OPENAI_KEY_PATTERN.sub("sk-[redacted]", value)
+    return MONGODB_CREDENTIAL_PATTERN.sub(r"\1[redacted]\3", redacted)
+
+
 def main() -> None:
-    configure_default_logging(debug=False)
     parser = argparse.ArgumentParser(
         description="Run the MyMediaVault VM metadata and preview worker."
     )
@@ -1201,6 +1334,13 @@ def main() -> None:
         settings.preview_repair_stale_processing_minutes = args.stale_processing_minutes
     if args.max_attempts is not None:
         settings.preview_max_attempts = args.max_attempts
+    _configure_vm_worker_logging(settings)
+    logger.info(
+        "VM worker debug log enabled at {} with rotation={} retention={}",
+        settings.vm_worker_debug_log_path,
+        settings.vm_worker_debug_log_rotation,
+        settings.vm_worker_debug_log_retention,
+    )
 
     worker = PreviewWorker(
         settings=settings,

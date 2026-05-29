@@ -70,3 +70,11 @@ Coding agents own `docs/`. Treat docs/index.md as the documentation entry point 
   - loguru for logging.
   - ty for type checking.
   - ruff for linting and formatting.
+
+
+## -- Project specific guidelines & context --
+
+### Torrent Preview Library
+
+- The `torrent-preview` library repository is checked out at `/workspaces/torrent-preview`; coding agents may make coordinated changes there when MyMediaVault worker preview behavior requires library support.
+- Before changing, releasing, committing, or pushing `torrent-preview`, follow `/workspaces/torrent-preview/AGENTS.md` and its linked development docs. After a release, update the MyMediaVault VM worker dependency pin as needed.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from loguru import logger
 from pydantic import ValidationError
 from torrent_preview import (
     AnchorRetryAttemptDiagnostics,
@@ -22,6 +24,7 @@ from mymediavault_vm_worker import (
     MongoPreviewJobLease,
     MongoPreviewJobSource,
     PreviewWorkerSettings,
+    _configure_vm_worker_logging,
     _success_update,
     parse_torrent,
 )
@@ -151,8 +154,51 @@ def test_claim_plans_reset_attempts_for_artifact_stale_rows() -> None:
         artifact_fingerprint="sha256:current",
     )
 
-    assert [reset_attempts for _, reset_attempts in plans] == [False, True, False]
+    assert [reset_attempts for _, reset_attempts, _ in plans] == [False, True, False]
+    assert [claim_reason for _, _, claim_reason in plans] == [
+        "pending",
+        "artifact_stale",
+        "retry",
+    ]
     assert plans[1][0]["previewStatus"] == {"$in": ["succeeded", "failed", "partial"]}
+
+
+def test_vm_worker_logging_keeps_console_info_and_json_debug_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    debug_log_path = tmp_path / "debug.log"
+    settings = PreviewWorkerSettings(
+        mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+        openai_api_key="test-key",
+        vm_worker_debug_log_path=debug_log_path,
+        _env_file=None,
+    )
+    _configure_vm_worker_logging(settings)
+    try:
+        logger.bind(
+            mongodb_uri="mongodb://user:password@example.invalid/mymediavault",
+            openai_api_key="sk-proj-secret123456789",
+        ).debug("debug message with sk-proj-secret123456789")
+        logger.info("visible info")
+    finally:
+        logger.remove()
+
+    captured = capsys.readouterr()
+    assert "visible info" in captured.out
+    assert "debug message" not in captured.out
+
+    records = [
+        json.loads(line)["record"]
+        for line in debug_log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    debug_record = next(
+        record for record in records if record["message"].startswith("debug message")
+    )
+    assert debug_record["level"]["name"] == "DEBUG"
+    assert debug_record["message"] == "debug message with sk-[redacted]"
+    assert debug_record["extra"]["mongodb_uri"] == "[redacted]"
+    assert debug_record["extra"]["openai_api_key"] == "[redacted]"
 
 
 def test_artifact_stale_claim_resets_attempts_to_one(monkeypatch: pytest.MonkeyPatch) -> None:

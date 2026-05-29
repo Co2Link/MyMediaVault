@@ -52,10 +52,18 @@ Use `.env.example` for worker variables. Add the exact image tag:
 
 ```bash
 MMV_VM_WORKER_IMAGE=<web-image-repo>-vm-worker:<commit-sha>
+MMV_VM_WORKER_DEBUG_LOG_PATH=/var/log/mymediavault/vm-worker/debug.log
 ```
 
 Deployment should be stateless: configure R2 for artifacts, MongoDB/Cosmos for
-status, and treat container-local files as disposable.
+status, and treat container-local files as disposable. The worker writes
+human-readable `INFO` logs to Docker stdout and rotated JSON Lines `DEBUG` logs
+to `/var/log/mymediavault/vm-worker/debug.log`. Store that debug path on the VM
+host so it survives container replacement:
+
+```bash
+sudo install -d -m 750 -o 10001 -g 10001 /var/log/mymediavault/vm-worker
+```
 
 ### Install the service
 
@@ -70,9 +78,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/mymediavault/vm-worker.env
+ExecStartPre=/usr/bin/install -d -m 750 -o 10001 -g 10001 /var/log/mymediavault/vm-worker
 ExecStartPre=-/usr/bin/docker rm -f mymediavault-vm-worker
 ExecStartPre=/usr/bin/docker pull ${MMV_VM_WORKER_IMAGE}
-ExecStart=/usr/bin/docker run --rm --name mymediavault-vm-worker --env-file /etc/mymediavault/vm-worker.env ${MMV_VM_WORKER_IMAGE}
+ExecStart=/usr/bin/docker run --rm --name mymediavault-vm-worker --env-file /etc/mymediavault/vm-worker.env --mount type=bind,source=/var/log/mymediavault/vm-worker,target=/var/log/mymediavault/vm-worker ${MMV_VM_WORKER_IMAGE}
 ExecStop=/usr/bin/docker stop mymediavault-vm-worker
 Restart=always
 RestartSec=10

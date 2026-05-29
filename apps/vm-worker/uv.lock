@@ -405,7 +405,7 @@ requires-dist = [
     { name = "libtorrent", specifier = ">=2.0.11" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pymongo", specifier = ">=4.17.0" },
-    { name = "torrent-preview", specifier = "==5.2.0", index = "https://pkgs.dev.azure.com/lingxt/_packaging/lingxt/pypi/simple/" },
+    { name = "torrent-preview", specifier = "==5.2.1", index = "https://pkgs.dev.azure.com/lingxt/_packaging/lingxt/pypi/simple/" },
 ]
 
 [package.metadata.requires-dev]
@@ -922,7 +922,7 @@ wheels = [
 
 [[package]]
 name = "torrent-preview"
-version = "5.2.0"
+version = "5.2.1"
 source = { registry = "https://pkgs.dev.azure.com/lingxt/_packaging/lingxt/pypi/simple/" }
 dependencies = [
     { name = "libtorrent" },
@@ -930,9 +930,9 @@ dependencies = [
     { name = "opencv-python-headless" },
     { name = "pydantic-ai-slim", extra = ["logfire", "openai"] },
 ]
-sdist = { url = "https://pkgs.dev.azure.com/lingxt/_packaging/441d1f46-6ff0-47b8-a4c4-ccf9927be245/pypi/download/torrent-preview/5.2/torrent_preview-5.2.0.tar.gz", hash = "sha256:96432deeffe5b968fc14852299287a226d87ace94648ab4e2ce403c8e7932c1d" }
+sdist = { url = "https://pkgs.dev.azure.com/lingxt/_packaging/441d1f46-6ff0-47b8-a4c4-ccf9927be245/pypi/download/torrent-preview/5.2.1/torrent_preview-5.2.1.tar.gz", hash = "sha256:231f3275e1c84cea196338dbe1bef06c79ee2b8159cf53a28b9e0eb10ccf34a6" }
 wheels = [
-    { url = "https://pkgs.dev.azure.com/lingxt/_packaging/441d1f46-6ff0-47b8-a4c4-ccf9927be245/pypi/download/torrent-preview/5.2/torrent_preview-5.2.0-py3-none-any.whl", hash = "sha256:f20edf3b3a93f835dcda4f6bc41723da6692a322c31edb894f882a4831fde143" },
+    { url = "https://pkgs.dev.azure.com/lingxt/_packaging/441d1f46-6ff0-47b8-a4c4-ccf9927be245/pypi/download/torrent-preview/5.2.1/torrent_preview-5.2.1-py3-none-any.whl", hash = "sha256:e47f66ce0564fb11bb85f750676e5e0fea0a422ab592752139dc03f1cdf98b1b" },
 ]
 
 [[package]]
