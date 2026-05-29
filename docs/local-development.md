@@ -13,8 +13,8 @@ npm ci
 npm run dev
 ```
 
-Copy `apps/web/.env.local.example` to `apps/web/.env.local` and fill in the
-Entra credentials, `AUTH_SECRET`, and any optional `MMV_*` overrides. Set
+Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the
+Entra credentials, `AUTH_SECRET`, and any optional web `MMV_*` overrides. Set
 `MONGODB_URI` and `MMV_MONGODB_DB_NAME` to the local MongoDB or Cosmos values
 you want to use. Set `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 and `R2_BUCKET_NAME` when you want blob reads and writes to go through
