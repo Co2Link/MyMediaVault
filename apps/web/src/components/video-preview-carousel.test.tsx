@@ -8,6 +8,7 @@ const preview: PreviewRead = {
   status: "succeeded",
   attempts: 1,
   lastAttemptAt: null,
+  nextAttemptAt: null,
   updatedAt: "2024-01-01T00:00:00.000Z",
   sheet: {
     key: "previews/sheet.jpg",

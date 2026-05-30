@@ -117,6 +117,7 @@ export type TorrentDoc = {
   previewStatus: PreviewStatus;
   previewAttempts: number;
   previewLastAttemptAt: Date | null;
+  previewNextAttemptAt: Date | null;
   previewUpdatedAt: Date | null;
   previewFrames: TorrentPreviewFrameDoc[];
   previewSheet: TorrentPreviewSheetDoc | null;
@@ -302,6 +303,7 @@ const torrentSchema = new Schema<TorrentDoc>(
     },
     previewAttempts: { type: Number, default: 0 },
     previewLastAttemptAt: { type: Date, default: null },
+    previewNextAttemptAt: { type: Date, default: null, index: true },
     previewUpdatedAt: { type: Date, default: null },
     previewFrames: { type: [torrentPreviewFrameSchema], default: [] },
     previewSheet: { type: torrentPreviewSheetSchema, default: null },

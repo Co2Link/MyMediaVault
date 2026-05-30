@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
     TorrentModel: {
       find: vi.fn(() => query(state.torrents)),
       findById: vi.fn(() => query(state.torrentFindById)),
+      updateOne: vi.fn(() => query({ matchedCount: 1 })),
       deleteOne: vi.fn(() => query({ deletedCount: 1 })),
     },
     VideoModel: {
@@ -107,6 +108,7 @@ describe("torrent and video deletion", () => {
         metadataError: null,
         metadataAttempts: 0,
         metadataLastAttemptAt: null,
+        previewNextAttemptAt: new Date("2024-02-02T00:00:00Z"),
         files: [],
         createdAt: new Date("2024-02-01T00:00:00Z"),
         updatedAt: new Date("2024-02-01T00:00:00Z"),
@@ -119,9 +121,35 @@ describe("torrent and video deletion", () => {
 
     const { listTorrents } = await import("./videos.js");
     await expect(listTorrents()).resolves.toEqual([
-      expect.objectContaining({ id: "torrent-new", videoCount: 3 }),
+      expect.objectContaining({
+        id: "torrent-new",
+        videoCount: 3,
+        preview: expect.objectContaining({
+          nextAttemptAt: "2024-02-02T00:00:00.000Z",
+        }),
+      }),
       expect.objectContaining({ id: "torrent-old", videoCount: 1 }),
     ]);
+  });
+
+  it("resets a scheduled preview retry for immediate processing", async () => {
+    const { resetTorrentPreview } = await import("./videos.js");
+
+    await resetTorrentPreview("torrent-1");
+
+    expect(mocks.models.TorrentModel.updateOne).toHaveBeenCalledWith(
+      { _id: "torrent-1" },
+      {
+        $set: {
+          previewStatus: "pending",
+          previewAttempts: 0,
+          previewLastAttemptAt: null,
+          previewNextAttemptAt: null,
+          previewUpdatedAt: expect.any(Date),
+          previewDiagnostics: {},
+        },
+      },
+    );
   });
 
   it("deletes a user's video and removes the orphan torrent blob", async () => {

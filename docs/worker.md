@@ -52,10 +52,10 @@ VM worker environment:
 | `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. |
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle preview polling interval. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
-| `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
 | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
 | `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `600`. |
+| `MMV_PREVIEW_RETRY_DELAYS` | JSON list of retry delays using positive integer `m`, `h`, or `d` durations. Total attempts equal one initial attempt plus the number of delays. Defaults to `["15m","1h","2h","4h","8h","12h","1d","1d","1d"]`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
 | `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
@@ -101,10 +101,10 @@ does not require Auth.js or Entra variables.
 | `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. |
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle preview polling interval. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
-| `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
 | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
 | `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `600`. |
+| `MMV_PREVIEW_RETRY_DELAYS` | JSON list of retry delays using positive integer `m`, `h`, or `d` durations. Total attempts equal one initial attempt plus the number of delays. Defaults to `["15m","1h","2h","4h","8h","12h","1d","1d","1d"]`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
 | `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
@@ -135,11 +135,12 @@ capacity; use a larger value only when tracker diagnostics show peers appear
 slowly in the target environment.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
-preview status). It automatically retries `failed` and `partial` previews until
-the configured maximum attempt count is reached, defaulting to three total
-attempts. Retryable failures are delayed by `MMV_PREVIEW_RETRY_DELAYS_SECONDS`,
-defaulting to 15 minutes, 1 hour, then 4 hours, so zero-peer torrents do not burn
-all attempts in one worker cycle. It also regenerates `succeeded`, `partial`, and
+preview status). It automatically retries `failed` and `partial` previews using
+`MMV_PREVIEW_RETRY_DELAYS`, defaulting to 15 minutes, 1 hour, 2 hours, 4 hours,
+8 hours, 12 hours, then three daily retries. Total attempts equal one initial
+attempt plus the number of configured delays, so zero-peer torrents sample
+availability over time without occupying worker capacity continuously. An empty
+list disables automatic retries. It also regenerates `succeeded`, `partial`, and
 `failed` previews when the recorded `torrent-preview` artifact contract version
 or fingerprint is missing or stale for the current worker, resetting the attempt
 count for that new artifact recipe. If a regeneration run produces no

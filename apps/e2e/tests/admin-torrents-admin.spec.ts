@@ -15,15 +15,30 @@ test("admin users can delete torrents and their videos", async ({ page }) => {
   await page.locator("form").getByRole("button", { name: "Add video" }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 
-  await page.getByRole("link", { name: "Torrents" }).click();
+  await page.goto("/admin/torrents");
   await expect(page.getByRole("heading", { name: "Torrent management" })).toBeVisible();
 
   const torrentItem = page.getByRole("listitem").filter({ hasText: infoHash });
   await expect(torrentItem).toBeVisible();
+
+  await connectMongo();
+  await TorrentModel.updateOne(
+    { infoHash },
+    {
+      $set: {
+        previewStatus: "failed",
+        previewNextAttemptAt: new Date("2026-05-31T02:15:00.000Z"),
+      },
+    },
+  ).exec();
+  await page.reload();
+  await torrentItem.getByText("Preview: failed").click();
+  await expect(torrentItem.getByText("Next attempt")).toBeVisible();
+  await expect(torrentItem.getByText("5/31/2026, 2:15:00 AM")).toBeVisible();
+
   await torrentItem.getByRole("button", { name: "Delete torrent" }).click();
   await expect(torrentItem).toHaveCount(0);
 
-  await connectMongo();
   await expect(VideoModel.findOne({ title }).lean().exec()).resolves.toBeNull();
   await expect(TorrentModel.findOne({ infoHash }).lean().exec()).resolves.toBeNull();
 });

@@ -22,6 +22,7 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 # Install OpenAI Codex CLI gobally
 npm i -g @openai/codex
 
-# Install the Playwright browser revision used by the e2e package.
+# Install the Playwright browser revision and OS dependencies used by the e2e package.
 npm --prefix apps/e2e ci
-npm --prefix apps/e2e exec -- playwright install chromium --with-deps
+npm --prefix apps/e2e exec -- playwright install-deps chromium
+npm --prefix apps/e2e exec -- playwright install chromium

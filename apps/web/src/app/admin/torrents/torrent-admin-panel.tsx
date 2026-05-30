@@ -31,6 +31,7 @@ export function TorrentAdminPanel({
                 <dl className="diagnostics-grid">
                   <DiagnosticTerm label="Attempts" value={torrent.preview.attempts} />
                   <DiagnosticTerm label="Last attempt" value={formatDate(torrent.preview.lastAttemptAt)} />
+                  <DiagnosticTerm label="Next attempt" value={formatDate(torrent.preview.nextAttemptAt)} />
                   <DiagnosticTerm label="Updated" value={formatDate(torrent.preview.updatedAt)} />
                   <DiagnosticTerm label="Artifact version" value={torrent.preview.diagnostics.artifactVersion} />
                   <DiagnosticTerm label="Fingerprint" value={torrent.preview.diagnostics.artifactFingerprint} />

@@ -83,11 +83,13 @@ including bounded anchor retry summaries, live in the mixed `details` payload.
 The worker increments `previewAttempts` and updates `previewLastAttemptAt`
 whenever it claims a torrent.
 
-The VM worker automatically retries `failed` and `partial` previews while
-`previewAttempts` is below the configured maximum, which defaults to three total
-attempts. Admins can reset a torrent preview attempt count from torrent
-management, which sets the preview status back to `pending` without deleting
-existing artifacts. The worker regenerates `succeeded`, `partial`, and `failed`
+The VM worker automatically retries `failed` and `partial` previews using its
+configured retry-delay schedule. Total attempts equal one initial attempt plus
+the number of configured delays. `previewNextAttemptAt` stores the next
+scheduled retry timestamp. Admins can reset a torrent preview attempt count from
+torrent management, which sets the preview status back to `pending`, clears the
+scheduled retry timestamp, and keeps existing artifacts. The worker regenerates
+`succeeded`, `partial`, and `failed`
 previews when their recorded `torrent-preview` artifact contract version or
 fingerprint is missing or differs from the worker's current library recipe.
 Artifact-stale claims reset `previewAttempts` for the new recipe.

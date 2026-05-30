@@ -142,17 +142,50 @@ def test_settings_default_preview_retry_delays() -> None:
         _env_file=None,
     )
 
-    assert settings.preview_retry_delays_seconds == [900, 3600, 14400]
+    assert settings.preview_retry_delays == [
+        "15m",
+        "1h",
+        "2h",
+        "4h",
+        "8h",
+        "12h",
+        "1d",
+        "1d",
+        "1d",
+    ]
+    assert settings.preview_retry_delays_seconds == [
+        15 * 60,
+        60 * 60,
+        2 * 60 * 60,
+        4 * 60 * 60,
+        8 * 60 * 60,
+        12 * 60 * 60,
+        24 * 60 * 60,
+        24 * 60 * 60,
+        24 * 60 * 60,
+    ]
 
 
-def test_settings_reject_non_positive_preview_retry_delay() -> None:
-    with pytest.raises(ValidationError, match="MMV_PREVIEW_RETRY_DELAYS_SECONDS"):
+@pytest.mark.parametrize("delay", ["0m", "1h30m", " 1h", "1.5h", "900", "-1h"])
+def test_settings_reject_invalid_preview_retry_delay(delay: str) -> None:
+    with pytest.raises(ValidationError, match="MMV_PREVIEW_RETRY_DELAYS"):
         PreviewWorkerSettings(
             mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
             openai_api_key="test-key",
-            preview_retry_delays_seconds=[900, 0],
+            preview_retry_delays=[delay],
             _env_file=None,
         )
+
+
+def test_settings_allow_empty_preview_retry_delays() -> None:
+    settings = PreviewWorkerSettings(
+        mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+        openai_api_key="test-key",
+        preview_retry_delays=[],
+        _env_file=None,
+    )
+
+    assert settings.preview_retry_delays_seconds == []
 
 
 def test_settings_reject_non_positive_preview_progress_timeout() -> None:
@@ -181,7 +214,11 @@ def test_parse_torrent_reads_single_file_payload() -> None:
 
 
 def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
-    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+    source = MongoPreviewJobSource(
+        blob_store=object(),
+        stale_processing_minutes=120,
+        retry_delays_seconds=[900, 3600],
+    )  # type: ignore[arg-type]
 
     queries = source._claim_queries(
         artifact_version="preview-v5",
@@ -194,8 +231,26 @@ def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
     assert {"previewNextAttemptAt": {"$exists": False}} in queries[1]["$or"]
 
 
+def test_claim_queries_allow_one_attempt_when_retry_schedule_is_empty() -> None:
+    source = MongoPreviewJobSource(
+        blob_store=object(), stale_processing_minutes=120, retry_delays_seconds=[]
+    )  # type: ignore[arg-type]
+
+    queries = source._claim_queries(
+        artifact_version="preview-v5",
+        artifact_fingerprint="sha256:current",
+    )
+
+    assert queries[0]["previewAttempts"] == {"$lt": 1}
+    assert queries[1]["previewAttempts"] == {"$lt": 1}
+
+
 def test_artifact_stale_query_includes_completed_statuses_and_missing_fields() -> None:
-    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+    source = MongoPreviewJobSource(
+        blob_store=object(),
+        stale_processing_minutes=120,
+        retry_delays_seconds=[900, 3600],
+    )  # type: ignore[arg-type]
 
     stale_query = source._artifact_stale_query(
         artifact_version="preview-v5",
@@ -220,7 +275,11 @@ def test_artifact_stale_query_includes_completed_statuses_and_missing_fields() -
 
 
 def test_claim_plans_reset_attempts_for_artifact_stale_rows() -> None:
-    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+    source = MongoPreviewJobSource(
+        blob_store=object(),
+        stale_processing_minutes=120,
+        retry_delays_seconds=[900, 3600],
+    )  # type: ignore[arg-type]
 
     plans = source._claim_plans(
         artifact_version="preview-v5",
@@ -290,7 +349,11 @@ def test_artifact_stale_claim_resets_attempts_to_one(monkeypatch: pytest.MonkeyP
         "mymediavault_vm_worker.Torrent.get_pymongo_collection",
         lambda: collection,
     )
-    source = MongoPreviewJobSource(blob_store=object(), stale_processing_minutes=120, max_attempts=3)  # type: ignore[arg-type]
+    source = MongoPreviewJobSource(
+        blob_store=object(),
+        stale_processing_minutes=120,
+        retry_delays_seconds=[900, 3600],
+    )  # type: ignore[arg-type]
 
     asyncio.run(source._claim_one({}, reset_attempts=True))
 

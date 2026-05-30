@@ -36,11 +36,20 @@ from torrent_preview import (
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
-DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_TARGET_FRAMES = 9
 DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
 DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 600.0
-DEFAULT_PREVIEW_RETRY_DELAYS_SECONDS = (900, 3600, 14400)
+DEFAULT_PREVIEW_RETRY_DELAYS = (
+    "15m",
+    "1h",
+    "2h",
+    "4h",
+    "8h",
+    "12h",
+    "1d",
+    "1d",
+    "1d",
+)
 DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
 DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
@@ -62,6 +71,7 @@ OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 MONGODB_CREDENTIAL_PATTERN = re.compile(
     r"(mongodb(?:\+srv)?://[^:/@\s]+:)([^@\s]+)(@)"
 )
+PREVIEW_RETRY_DELAY_PATTERN = re.compile(r"([1-9][0-9]*)([mhd])")
 
 
 class MetadataResolutionError(Exception):
@@ -101,9 +111,6 @@ class PreviewWorkerSettings(BaseSettings):
         default=DEFAULT_STALE_PROCESSING_MINUTES,
         alias="MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES",
     )
-    preview_max_attempts: int = Field(
-        default=DEFAULT_MAX_ATTEMPTS, alias="MMV_PREVIEW_MAX_ATTEMPTS"
-    )
     preview_target_frames: int = Field(
         default=DEFAULT_TARGET_FRAMES, alias="MMV_PREVIEW_TARGET_FRAMES"
     )
@@ -115,9 +122,9 @@ class PreviewWorkerSettings(BaseSettings):
         default=DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
         alias="MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS",
     )
-    preview_retry_delays_seconds: list[int] = Field(
-        default_factory=lambda: list(DEFAULT_PREVIEW_RETRY_DELAYS_SECONDS),
-        alias="MMV_PREVIEW_RETRY_DELAYS_SECONDS",
+    preview_retry_delays: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_PREVIEW_RETRY_DELAYS),
+        alias="MMV_PREVIEW_RETRY_DELAYS",
     )
     vm_worker_debug_log_path: Path = Field(
         default=DEFAULT_DEBUG_LOG_PATH, alias="MMV_VM_WORKER_DEBUG_LOG_PATH"
@@ -191,9 +198,8 @@ class PreviewWorkerSettings(BaseSettings):
         if self.preview_download_progress_timeout_seconds <= 0:
             msg = "MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS must be greater than 0"
             raise ValueError(msg)
-        if any(delay <= 0 for delay in self.preview_retry_delays_seconds):
-            msg = "MMV_PREVIEW_RETRY_DELAYS_SECONDS values must be positive"
-            raise ValueError(msg)
+        for delay in self.preview_retry_delays:
+            _parse_preview_retry_delay(delay)
         if not self.metadata_resolver_urls:
             msg = "MMV_TORRENT_RESOLVER_URLS must include at least one resolver URL"
             raise ValueError(msg)
@@ -210,6 +216,12 @@ class PreviewWorkerSettings(BaseSettings):
         return bool(
             self.r2_endpoint and self.r2_access_key_id and self.r2_secret_access_key
         )
+
+    @property
+    def preview_retry_delays_seconds(self) -> list[int]:
+        return [
+            _parse_preview_retry_delay(delay) for delay in self.preview_retry_delays
+        ]
 
 
 class TorrentPreviewFrame(BaseModel):
@@ -956,15 +968,19 @@ class MongoPreviewJobSource(PreviewJobSource):
         *,
         blob_store: BlobStore,
         stale_processing_minutes: int,
-        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         retry_delays_seconds: list[int] | None = None,
     ) -> None:
         self._blob_store = blob_store
         self._stale_processing_minutes = max(1, stale_processing_minutes)
-        self._max_attempts = max(1, max_attempts)
-        self._retry_delays_seconds = list(
-            retry_delays_seconds or DEFAULT_PREVIEW_RETRY_DELAYS_SECONDS
+        self._retry_delays_seconds = (
+            [
+                _parse_preview_retry_delay(delay)
+                for delay in DEFAULT_PREVIEW_RETRY_DELAYS
+            ]
+            if retry_delays_seconds is None
+            else list(retry_delays_seconds)
         )
+        self._max_attempts = len(self._retry_delays_seconds) + 1
 
     async def claim_batch(
         self,
@@ -1170,7 +1186,6 @@ class PreviewWorker:
         self._stale_processing_minutes = max(
             1, settings.preview_repair_stale_processing_minutes
         )
-        self._max_attempts = max(1, settings.preview_max_attempts)
         self._client = AsyncMongoClient(
             settings.mongodb_uri,
             serverSelectionTimeoutMS=settings.mongodb_server_selection_timeout_ms,
@@ -1213,7 +1228,6 @@ class PreviewWorker:
             job_source = MongoPreviewJobSource(
                 blob_store=self._blob_store,
                 stale_processing_minutes=self._stale_processing_minutes,
-                max_attempts=self._max_attempts,
                 retry_delays_seconds=self._settings.preview_retry_delays_seconds,
             )
             self._harness = PreviewWorkerHarness(
@@ -1397,6 +1411,16 @@ def _redact_text(value: str) -> str:
     return MONGODB_CREDENTIAL_PATTERN.sub(r"\1[redacted]\3", redacted)
 
 
+def _parse_preview_retry_delay(value: str) -> int:
+    match = PREVIEW_RETRY_DELAY_PATTERN.fullmatch(value)
+    if match is None:
+        msg = "MMV_PREVIEW_RETRY_DELAYS values must be positive integer durations using m, h, or d"
+        raise ValueError(msg)
+    amount = int(match.group(1))
+    seconds_per_unit = {"m": 60, "h": 60 * 60, "d": 24 * 60 * 60}
+    return amount * seconds_per_unit[match.group(2)]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run the MyMediaVault VM metadata and preview worker."
@@ -1413,10 +1437,6 @@ def main() -> None:
         "--stale-processing-minutes",
         type=int,
     )
-    parser.add_argument(
-        "--max-attempts",
-        type=int,
-    )
     args = parser.parse_args()
     settings = PreviewWorkerSettings()
     if args.max_concurrency is not None:
@@ -1425,8 +1445,6 @@ def main() -> None:
         settings.preview_worker_poll_interval_seconds = args.poll_interval_seconds
     if args.stale_processing_minutes is not None:
         settings.preview_repair_stale_processing_minutes = args.stale_processing_minutes
-    if args.max_attempts is not None:
-        settings.preview_max_attempts = args.max_attempts
     _configure_vm_worker_logging(settings)
     logger.info(
         "VM worker debug log enabled at {} with rotation={} retention={}",

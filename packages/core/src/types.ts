@@ -56,6 +56,7 @@ export type PreviewRead = {
   status: PreviewStatus;
   attempts: number;
   lastAttemptAt: string | null;
+  nextAttemptAt: string | null;
   updatedAt: string | null;
   frames: PreviewFrameRead[];
   sheet: PreviewSheetRead | null;

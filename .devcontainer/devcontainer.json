@@ -12,7 +12,9 @@
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
 			"moby": false
 		},
-		"ghcr.io/devcontainers/features/node:2": {}
+		"ghcr.io/devcontainers/features/node:2": {
+			"version": "22"
+		}
 	},
 	"containerEnv":{
 		"R2_ENDPOINT": "${localEnv:R2_ENDPOINT}",

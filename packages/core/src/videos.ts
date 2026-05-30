@@ -267,6 +267,7 @@ export async function resetTorrentPreview(torrentId: string) {
         previewStatus: "pending",
         previewAttempts: 0,
         previewLastAttemptAt: null,
+        previewNextAttemptAt: null,
         previewUpdatedAt: new Date(),
         previewDiagnostics: {},
       },
@@ -493,6 +494,7 @@ function toPreview(torrent: TorrentDoc): PreviewRead {
     status,
     attempts: torrent.previewAttempts ?? 0,
     lastAttemptAt: torrent.previewLastAttemptAt?.toISOString() ?? null,
+    nextAttemptAt: torrent.previewNextAttemptAt?.toISOString() ?? null,
     updatedAt: torrent.previewUpdatedAt?.toISOString() ?? null,
     frames: frames.map<PreviewFrameRead>((frame) => ({
       key: frame.key,
