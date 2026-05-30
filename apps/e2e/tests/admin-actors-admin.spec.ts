@@ -31,7 +31,10 @@ test("admin users can create, edit, view, and delete actors", async ({ page }) =
   await expect(updatedItem).toBeVisible();
   await expect(updatedItem.getByRole("img", { name: `${updatedName} profile image` })).toBeVisible();
 
-  await updatedItem.getByRole("link", { name: "View profile" }).click();
+  await Promise.all([
+    page.waitForURL(/\/actors\/[^/]+$/, { timeout: 10_000 }),
+    updatedItem.getByRole("link", { name: "View profile" }).click(),
+  ]);
   await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
   await expect(page.getByText("E2E actor profile")).toBeVisible();
   await expect(page.getByRole("img", { name: `${updatedName} profile image` })).toBeVisible();

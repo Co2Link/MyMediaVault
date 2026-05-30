@@ -32,11 +32,6 @@ uv sync
 uv run mymediavault-vm-worker
 ```
 
-For local e2e runs, the harness starts `apps/vm-worker` in metadata-only mode
-with the fake provider. That process polls MongoDB directly, which keeps the
-web -> database -> worker smoke deterministic without requiring OpenAI, live
-DHT, or the deployed VM.
-
 ## End-to-End Local Stack
 
 ```bash
@@ -47,7 +42,8 @@ npm run test:local
 
 `test:local` sources `apps/web/.env.local` and `apps/e2e/.env.local`, deletes
 the Playwright test users' existing documents plus any now-orphaned torrent
-metadata, starts the Next.js app and local VM worker, then executes Playwright.
+metadata, starts the Next.js app, then executes Playwright. Worker integration
+is covered separately by deployed dev smoke verification.
 The database must already be reachable via `MONGODB_URI`.
 `apps/e2e/.env.local` must define `E2E_USER_USERNAME`, `E2E_USER_PASSWORD`,
 `E2E_ADMIN_USERNAME`, and `E2E_ADMIN_PASSWORD`; use

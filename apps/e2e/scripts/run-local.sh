@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 E2E_DIR="$ROOT_DIR/apps/e2e"
 WEB_DIR="$ROOT_DIR/apps/web"
-VM_WORKER_DIR="$ROOT_DIR/apps/vm-worker"
 LOG_DIR="$E2E_DIR/.logs"
 
 mkdir -p "$LOG_DIR"
@@ -45,10 +44,9 @@ wait_for_http() {
 }
 
 stop_existing_local_stack() {
-  log "Stopping any existing local Next.js dev server and worker processes."
+  log "Stopping any existing local Next.js dev server processes."
   pkill -f "$WEB_DIR/node_modules/.bin/next dev" >/dev/null 2>&1 || true
   pkill -f "next dev --hostname localhost --port 3000" >/dev/null 2>&1 || true
-  pkill -f "[m]ymediavault-vm-worker" >/dev/null 2>&1 || true
 }
 
 stop_managed_process() {
@@ -83,13 +81,6 @@ cleanup() {
   else
     log "Leaving existing Next.js dev server running because this run did not start it."
   fi
-  if [[ -n "${WORKER_PID:-}" ]]; then
-    log "Stopping worker started by this run (process group $WORKER_PID)."
-    stop_managed_process "$WORKER_PID" "worker"
-    wait "$WORKER_PID" >/dev/null 2>&1 || true
-  else
-    log "Leaving existing worker running because this run did not start it."
-  fi
   log "run-local.sh exiting with code $exit_code."
   exit "$exit_code"
 }
@@ -107,10 +98,6 @@ source_required_file "$E2E_DIR/.env.local"
 export MONGODB_URI="${MONGODB_URI:-mongodb://127.0.0.1:27017/mymediavault}"
 export MMV_MONGODB_DB_NAME="${MMV_MONGODB_DB_NAME:-mymediavault}"
 export E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:3000}"
-export MMV_PREVIEW_WORKER_ENABLED="${MMV_PREVIEW_WORKER_ENABLED:-false}"
-export MMV_METADATA_WORKER_ENABLED="${MMV_METADATA_WORKER_ENABLED:-true}"
-export MMV_METADATA_WORKER_POLL_INTERVAL_SECONDS="${MMV_METADATA_WORKER_POLL_INTERVAL_SECONDS:-0.5}"
-export MMV_TORRENT_DHT_FALLBACK_ENABLED="${MMV_TORRENT_DHT_FALLBACK_ENABLED:-false}"
 export R2_ENDPOINT=""
 export R2_ACCESS_KEY_ID=""
 export R2_SECRET_ACCESS_KEY=""
@@ -120,17 +107,6 @@ PLAYWRIGHT_ARGS=("$@")
 
 if [[ "${#PLAYWRIGHT_ARGS[@]}" -eq 0 ]]; then
   PLAYWRIGHT_ARGS+=(--project=user-chromium --project=header-chromium --project=admin-chromium)
-fi
-
-if [[ "${E2E_INCLUDE_MANUAL_TORRENT_TESTS:-}" != "1" ]]; then
-  PLAYWRIGHT_ARGS+=(--grep-invert "@manual-torrent")
-fi
-
-if [[ "${E2E_REQUIRE_HTTP_TORRENT_PROVIDER:-}" == "1" ]]; then
-  log "Manual torrent mode requested. Forcing MMV_TORRENT_PROVIDER=http."
-  export MMV_TORRENT_PROVIDER="http"
-else
-  export MMV_TORRENT_PROVIDER="fake"
 fi
 
 if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]]; then
@@ -155,18 +131,6 @@ if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! curl -fsS "$E2E_BASE_URL" >/
   log "Started Next.js dev server with pid $FRONTEND_PID."
 else
   log "Reusing existing Next.js dev server at $E2E_BASE_URL."
-fi
-
-if [[ "${E2E_FORCE_STACK_RESTART:-}" == "1" ]] || ! pgrep -f "[m]ymediavault-vm-worker" >/dev/null 2>&1; then
-  log "Starting VM worker. Logs: $LOG_DIR/worker.log"
-  (
-    cd "$VM_WORKER_DIR"
-    exec setsid uv run mymediavault-vm-worker
-  ) >"$LOG_DIR/worker.log" 2>&1 &
-  WORKER_PID=$!
-  log "Started VM worker with pid $WORKER_PID."
-else
-  log "Reusing existing VM worker process."
 fi
 
 log "Waiting for frontend at $E2E_BASE_URL."

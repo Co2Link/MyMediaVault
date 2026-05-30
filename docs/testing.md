@@ -37,8 +37,9 @@ uv run pytest
 owns long-running metadata polling, resolver/DHT fallback, retry scheduling, and
 preview generation.
 
-`apps/e2e/scripts/run-local.sh` starts the Next.js app and local VM worker on
-top of the local MongoDB/Cosmos stack.
+`apps/e2e/scripts/run-local.sh` starts the Next.js app on top of the local
+MongoDB/Cosmos stack. Worker integration is covered separately by deployed dev
+smoke verification.
 
 ## End-to-End
 
@@ -49,8 +50,7 @@ npm run test:local
 
 Playwright tests cover the authenticated header/account menu, add-video with
 actor and tag selection, detail-page actor/tag editing, collection search, and
-admin actor/tag flows against the Next.js app plus local VM worker. Separate setup
-projects log in
+admin actor/tag flows against the Next.js app. Separate setup projects log in
 through Entra for the normal user and admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
 real test-user credentials in `apps/e2e/.env.local`. Copy
@@ -109,8 +109,8 @@ The local test harness sources `apps/web/.env.local` and `apps/e2e/.env.local`.
 The deployed-dev smoke harness sources `apps/web/.env.local` and
 `apps/e2e/.env.dev`. Use
 `apps/e2e/.env.example` as the template for e2e variables. The tables below
-list the test-specific variables; the web and VM worker variables documented in
-their own docs are also required for local or deployed worker verification.
+list the test-specific variables. The web and VM worker variables documented in
+their own docs are also required for deployed worker verification.
 
 | Variable | Purpose |
 | --- | --- |
@@ -121,22 +121,15 @@ their own docs are also required for local or deployed worker verification.
 | `E2E_BASE_URL` | App under test base URL. Defaults to `http://localhost:3000` locally. |
 | `E2E_DEV_SMOKE_INFO_HASH` | Overrides the dev smoke torrent hash. |
 | `E2E_DEV_SMOKE_PREVIEW_TIMEOUT_MS` | Optional preview-generation timeout for deployed-dev smoke. Defaults to `600000`. |
-| `E2E_INCLUDE_MANUAL_TORRENT_TESTS` | Keeps the `@manual-torrent` cases in local runs. |
 | `E2E_FORCE_STACK_RESTART` | Restarts the local stack and clears auth state. |
-| `E2E_REQUIRE_HTTP_TORRENT_PROVIDER` | Forces `MMV_TORRENT_PROVIDER=http` locally. |
 | `DEV_SMOKE_COMMIT_SHA` | Commit SHA checked by the dev smoke script. |
 | `MONGODB_URI` | Database connection for local and dev-smoke runs. |
 | `MMV_MONGODB_DB_NAME` | Local-stack database name. |
-| `MMV_TORRENT_PROVIDER` | Local torrent provider mode. |
-| `MMV_TORRENT_RESOLVER_URLS` | Local HTTP resolver URLs. |
-| `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | Local HTTP fetch timeout. |
-| `MMV_PREVIEW_WORKER_ENABLED` | Local switch for preview processing. Defaults to `false` in local e2e. |
-| `MMV_METADATA_WORKER_ENABLED` | Local switch for metadata processing. Defaults to `true` in local e2e. |
 | `R2_ENDPOINT` | Local R2 endpoint when you want remote blob storage. |
 | `R2_ACCESS_KEY_ID` | Local R2 access key ID. |
 | `R2_SECRET_ACCESS_KEY` | Local R2 secret access key. |
 | `R2_BUCKET_NAME` | Local R2 bucket name. |
-| `OPENAI_API_KEY` | Required when local preview processing is enabled. |
+| `OPENAI_API_KEY` | Required by deployed preview processing. |
 | `HEALTH_URL` | Optional local health-check URL. |
 
 ## Infrastructure Checks
