@@ -24,6 +24,7 @@ export function TorrentAdminPanel({
               </p>
               <VideoPreviewGallery
                 artifactBasePath={`/api/admin/torrents/${torrent.id}/preview`}
+                defaultOpen={false}
                 preview={torrent.preview}
               />
               <details className="admin-diagnostics">

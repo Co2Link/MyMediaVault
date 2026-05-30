@@ -66,6 +66,8 @@ application.
   private R2 object keys are never exposed as public URLs.
 - Collection, detail, and admin preview images use consistent full-size
   lightbox navigation with prominent side-aligned previous/next controls.
+  Torrent previews render expanded by default on video detail pages and
+  collapsed by default on the admin torrent management page.
   Detail torrent file folders render collapsed by default so long file lists do
   not dominate the page.
 
