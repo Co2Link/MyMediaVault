@@ -81,7 +81,7 @@ EnvironmentFile=/etc/mymediavault/vm-worker.env
 ExecStartPre=/usr/bin/install -d -m 750 -o 10001 -g 10001 /var/log/mymediavault/vm-worker
 ExecStartPre=-/usr/bin/docker rm -f mymediavault-vm-worker
 ExecStartPre=/usr/bin/docker pull ${MMV_VM_WORKER_IMAGE}
-ExecStart=/usr/bin/docker run --rm --name mymediavault-vm-worker --env-file /etc/mymediavault/vm-worker.env --mount type=bind,source=/var/log/mymediavault/vm-worker,target=/var/log/mymediavault/vm-worker ${MMV_VM_WORKER_IMAGE}
+ExecStart=/usr/bin/docker run --rm --name mymediavault-vm-worker --publish 6881:6881/tcp --publish 6881:6881/udp --env-file /etc/mymediavault/vm-worker.env --mount type=bind,source=/var/log/mymediavault/vm-worker,target=/var/log/mymediavault/vm-worker ${MMV_VM_WORKER_IMAGE}
 ExecStop=/usr/bin/docker stop mymediavault-vm-worker
 Restart=always
 RestartSec=10
@@ -97,6 +97,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now mymediavault-vm-worker
 sudo systemctl status mymediavault-vm-worker
 ```
+
+Allow inbound TCP and UDP port `6881` through the VM host firewall and cloud
+network security rules. The published ports let libtorrent accept peer
+connections and DHT traffic through the worker container.
 
 Logs:
 

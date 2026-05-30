@@ -6,7 +6,8 @@ services:
       context: ..
       dockerfile: .devcontainer/Dockerfile
     ports:
-      - "4500:4500" # For codex app-server
+      - "6881:6881/tcp" # For libtorrent peer connections
+      - "6881:6881/udp" # For libtorrent DHT and UDP traffic
     volumes:
       - ../..:/workspaces:cached
       - claude:/home/vscode/.claude

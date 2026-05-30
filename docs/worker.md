@@ -55,7 +55,7 @@ VM worker environment:
 | `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
 | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
-| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `300`. |
+| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `600`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
 | `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
@@ -104,7 +104,7 @@ does not require Auth.js or Entra variables.
 | `MMV_PREVIEW_MAX_ATTEMPTS` | Maximum automatic preview attempts. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
 | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
-| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `300`. |
+| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `600`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
 | `MMV_VM_WORKER_DEBUG_LOG_RETENTION` | Debug log retention period. Defaults to `7 days`. |
@@ -151,6 +151,9 @@ includes Python 3.13, `libtorrent`, `ffmpeg`, and `ffprobe`, runs the
 application as a non-root user, and is published by the dev workflow with the
 `-vm-worker:<commit-sha>` suffix for `linux/amd64` and `linux/arm64`. The VM
 service stores the full image reference in `/etc/mymediavault/vm-worker.env`.
+Publish TCP and UDP port `6881` from the worker container, and allow both
+protocols through the VM host firewall and cloud network security rules so
+libtorrent can accept peer connections and DHT traffic.
 Docker stdout/stderr remains at `INFO` for routine service logs. The worker also
 writes redacted `DEBUG` logs as JSON Lines. Native local runs write to
 `.local/logs/vm-worker-debug.log` by default; the Docker image sets
