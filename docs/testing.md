@@ -106,7 +106,7 @@ out of normal local runs.
 ## Environment Variables
 
 The local test harness sources `apps/web/.env.local` and `apps/e2e/.env.local`.
-The deployed-dev smoke harness sources `apps/web/.env.local` and
+The deployed-dev smoke harness sources `apps/web/.env.dev` and
 `apps/e2e/.env.dev`. Use
 `apps/e2e/.env.example` as the template for e2e variables. The tables below
 list the test-specific variables. The web and VM worker variables documented in

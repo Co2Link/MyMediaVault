@@ -114,8 +114,11 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
     await expect(page.getByRole("status")).toContainText("Metadata ready");
     const previewDisclosure = page.getByText("Torrent preview");
     await expect(previewDisclosure).toBeVisible();
-    await previewDisclosure.click();
-    await expect(page.getByAltText("Torrent preview sheet")).toBeVisible();
+    const previewSheet = page.getByAltText("Torrent preview sheet");
+    if (!(await previewSheet.isVisible())) {
+      await previewDisclosure.click();
+    }
+    await expect(previewSheet).toBeVisible();
     await expect(page.getByAltText(/^Torrent preview frame /).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "Torrent files" })).toBeVisible();
     await expect(page.getByRole("listitem").first()).toBeVisible();

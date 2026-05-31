@@ -65,7 +65,7 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-source_optional_file "$WEB_DIR/.env.local"
+source_optional_file "$WEB_DIR/.env.dev"
 source_optional_file "$E2E_DIR/.env.dev"
 
 export MMV_PREVIEW_TARGET_FRAMES="${MMV_PREVIEW_TARGET_FRAMES:-3}"
