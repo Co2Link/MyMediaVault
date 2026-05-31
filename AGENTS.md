@@ -19,7 +19,7 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 
 ## Project Structure & Module Organization
 
-MyMediaVault is a video collection manager monorepo. Main code lives under `apps/`: `apps/web` is the Next.js full-stack application, `apps/worker` is the Container Apps worker job, and `apps/e2e` contains Playwright tests. Shared domain, database, storage, and torrent logic lives in `packages/core`. Infrastructure lives in `infra/terraform`; architecture and decisions live in `docs`.
+MyMediaVault is a video collection manager monorepo. Main code lives under `apps/`: `apps/web` is the Next.js full-stack application, `apps/vm-worker` is the long-running metadata and preview worker, and `apps/e2e` contains Playwright tests. Shared domain, database, storage, and torrent logic lives in `packages/core`. Infrastructure lives in `infra/terraform`; architecture and decisions live in `docs`.
 
 ## Build, Test, and Development Commands
 

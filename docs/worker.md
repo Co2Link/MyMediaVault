@@ -18,7 +18,11 @@ Metadata resolution attempts configured HTTP `.torrent` resolvers first for a
 fast path, trying all configured resolvers in each attempt. Transient failures
 are retried with explicit delays of 1, 2, 4, 8, 16, and 32 minutes. Permanent
 failures remain failed until an admin or maintenance action manually requeues
-metadata. DHT/qBittorrent-like metadata fetching is the fallback path after HTTP
+metadata. Expired processing leases are automatically returned to pending
+state, and unexpected per-torrent failures are recorded as transient failures
+without stopping the metadata loop. Metadata claims run with bounded
+concurrency so slow DHT lookups do not block unrelated metadata rows.
+DHT/qBittorrent-like metadata fetching is the fallback path after HTTP
 resolvers fail.
 
 Run locally:
@@ -42,13 +46,14 @@ VM worker environment:
 | `R2_BUCKET_NAME` | R2 bucket for raw torrents and preview artifacts. |
 | `OPENAI_API_KEY` | Required by the preview ranking path. |
 | `MMV_METADATA_WORKER_ENABLED` | Enables the metadata pipeline. |
+| `MMV_METADATA_WORKER_MAX_CONCURRENCY` | Maximum concurrent metadata tasks. Defaults to `10`. |
 | `MMV_PREVIEW_WORKER_ENABLED` | Enables the preview pipeline. |
 | `MMV_TORRENT_PROVIDER` | `http` for resolver/DHT processing, or `fake` for deterministic local metadata. |
 | `MMV_TORRENT_RESOLVER_URLS` | JSON list of HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | Per-resolver HTTP timeout. |
 | `MMV_TORRENT_METADATA_RETRY_DELAYS_SECONDS` | JSON list of transient retry delays. |
 | `MMV_TORRENT_DHT_FALLBACK_ENABLED` | Enables libtorrent DHT metadata fallback. |
-| `MMV_TORRENT_DHT_TIMEOUT_SECONDS` | DHT metadata fallback timeout. |
+| `MMV_TORRENT_DHT_TIMEOUT_SECONDS` | DHT metadata fallback timeout. Defaults to `600`. |
 | `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` | Maximum concurrent preview tasks. |
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle preview polling interval. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
@@ -86,13 +91,14 @@ does not require Auth.js or Entra variables.
 | `MMV_MONGODB_DB_NAME` | Worker database name. |
 | `MMV_MONGODB_SERVER_SELECTION_TIMEOUT_MS` | Mongo driver server-selection timeout. |
 | `MMV_METADATA_WORKER_ENABLED` | Enables the metadata pipeline. |
+| `MMV_METADATA_WORKER_MAX_CONCURRENCY` | Maximum concurrent metadata tasks. Defaults to `10`. |
 | `MMV_PREVIEW_WORKER_ENABLED` | Enables the preview pipeline. |
 | `MMV_TORRENT_PROVIDER` | `http` for resolver/DHT processing, or `fake` for deterministic local metadata. |
 | `MMV_TORRENT_RESOLVER_URLS` | HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | HTTP torrent fetch timeout. |
 | `MMV_TORRENT_METADATA_RETRY_DELAYS_SECONDS` | JSON list of transient metadata retry delays. |
 | `MMV_TORRENT_DHT_FALLBACK_ENABLED` | Enables libtorrent DHT metadata fallback. |
-| `MMV_TORRENT_DHT_TIMEOUT_SECONDS` | DHT fallback timeout. |
+| `MMV_TORRENT_DHT_TIMEOUT_SECONDS` | DHT fallback timeout. Defaults to `600`. |
 | `R2_ENDPOINT` | Cloudflare R2 S3-compatible endpoint. |
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 access key ID. |
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 secret access key. |

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from loguru import logger
@@ -21,11 +23,15 @@ from torrent_preview import (
 )
 
 from mymediavault_vm_worker import (
+    DhtTorrentMetadataResolver,
     FakeTorrentMetadataResolver,
+    MetadataWorker,
     MongoPreviewJobLease,
     MongoPreviewJobSource,
     PreviewWorkerSettings,
+    Torrent,
     _configure_vm_worker_logging,
+    _fake_torrent_payload,
     _preview_next_attempt_at,
     _success_update,
     parse_torrent,
@@ -72,6 +78,8 @@ def test_settings_allow_metadata_only_without_openai_api_key(monkeypatch: pytest
 
     assert settings.metadata_worker_enabled is True
     assert settings.preview_worker_enabled is False
+    assert settings.metadata_worker_max_concurrency == 10
+    assert settings.metadata_dht_timeout_seconds == 600
 
 
 def test_fake_metadata_resolver_returns_valid_torrent_payload() -> None:
@@ -85,6 +93,194 @@ def test_fake_metadata_resolver_returns_valid_torrent_payload() -> None:
         {"path": "Fake Torrent abcdef01", "sizeBytes": 1048576, "position": 0}
     ]
     assert metadata["resolverDiagnostics"] == [{"url": "fake", "kind": "success"}]
+
+
+def test_dht_metadata_resolver_uses_supported_libtorrent_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeHandle:
+        @staticmethod
+        def has_metadata() -> bool:
+            return True
+
+        @staticmethod
+        def torrent_file() -> object:
+            return object()
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.params: dict[str, object] | None = None
+
+        def add_torrent(self, params: dict[str, object]) -> FakeHandle:
+            self.params = params
+            return FakeHandle()
+
+        @staticmethod
+        def remove_torrent(handle: FakeHandle) -> None:
+            del handle
+
+        @staticmethod
+        def pop_alerts() -> list[object]:
+            return []
+
+    session = FakeSession()
+    raw = _fake_torrent_payload("DHT Torrent")
+    monkeypatch.setitem(
+        sys.modules,
+        "libtorrent",
+        SimpleNamespace(
+            session=lambda settings: session,
+            create_torrent=lambda torrent_info: SimpleNamespace(
+                generate=lambda: object()
+            ),
+            bencode=lambda generated: raw,
+        ),
+    )
+
+    metadata = DhtTorrentMetadataResolver(timeout_seconds=10)._fetch_sync(
+        "abcdef0123456789abcdef0123456789abcdef01"
+    )
+
+    assert metadata["name"] == "DHT Torrent"
+    assert session.params is not None
+    assert session.params["save_path"]
+    assert "paused" not in session.params
+    assert "upload_mode" not in session.params
+
+
+def test_metadata_worker_repairs_expired_processing_leases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeCollection:
+        def __init__(self) -> None:
+            self.query: dict[str, object] | None = None
+            self.update: dict[str, object] | None = None
+
+        async def update_many(
+            self, query: dict[str, object], update: dict[str, object]
+        ) -> SimpleNamespace:
+            self.query = query
+            self.update = update
+            return SimpleNamespace(modified_count=1)
+
+    collection = FakeCollection()
+    monkeypatch.setattr(Torrent, "get_pymongo_collection", lambda: collection)
+    worker = MetadataWorker(
+        settings=PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            preview_worker_enabled=False,
+            _env_file=None,
+        ),
+        blob_store=object(),
+    )
+
+    asyncio.run(worker._repair_stale_processing())
+
+    assert collection.query is not None
+    assert collection.query["metadataStatus"] == "processing"
+    assert isinstance(collection.query["$or"], list)
+    assert {"metadataLeaseUntil": None} in collection.query["$or"]
+    assert {"metadataLeaseUntil": {"$exists": False}} in collection.query["$or"]
+    assert any(
+        isinstance(item.get("metadataLeaseUntil"), dict)
+        and isinstance(item["metadataLeaseUntil"].get("$lt"), datetime)
+        for item in collection.query["$or"]
+    )
+    assert collection.update == {
+        "$set": {
+            "metadataStatus": "pending",
+            "metadataError": "Metadata processing lease expired and was requeued.",
+            "metadataNextAttemptAt": None,
+            "metadataLeaseUntil": None,
+        }
+    }
+
+
+def test_metadata_worker_claims_only_pending_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeCollection:
+        def __init__(self) -> None:
+            self.query: dict[str, object] | None = None
+
+        async def find_one_and_update(
+            self, query: dict[str, object], *args: object, **kwargs: object
+        ) -> None:
+            self.query = query
+
+    collection = FakeCollection()
+    monkeypatch.setattr(Torrent, "get_pymongo_collection", lambda: collection)
+    worker = MetadataWorker(
+        settings=PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            preview_worker_enabled=False,
+            _env_file=None,
+        ),
+        blob_store=object(),
+    )
+
+    assert asyncio.run(worker._claim_one()) is None
+    assert collection.query is not None
+    assert collection.query["metadataStatus"] == "pending"
+
+
+def test_metadata_worker_contains_unexpected_job_errors() -> None:
+    worker = MetadataWorker(
+        settings=PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            preview_worker_enabled=False,
+            _env_file=None,
+        ),
+        blob_store=object(),
+    )
+    torrent = SimpleNamespace(id="torrent-1")
+    worker._repair_stale_processing = AsyncMock()  # type: ignore[method-assign]
+    worker._claim_one = AsyncMock(return_value=torrent)  # type: ignore[method-assign]
+    worker._process = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+
+    async def fail(claimed: object, error: Exception) -> None:
+        assert claimed is torrent
+        assert str(error) == "Unexpected metadata processing failure."
+
+    worker._fail = AsyncMock(side_effect=fail)  # type: ignore[method-assign]
+
+    asyncio.run(worker._run_claimed(torrent))  # type: ignore[arg-type]
+
+    worker._fail.assert_awaited_once()
+
+
+def test_metadata_worker_limits_concurrent_jobs() -> None:
+    worker = MetadataWorker(
+        settings=PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            preview_worker_enabled=False,
+            metadata_worker_max_concurrency=10,
+            _env_file=None,
+        ),
+        blob_store=object(),
+    )
+    jobs = [SimpleNamespace(id=f"torrent-{index}") for index in range(11)]
+    blocker = asyncio.Event()
+    started: list[object] = []
+    worker._repair_stale_processing = AsyncMock()  # type: ignore[method-assign]
+    worker._claim_one = AsyncMock(side_effect=jobs)  # type: ignore[method-assign]
+
+    async def run_claimed(claimed: object) -> None:
+        started.append(claimed)
+        await blocker.wait()
+
+    worker._run_claimed = AsyncMock(side_effect=run_claimed)  # type: ignore[method-assign]
+
+    async def run_until_full() -> None:
+        task = asyncio.create_task(worker.run())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert len(started) == 10
+        assert worker._claim_one.await_count == 10
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(run_until_full())
 
 
 def test_settings_reject_unsupported_target_frames() -> None:

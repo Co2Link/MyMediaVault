@@ -55,6 +55,8 @@ DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
 DEFAULT_METADATA_RETRY_DELAYS_SECONDS = (60, 120, 240, 480, 960, 1920)
 DEFAULT_METADATA_LEASE_SECONDS = 1800
+DEFAULT_METADATA_MAX_CONCURRENCY = 10
+DEFAULT_METADATA_DHT_TIMEOUT_SECONDS = 600
 REDACTED_LOG_VALUE = "[redacted]"
 SENSITIVE_LOG_KEYS = {
     "authorization",
@@ -140,6 +142,10 @@ class PreviewWorkerSettings(BaseSettings):
     metadata_worker_poll_interval_seconds: float = Field(
         default=5.0, alias="MMV_METADATA_WORKER_POLL_INTERVAL_SECONDS"
     )
+    metadata_worker_max_concurrency: int = Field(
+        default=DEFAULT_METADATA_MAX_CONCURRENCY,
+        alias="MMV_METADATA_WORKER_MAX_CONCURRENCY",
+    )
     metadata_fetch_timeout_seconds: int = Field(
         default=20, alias="MMV_TORRENT_FETCH_TIMEOUT_SECONDS"
     )
@@ -159,7 +165,8 @@ class PreviewWorkerSettings(BaseSettings):
         default=True, alias="MMV_TORRENT_DHT_FALLBACK_ENABLED"
     )
     metadata_dht_timeout_seconds: int = Field(
-        default=180, alias="MMV_TORRENT_DHT_TIMEOUT_SECONDS"
+        default=DEFAULT_METADATA_DHT_TIMEOUT_SECONDS,
+        alias="MMV_TORRENT_DHT_TIMEOUT_SECONDS",
     )
     torrent_provider: str = Field(default="http", alias="MMV_TORRENT_PROVIDER")
 
@@ -474,8 +481,6 @@ class DhtTorrentMetadataResolver:
                 {
                     "url": f"magnet:?xt=urn:btih:{normalized}",
                     "save_path": temp_dir,
-                    "upload_mode": True,
-                    "paused": False,
                 }
             )
             deadline = datetime.now(UTC) + timedelta(seconds=self._timeout_seconds)
@@ -490,9 +495,9 @@ class DhtTorrentMetadataResolver:
                     ]
                     session.remove_torrent(handle)
                     return metadata
-                alert = session.pop_alert()
-                if alert is not None and "metadata" in str(alert).lower():
-                    logger.debug("DHT metadata alert: {}", alert)
+                for alert in session.pop_alerts():
+                    if "metadata" in str(alert).lower():
+                        logger.debug("DHT metadata alert: {}", alert)
                 import time
 
                 time.sleep(1)
@@ -520,6 +525,7 @@ class MetadataWorker:
         )
         self._retry_delays_seconds = settings.metadata_retry_delays_seconds
         self._lease_seconds = max(60, settings.metadata_lease_seconds)
+        self._max_concurrency = max(1, settings.metadata_worker_max_concurrency)
         self._resolver = (
             FakeTorrentMetadataResolver()
             if settings.torrent_provider == "fake"
@@ -539,15 +545,54 @@ class MetadataWorker:
 
     async def run(self) -> None:
         logger.info(
-            "Metadata worker started with retry_delays_seconds={}",
+            "Metadata worker started with metadata_max_concurrency={} retry_delays_seconds={}",
+            self._max_concurrency,
             self._retry_delays_seconds,
         )
-        while not self._stopping:
-            claimed = await self._claim_one()
-            if claimed is None:
-                await asyncio.sleep(self._poll_interval_seconds)
-                continue
+        tasks: set[asyncio.Task[None]] = set()
+        try:
+            while not self._stopping:
+                await self._repair_stale_processing()
+                while len(tasks) < self._max_concurrency:
+                    claimed = await self._claim_one()
+                    if claimed is None:
+                        break
+                    tasks.add(
+                        asyncio.create_task(
+                            self._run_claimed(claimed),
+                            name=f"metadata:{claimed.id}",
+                        )
+                    )
+                if not tasks:
+                    await asyncio.sleep(self._poll_interval_seconds)
+                    continue
+                done, tasks = await asyncio.wait(
+                    tasks,
+                    timeout=self._poll_interval_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in done:
+                    task.result()
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _run_claimed(self, claimed: Torrent) -> None:
+        try:
             await self._process(claimed)
+        except Exception:
+            logger.exception(
+                "Unexpected metadata processing failure for torrent {}",
+                claimed.id,
+            )
+            await self._fail(
+                claimed,
+                MetadataResolutionError(
+                    "Unexpected metadata processing failure.",
+                    failure_kind="transient",
+                ),
+            )
 
     def stop(self) -> None:
         self._stopping = True
@@ -557,7 +602,7 @@ class MetadataWorker:
         lease_until = now + timedelta(seconds=self._lease_seconds)
         document = await Torrent.get_pymongo_collection().find_one_and_update(
             {
-                "metadataStatus": {"$in": ["pending", "failed"]},
+                "metadataStatus": "pending",
                 "$and": [
                     {
                         "$or": [
@@ -589,6 +634,29 @@ class MetadataWorker:
             return_document=ReturnDocument.AFTER,
         )
         return Torrent.model_validate(document) if document else None
+
+    async def _repair_stale_processing(self) -> None:
+        now = datetime.now(UTC)
+        result = await Torrent.get_pymongo_collection().update_many(
+            {
+                "metadataStatus": "processing",
+                "$or": [
+                    {"metadataLeaseUntil": None},
+                    {"metadataLeaseUntil": {"$lt": now}},
+                    {"metadataLeaseUntil": {"$exists": False}},
+                ],
+            },
+            {
+                "$set": {
+                    "metadataStatus": "pending",
+                    "metadataError": "Metadata processing lease expired and was requeued.",
+                    "metadataNextAttemptAt": None,
+                    "metadataLeaseUntil": None,
+                }
+            },
+        )
+        if result.modified_count:
+            logger.info("Requeued {} stale metadata jobs", result.modified_count)
 
     async def _process(self, torrent: Torrent) -> None:
         try:
