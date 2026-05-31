@@ -33,7 +33,8 @@ application.
 - `/auth/sign-in`: explicit sign-in page.
 - `/api/auth/[...nextauth]`: Auth.js handler.
 - `/api/health`: deployment health check.
-- `/api/me/photo`: Microsoft Graph avatar lookup.
+- `/api/me/photo`: Microsoft Graph avatar lookup with an initial-based SVG
+  fallback when Graph does not return a profile photo.
 - `/api/actors/[id]/image`: authenticated actor profile-image proxy for
   private blob-store objects.
 - `/api/videos/[id]/preview/[artifact]`: authenticated preview artifact proxy
