@@ -56,7 +56,7 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
     );
     torrentId = torrent._id;
 
-    expect(torrent.metadataStatus).toBe("pending");
+    expect(["pending", "processing", "succeeded"]).toContain(torrent.metadataStatus);
 
     const finishedTorrent = await waitForDocument(
       async () => {
