@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ActorLinks } from "@/components/actor-links";
 import { MetadataStatusBadge } from "@/components/metadata-status";
+import { TagLinks } from "@/components/tag-links";
 import { VideoPreviewGallery } from "@/components/video-preview-gallery";
 import { listActors } from "@/lib/actors";
 import { getVideoById } from "@/lib/videos";
@@ -47,7 +48,9 @@ export default async function VideoDetailPage({
           </div>
           <div>
             <dt>Tags</dt>
-            <dd>{video.tags.length ? video.tags.map((tag) => tag.name).join(", ") : "None"}</dd>
+            <dd>
+              <TagLinks tags={video.tags} />
+            </dd>
           </div>
         </dl>
         <VideoDetailForm actors={actors} tags={tags} video={video} />

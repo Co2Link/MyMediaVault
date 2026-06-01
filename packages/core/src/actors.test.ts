@@ -129,6 +129,18 @@ describe("actors", () => {
     );
   });
 
+  it("returns an actor by id", async () => {
+    const { getActorById } = await import("./actors.js");
+
+    await expect(getActorById("actor-1")).resolves.toMatchObject({ id: "actor-1", name: "Jane Actor" });
+  });
+
+  it("rejects an unknown actor id", async () => {
+    const { getActorById } = await import("./actors.js");
+
+    await expect(getActorById("missing-actor")).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("updates actor details and replaces the profile image", async () => {
     const { updateActor } = await import("./actors.js");
 

@@ -25,7 +25,10 @@ application.
 
 - `/`: the signed-in user collection with search.
 - `/add`: add a video by torrent info hash and assign existing actors and tags.
-- `/actors/[id]`: view the shared actor profile, description, and profile image.
+- `/actors/[id]`: view the shared actor profile, description, profile image, and
+  signed-in user's videos featuring the actor through detected or manual
+  attribution.
+- `/tags/[id]`: view the signed-in user's videos assigned a shared catalog tag.
 - `/videos/[id]`: view detected actors, edit manual actors/tags, and delete
   private video details.
 - `/admin/actors`: admin-only actor catalog management.
@@ -75,6 +78,9 @@ application.
   collapsed by default on the admin torrent management page.
   Detail torrent file folders render collapsed by default so long file lists do
   not dominate the page.
+- Read-only tags on collection cards, actor and tag result cards, and video
+  detail pages link to tag result pages. Actor and tag result pages list only
+  the signed-in user's private collection in newest-first order.
 
 ## Worker Boundary
 

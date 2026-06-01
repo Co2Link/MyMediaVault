@@ -13,6 +13,18 @@ export async function listTags() {
     }));
 }
 
+export async function getTagById(id: string) {
+  await connectMongo();
+  const tag = await TagModel.findById(id).lean().exec();
+  if (!tag) {
+    throw new NotFoundError("Tag was not found.");
+  }
+  return {
+    id: tag._id,
+    name: tag.name,
+  } satisfies TagRead;
+}
+
 export async function createTag(name: string) {
   await connectMongo();
   const normalized = normalizeName(name);

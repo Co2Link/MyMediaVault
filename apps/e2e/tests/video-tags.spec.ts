@@ -57,6 +57,7 @@ test("user can assign and edit video tags and actors", async ({ browser, page })
 
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await expect(page.getByRole("link", { name: actorName })).toBeVisible();
+  await expect(page.getByRole("link", { name: tagName })).toBeVisible();
   await expect(page.getByLabel(actorName)).toBeChecked();
   await expect(page.getByLabel(tagName)).toBeChecked();
 
@@ -67,6 +68,25 @@ test("user can assign and edit video tags and actors", async ({ browser, page })
   await TorrentModel.updateOne({ infoHash }, { $set: { systemActorIds: [actor._id] } }).exec();
   await page.reload();
   await expect(page.getByRole("group", { name: "Detected actors" }).getByText(actorName)).toBeVisible();
+
+  await page.getByRole("link", { name: tagName }).click();
+  await expect(page).toHaveURL(/\/tags\/[^/]+$/);
+  await expect(page.getByRole("heading", { name: tagName })).toBeVisible();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  await page.getByRole("link", { name: actorName }).click();
+  await expect(page).toHaveURL(/\/actors\/[^/]+$/);
+  await expect(page.getByRole("heading", { name: actorName })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Videos featuring this actor" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  await page.getByRole("link", { name: "Collection" }).click();
+  await page.getByLabel("Search videos").fill(title);
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: tagName }).click();
+  await expect(page).toHaveURL(/\/tags\/[^/]+$/);
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.getByRole("link", { name: "View details" }).click();
 
   await page.getByLabel(actorName).uncheck();
   await page.getByLabel(tagName).uncheck();

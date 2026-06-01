@@ -1,8 +1,10 @@
 import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { VideoCard } from "@/components/video-card";
 import { AppError } from "@/lib/errors";
 import { getActorById } from "@/lib/actors";
+import { listVideosByActor } from "@/lib/videos";
 
 export default async function ActorProfilePage({
   params,
@@ -16,8 +18,9 @@ export default async function ActorProfilePage({
 
   const { id } = await params;
   let actor;
+  let videos;
   try {
-    actor = await getActorById(id);
+    [actor, videos] = await Promise.all([getActorById(id), listVideosByActor(session.user.id, id)]);
   } catch (error) {
     if (error instanceof AppError) {
       notFound();
@@ -46,6 +49,18 @@ export default async function ActorProfilePage({
           <p className="eyebrow">Actor</p>
           <h1>{actor.name}</h1>
           <p className="muted-copy">{actor.description ?? "No description has been added."}</p>
+        </div>
+      </section>
+      <section>
+        <h2>Videos featuring this actor</h2>
+        <div className="content-grid">
+          {videos.length === 0 ? (
+            <div className="empty-panel">
+              <h3>No videos in your collection contain this actor.</h3>
+            </div>
+          ) : (
+            videos.map((video) => <VideoCard key={video.id} video={video} />)
+          )}
         </div>
       </section>
     </main>

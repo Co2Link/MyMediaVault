@@ -41,8 +41,7 @@ type VideoRecord = {
 export async function searchVideos(userId: string, query?: string) {
   await connectMongo();
   const normalizedQuery = query?.trim().toLowerCase();
-  const videos = (await VideoModel.find({ userId }).lean().exec()).sort(compareNewestVideoFirst);
-  const records = await hydrateVideos(videos);
+  const records = await listUserVideoRecords(userId);
 
   return records
     .filter((record) => {
@@ -58,6 +57,22 @@ export async function searchVideos(userId: string, query?: string) {
         ...record.actors.flatMap((actor) => [actor.name, actor.description]),
       ].some((value) => value?.toLowerCase().includes(normalizedQuery));
     })
+    .map(toVideoSummary);
+}
+
+export async function listVideosByActor(userId: string, actorId: string) {
+  await connectMongo();
+  const records = await listUserVideoRecords(userId);
+  return records
+    .filter((record) => record.actors.some((actor) => actor._id === actorId))
+    .map(toVideoSummary);
+}
+
+export async function listVideosByTag(userId: string, tagId: string) {
+  await connectMongo();
+  const records = await listUserVideoRecords(userId);
+  return records
+    .filter((record) => record.tags.some((tag) => tag._id === tagId))
     .map(toVideoSummary);
 }
 
@@ -376,6 +391,11 @@ async function hydrateVideos(videos: VideoDoc[]): Promise<VideoRecord[]> {
       },
     ];
   });
+}
+
+async function listUserVideoRecords(userId: string) {
+  const videos = (await VideoModel.find({ userId }).lean().exec()).sort(compareNewestVideoFirst);
+  return hydrateVideos(videos);
 }
 
 async function hydrateVideo(video: VideoDoc) {

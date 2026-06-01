@@ -104,6 +104,9 @@ const mocks = vi.hoisted(() => {
       }),
     },
     VideoModel: {
+      find: vi.fn((filter?: { userId?: string }) =>
+        query(state.videos.filter((video) => !filter?.userId || video.userId === filter.userId)),
+      ),
       findOne: vi.fn((filter?: { _id?: string; userId?: string; torrentId?: string }) =>
         query(
           state.videos.find(
@@ -353,4 +356,93 @@ describe("video tag persistence", () => {
     expect(video.systemActors.map((actor) => actor.id)).toEqual(["actor-1", "actor-2"]);
     expect(video.userActors.map((actor) => actor.id)).toEqual(["actor-2"]);
   });
+
+  it("lists the user's newest videos for both detected and manually assigned actors", async () => {
+    mocks.state.torrents = [
+      makeTorrent("torrent-1", { systemActorIds: ["actor-1"] }),
+      makeTorrent("torrent-2", { userActorIds: ["actor-1"] }),
+      makeTorrent("torrent-3", { userActorIds: ["actor-2"] }),
+    ];
+    mocks.state.videos = [
+      makeVideo("video-1", "user-1", "torrent-1", "2024-01-01T00:00:00Z"),
+      makeVideo("video-2", "user-1", "torrent-2", "2024-01-03T00:00:00Z"),
+      makeVideo("video-3", "user-2", "torrent-1", "2024-01-04T00:00:00Z"),
+      makeVideo("video-4", "user-1", "torrent-3", "2024-01-02T00:00:00Z"),
+    ];
+
+    const { listVideosByActor } = await import("./videos.js");
+
+    const videos = await listVideosByActor("user-1", "actor-1");
+
+    expect(videos.map((video) => video.id)).toEqual(["video-2", "video-1"]);
+  });
+
+  it("lists only the user's newest videos with a selected tag", async () => {
+    mocks.state.torrents = [
+      makeTorrent("torrent-1"),
+      makeTorrent("torrent-2"),
+      makeTorrent("torrent-3"),
+    ];
+    mocks.state.videos = [
+      makeVideo("video-1", "user-1", "torrent-1", "2024-01-01T00:00:00Z"),
+      makeVideo("video-2", "user-1", "torrent-2", "2024-01-03T00:00:00Z"),
+      makeVideo("video-3", "user-2", "torrent-3", "2024-01-04T00:00:00Z"),
+    ];
+    mocks.state.videoTags = [
+      { _id: "video-tag-1", videoId: "video-1", tagId: "tag-1", createdAt: new Date("2024-01-01T00:00:00Z") },
+      { _id: "video-tag-2", videoId: "video-2", tagId: "tag-1", createdAt: new Date("2024-01-01T00:00:00Z") },
+      { _id: "video-tag-3", videoId: "video-3", tagId: "tag-1", createdAt: new Date("2024-01-01T00:00:00Z") },
+    ];
+
+    const { listVideosByTag } = await import("./videos.js");
+
+    const videos = await listVideosByTag("user-1", "tag-1");
+
+    expect(videos.map((video) => video.id)).toEqual(["video-2", "video-1"]);
+  });
+
+  it("returns empty lists when the user's collection has no matching actor or tag", async () => {
+    mocks.state.torrents = [makeTorrent("torrent-1", { userActorIds: ["actor-1"] })];
+    mocks.state.videos = [makeVideo("video-1", "user-1", "torrent-1", "2024-01-01T00:00:00Z")];
+    mocks.state.videoTags = [
+      { _id: "video-tag-1", videoId: "video-1", tagId: "tag-1", createdAt: new Date("2024-01-01T00:00:00Z") },
+    ];
+
+    const { listVideosByActor, listVideosByTag } = await import("./videos.js");
+
+    await expect(listVideosByActor("user-1", "actor-2")).resolves.toEqual([]);
+    await expect(listVideosByTag("user-1", "tag-2")).resolves.toEqual([]);
+  });
 });
+
+function makeTorrent(id: string, actors: { systemActorIds?: string[]; userActorIds?: string[] } = {}) {
+  return {
+    _id: id,
+    infoHash: `${id}-hash`,
+    name: id,
+    sizeBytes: 123,
+    rawBlobKey: null,
+    metadataStatus: "succeeded",
+    metadataError: null,
+    metadataAttempts: 1,
+    metadataLastAttemptAt: null,
+    files: [],
+    systemActorIds: actors.systemActorIds ?? [],
+    userActorIds: actors.userActorIds ?? [],
+    createdAt: new Date("2024-01-01T00:00:00Z"),
+    updatedAt: new Date("2024-01-01T00:00:00Z"),
+  };
+}
+
+function makeVideo(id: string, userId: string, torrentId: string, createdAt: string) {
+  return {
+    _id: id,
+    userId,
+    torrentId,
+    title: id,
+    description: null,
+    rating: null,
+    createdAt: new Date(createdAt),
+    updatedAt: new Date(createdAt),
+  };
+}

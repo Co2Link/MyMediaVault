@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ActorLinks } from "@/components/actor-links";
 import { MetadataStatusBadge } from "@/components/metadata-status";
+import { TagLinks } from "@/components/tag-links";
 import { VideoPreviewCarousel } from "@/components/video-preview-carousel";
 import type { VideoSummary } from "@/lib/types";
 
@@ -28,7 +29,9 @@ export function VideoCard({ video }: { video: VideoSummary }) {
         </div>
         <div>
           <dt>Tags</dt>
-          <dd>{video.tags.length ? video.tags.map((tag) => tag.name).join(", ") : "None"}</dd>
+          <dd>
+            <TagLinks tags={video.tags} />
+          </dd>
         </div>
       </dl>
       <Link className="secondary-link" href={`/videos/${video.id}`}>
