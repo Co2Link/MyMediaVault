@@ -124,6 +124,7 @@ describe("actors", () => {
         name: "New Actor",
         description: "Description",
         profileImageMimeType: "image/png",
+        profileImageSource: "admin",
       }),
     );
   });
@@ -141,6 +142,21 @@ describe("actors", () => {
     expect(actor.description).toBeNull();
     expect(mocks.blobStore.putBytes).toHaveBeenCalledWith(expect.stringMatching(/^actors\/actor-1\/profile-.+\.webp$/), new Uint8Array([4]));
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("actors/actor-1/profile.jpg");
+    expect(mocks.models.ActorModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      "actor-1",
+      expect.objectContaining({
+        $set: expect.objectContaining({ profileImageSource: "admin" }),
+        $unset: {
+          profileImageVersion: "",
+          profileImageScore: "",
+          profileImageFlags: "",
+          profileImageSourceTorrentId: "",
+          profileImageSourceFrameKey: "",
+          profileImageUpdatedAt: "",
+        },
+      }),
+      { new: true },
+    );
   });
 
   it("deletes actor references and the profile image", async () => {

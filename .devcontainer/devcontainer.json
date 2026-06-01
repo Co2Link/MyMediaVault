@@ -30,7 +30,8 @@
 		"vscode": {
 			"extensions": [
 				"bierner.markdown-mermaid",
-				"mongodb.mongodb-vscode"
+				"mongodb.mongodb-vscode",
+				"lvdn.s3x-explorer"
 			]
 		}
 	}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend Dev UX Fix"
+  short_description: "Inspect, fix, deploy, and verify frontend UX"
+  default_prompt: "Use $frontend-dev-ux-fix to inspect the dev frontend, agree on UX fixes, deploy approved changes, and verify them."

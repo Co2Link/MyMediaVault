@@ -26,7 +26,8 @@ erDiagram
 - `torrents`: canonical torrent metadata keyed by unique normalized `infoHash`.
 - `actors`: shared actor catalog keyed by stable UUID with a unique actor name.
   Actor records store a name, optional description, private profile-image blob
-  metadata, versioned face centroids, and capped private exemplars.
+  metadata and provenance, versioned face centroids, and capped private
+  exemplars.
 - `videos`: user-owned collection item with private title, description, and
   rating; unique by `(userId, torrentId)`.
 - `tags`: global tag catalog keyed by unique tag name.
@@ -61,12 +62,16 @@ from every attribution source before deleting the actor's profile image blob.
 
 Worker-created actors use UUID IDs and default names such as `actor-<uuid>`.
 Admins may replace that name and profile image without changing identity.
-Automatic analysis never renames an existing actor or replaces its profile
-image. Each actor retains up to 12 SFace exemplars with at most two from any one
-torrent. The normalized centroid is recomputed whenever retained exemplars
-change. Exemplars and centroids are versioned by face-model recipe and remain
-private MongoDB fields. Torrent deletion preserves actor-owned evidence; only
-explicit actor deletion removes it.
+Automatic analysis never renames an existing actor or replaces an admin-managed
+profile image. It may replace a system-managed image with a meaningfully better
+deterministic crop. Actor profile metadata stores `profileImageSource`, the
+generated `profileImageVersion`, system score and compact flags, optional source
+torrent/frame provenance, and the profile update time. Admin uploads leave the
+generated version unset. Each actor retains up to 12 SFace exemplars with at
+most two from any one torrent. The normalized centroid is recomputed whenever
+retained exemplars change. Exemplars and centroids are versioned by face-model
+recipe and remain private MongoDB fields. Torrent deletion preserves
+actor-owned evidence; only explicit actor deletion removes it.
 
 ## Metadata State
 

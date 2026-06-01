@@ -11,12 +11,16 @@ from mymediavault_vm_worker.actor_analysis import (
     FaceCluster,
     FaceObservation,
     InMemoryActorIndex,
+    ProfileCandidate,
     TorrentAssignment,
     YuNetSFaceAnalyzer,
+    _profile_crop,
+    _profile_score,
     cosine_similarity,
     evaluate_fixture_partitions,
     normalize_embedding,
     normalized_mean,
+    profile_candidate_sort_key,
     select_main_clusters,
 )
 
@@ -156,6 +160,23 @@ def test_actor_exemplars_are_capped_per_torrent() -> None:
     assert len(index.actors[0].exemplars) == 2
 
 
+def test_assignment_keeps_one_profile_cluster_index_per_actor() -> None:
+    index = InMemoryActorIndex(config=ActorAnalysisConfig())
+    cluster = _cluster(
+        _observation("frame_001.jpg", (1.0, 0.0)),
+        _observation("frame_002.jpg", (0.99, 0.01)),
+    )
+
+    assignment = index.assign(
+        torrent_key="torrent-1",
+        clusters=[cluster, cluster],
+        detected_face_count=4,
+    )
+
+    assert assignment.actor_ids == ("actor-1",)
+    assert assignment.assigned_cluster_indices == (0,)
+
+
 def test_profile_crop_returns_square_jpeg(tmp_path: Path) -> None:
     frame_path = tmp_path / "frame.jpg"
     image = np.zeros((100, 160, 3), dtype=np.uint8)
@@ -170,7 +191,109 @@ def test_profile_crop_returns_square_jpeg(tmp_path: Path) -> None:
 
     decoded = cv2.imdecode(np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded is not None
-    assert decoded.shape[:2] == (256, 256)
+    assert decoded.shape[:2] == (512, 512)
+
+
+def test_profile_crop_targets_larger_face_composition() -> None:
+    image = np.full((240, 240, 3), 128, dtype=np.uint8)
+    observation = FaceObservation(
+        frame_key="frame.jpg",
+        embedding=normalize_embedding(np.array((1.0, 0.0), dtype=np.float32)),
+        detector_score=0.9,
+        quality_score=1.0,
+        box=(90, 90, 60, 60),
+    )
+
+    crop, _ = _profile_crop(image, observation)
+
+    assert crop.shape[:2] == (100, 100)
+
+
+def test_profile_candidate_rank_prefers_usable_frontal_face() -> None:
+    frontal = ProfileCandidate("frontal.jpg", b"", 1.5, (), {})
+    angled = ProfileCandidate("angled.jpg", b"", 2.0, ("non-frontal",), {})
+
+    assert profile_candidate_sort_key(frontal) > profile_candidate_sort_key(angled)
+
+
+def test_profile_candidates_include_relaxed_display_only_match(tmp_path: Path) -> None:
+    frame_paths_by_key: dict[str, Path] = {}
+    for frame_key in ("frame_001.jpg", "frame_002.jpg"):
+        frame_path = tmp_path / frame_key
+        assert cv2.imwrite(str(frame_path), np.full((240, 240, 3), 128, dtype=np.uint8))
+        frame_paths_by_key[frame_key] = frame_path
+    cluster_observation = FaceObservation(
+        frame_key="frame_001.jpg",
+        embedding=normalize_embedding(np.array((1.0, 0.0), dtype=np.float32)),
+        detector_score=0.9,
+        quality_score=1.0,
+        box=(90, 90, 60, 60),
+    )
+    relaxed_observation = FaceObservation(
+        frame_key="frame_002.jpg",
+        embedding=normalize_embedding(np.array((0.3, 0.954), dtype=np.float32)),
+        detector_score=0.9,
+        quality_score=1.0,
+        box=(80, 80, 80, 80),
+    )
+    analyzer = object.__new__(YuNetSFaceAnalyzer)
+    analyzer._config = ActorAnalysisConfig()
+
+    candidates = analyzer.profile_candidates(
+        frame_paths_by_key=frame_paths_by_key,
+        cluster=_cluster(cluster_observation),
+        observations=[cluster_observation, relaxed_observation],
+    )
+
+    assert {candidate.frame_key for candidate in candidates} == {
+        "frame_001.jpg",
+        "frame_002.jpg",
+    }
+
+
+def test_profile_score_penalizes_additional_face_in_final_crop() -> None:
+    image = np.full((180, 180, 3), 128, dtype=np.uint8)
+    primary = _observation("frame.jpg", (1.0, 0.0))
+    additional = FaceObservation(
+        frame_key="frame.jpg",
+        embedding=normalize_embedding(np.array((0.0, 1.0), dtype=np.float32)),
+        detector_score=0.9,
+        quality_score=1.0,
+        box=(35, 35, 20, 20),
+    )
+    _, bounds = _profile_crop(image, primary)
+
+    components, flags = _profile_score(
+        image,
+        observation=primary,
+        crop_bounds=bounds,
+        frame_observations=[primary, additional],
+    )
+
+    assert components["additionalFacePenalty"] == -0.5
+    assert "multi-face" in flags
+
+
+def test_profile_score_flags_face_clipped_by_source_frame() -> None:
+    image = np.full((180, 180, 3), 128, dtype=np.uint8)
+    observation = FaceObservation(
+        frame_key="frame.jpg",
+        embedding=normalize_embedding(np.array((1.0, 0.0), dtype=np.float32)),
+        detector_score=0.9,
+        quality_score=1.0,
+        box=(0, 10, 30, 30),
+    )
+    _, bounds = _profile_crop(image, observation)
+
+    components, flags = _profile_score(
+        image,
+        observation=observation,
+        crop_bounds=bounds,
+        frame_observations=[observation],
+    )
+
+    assert components["edgeClippingPenalty"] == -1.0
+    assert "edge-clipped" in flags
 
 
 def test_cosine_similarity_uses_normalized_embeddings() -> None:

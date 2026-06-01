@@ -76,6 +76,7 @@ export async function createActor(input: {
       description: normalizeActorDescription(input.description),
       profileImageKey: key,
       profileImageMimeType: input.image.mimeType,
+      profileImageSource: "admin",
     });
     return toActorRead(created.toObject() as ActorDoc);
   } catch (error) {
@@ -107,7 +108,7 @@ export async function updateActor(
     throw new ConflictError("Actor name already exists.");
   }
 
-  const update: Partial<Pick<ActorDoc, "name" | "description" | "profileImageKey" | "profileImageMimeType">> = {
+  const update: Partial<ActorDoc> = {
     name: normalizedName,
     description: normalizeActorDescription(input.description),
   };
@@ -117,6 +118,7 @@ export async function updateActor(
     validateActorImage(input.image);
     update.profileImageKey = actorImageKey(actor._id, input.image.mimeType);
     update.profileImageMimeType = input.image.mimeType;
+    update.profileImageSource = "admin";
     oldImageKey = actor.profileImageKey;
     newImageKey = update.profileImageKey;
     await buildBlobStore().putBytes(update.profileImageKey, input.image.bytes);
@@ -124,7 +126,23 @@ export async function updateActor(
 
   let updated: ActorDoc | null;
   try {
-    updated = await ActorModel.findByIdAndUpdate(actorId, { $set: update }, { new: true }).lean().exec();
+    updated = await ActorModel.findByIdAndUpdate(
+      actorId,
+      input.image
+        ? {
+            $set: update,
+            $unset: {
+              profileImageVersion: "",
+              profileImageScore: "",
+              profileImageFlags: "",
+              profileImageSourceTorrentId: "",
+              profileImageSourceFrameKey: "",
+              profileImageUpdatedAt: "",
+            },
+          }
+        : { $set: update },
+      { new: true },
+    ).lean().exec();
   } catch (error) {
     if (newImageKey) {
       await buildBlobStore().deleteIfExists(newImageKey);
@@ -190,6 +208,9 @@ function toActorRead(actor: ActorDoc): ActorRead {
     name: actor.name,
     description: actor.description,
     hasProfileImage: Boolean(actor.profileImageKey),
+    profileImageSource: actor.profileImageSource ?? null,
+    profileImageScore: actor.profileImageScore ?? null,
+    profileImageFlags: actor.profileImageFlags ?? [],
     createdAt: actor.createdAt.toISOString(),
     updatedAt: actor.updatedAt.toISOString(),
   };

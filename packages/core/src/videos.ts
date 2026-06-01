@@ -522,6 +522,9 @@ function toActorReads(actors: ActorDoc[]): ActorRead[] {
     name: actor.name,
     description: actor.description,
     hasProfileImage: Boolean(actor.profileImageKey),
+    profileImageSource: actor.profileImageSource ?? null,
+    profileImageScore: actor.profileImageScore ?? null,
+    profileImageFlags: actor.profileImageFlags ?? [],
     createdAt: actor.createdAt.toISOString(),
     updatedAt: actor.updatedAt.toISOString(),
   }));

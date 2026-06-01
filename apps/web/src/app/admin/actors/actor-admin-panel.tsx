@@ -49,6 +49,12 @@ export function ActorAdminPanel({ actors }: { actors: ActorRead[] }) {
                 <span>{actor.name.slice(0, 1).toUpperCase()}</span>
               )}
             </div>
+            {actor.profileImageSource === "system" ? (
+              <p className="muted-copy">
+                System profile score: {actor.profileImageScore?.toFixed(2) ?? "legacy"}
+                {actor.profileImageFlags.length > 0 ? ` · ${actor.profileImageFlags.join(" · ")}` : ""}
+              </p>
+            ) : null}
             <form action={updateActorAction.bind(null, actor.id)} className="actor-admin-edit">
               <label>
                 Name

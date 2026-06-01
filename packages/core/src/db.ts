@@ -60,6 +60,13 @@ export type ActorDoc = {
   description: string | null;
   profileImageKey: string;
   profileImageMimeType: string;
+  profileImageSource?: "system" | "admin";
+  profileImageVersion?: string | null;
+  profileImageScore?: number | null;
+  profileImageFlags?: string[];
+  profileImageSourceTorrentId?: string | null;
+  profileImageSourceFrameKey?: string | null;
+  profileImageUpdatedAt?: Date | null;
   faceExemplars: ActorFaceExemplarDoc[];
   faceCentroids: ActorFaceCentroidDoc[];
   faceExemplarRevision: number;
@@ -273,6 +280,13 @@ const actorSchema = new Schema<ActorDoc>(
     description: { type: String, default: null },
     profileImageKey: { type: String, required: true },
     profileImageMimeType: { type: String, required: true },
+    profileImageSource: { type: String, enum: ["system", "admin"] },
+    profileImageVersion: { type: String, default: null },
+    profileImageScore: { type: Number, default: null },
+    profileImageFlags: { type: [String], default: [] },
+    profileImageSourceTorrentId: { type: String, default: null },
+    profileImageSourceFrameKey: { type: String, default: null },
+    profileImageUpdatedAt: { type: Date, default: null },
     faceExemplars: { type: [actorFaceExemplarSchema], default: [] },
     faceCentroids: { type: [actorFaceCentroidSchema], default: [] },
     faceExemplarRevision: { type: Number, default: 0 },

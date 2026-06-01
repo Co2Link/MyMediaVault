@@ -9,11 +9,14 @@ import numpy as np
 
 from mymediavault_vm_worker.actor_analysis import (
     ActorAnalysisConfig,
+    ActorExemplar,
+    ActorIdentity,
     FaceCluster,
     FaceObservation,
+    ProfileCandidate,
     normalized_mean,
 )
-from mymediavault_vm_worker.actor_worker import ActorAnalysisWorker
+from mymediavault_vm_worker.actor_worker import ActorAnalysisWorker, FrameAnalysis
 
 
 def _observation(
@@ -40,8 +43,9 @@ def _cluster(*observations: FaceObservation) -> FaceCluster:
 class FakeAnalyzer:
     config = ActorAnalysisConfig()
 
-    def __init__(self, clusters: list[FaceCluster]) -> None:
+    def __init__(self, clusters: list[FaceCluster], *, profile_score: float = 1.5) -> None:
         self._clusters = clusters
+        self._profile_score = profile_score
 
     def analyze_frames(self, frame_paths: list[Path]) -> list[FaceObservation]:
         del frame_paths
@@ -55,16 +59,23 @@ class FakeAnalyzer:
         del observations
         return self._clusters
 
-    def profile_crop(
+    def profile_candidates(
         self,
         *,
-        frame_path: Path,
-        observation: FaceObservation,
-        size: int = 256,
-        padding_ratio: float = 0.35,
-    ) -> bytes:
-        del frame_path, observation, size, padding_ratio
-        return b"profile-jpeg"
+        frame_paths_by_key: dict[str, Path],
+        cluster: FaceCluster,
+        observations: list[FaceObservation],
+    ) -> list[ProfileCandidate]:
+        del frame_paths_by_key, observations
+        return [
+            ProfileCandidate(
+                frame_key=cluster.observations[0].frame_key,
+                jpeg=b"profile-jpeg",
+                score=self._profile_score,
+                flags=("non-frontal",),
+                components={"detectorConfidence": 0.9, "sharpness": 0.6},
+            )
+        ]
 
 
 class FakeBlobStore:
@@ -95,10 +106,16 @@ class FakeCursor:
 
 
 class FakeCollection:
-    def __init__(self, documents: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        documents: list[dict[str, Any]] | None = None,
+        *,
+        matched_counts: list[int] | None = None,
+    ) -> None:
         self.documents = documents or []
         self.updates: list[tuple[dict[str, Any], dict[str, Any]]] = []
         self.inserts: list[dict[str, Any]] = []
+        self.matched_counts = matched_counts or []
 
     def find(self, _query: dict[str, Any]) -> FakeCursor:
         return FakeCursor(self.documents)
@@ -111,7 +128,8 @@ class FakeCollection:
         self, query: dict[str, Any], update: dict[str, Any]
     ) -> SimpleNamespace:
         self.updates.append((query, update))
-        return SimpleNamespace(matched_count=1)
+        matched_count = self.matched_counts.pop(0) if self.matched_counts else 1
+        return SimpleNamespace(matched_count=matched_count)
 
     async def update_many(
         self, query: dict[str, Any], update: dict[str, Any]
@@ -229,9 +247,16 @@ def test_process_creates_uuid_actor_and_replaces_system_assignments() -> None:
     assert created["name"] == f"actor-{actor_id}"
     assert created["faceCentroids"][0]["modelVersion"] == "model-v1"
     assert len(created["faceExemplars"]) == 1
-    assert blob_store.uploads == [
-        (f"actors/{actor_id}/profile-{actor_id}.jpg", b"profile-jpeg", "image/jpeg")
-    ]
+    assert len(blob_store.uploads) == 1
+    assert blob_store.uploads[0][0].startswith(
+        f"actors/{actor_id}/profile-system-"
+    )
+    assert blob_store.uploads[0][0].endswith(".jpg")
+    assert blob_store.uploads[0][1:] == (b"profile-jpeg", "image/jpeg")
+    assert created["profileImageSource"] == "system"
+    assert created["profileImageVersion"] == "profile-v2"
+    assert created["profileImageScore"] == 1.5
+    assert created["profileImageFlags"] == ["non-frontal"]
     assert torrents.updates[0][0] == {
         "_id": "torrent-1",
         "actorAnalysisStatus": "processing",
@@ -291,6 +316,238 @@ def test_existing_admin_name_and_profile_survive_reanalysis() -> None:
     assert "name" not in values
     assert "profileImageKey" not in values
     assert len(values["faceExemplars"]) <= 12
+
+
+def test_existing_system_profile_is_replaced_by_meaningfully_better_candidate() -> None:
+    actors = FakeCollection(
+        [
+            {
+                "_id": "actor-existing",
+                "name": "actor-existing",
+                "profileImageKey": "actors/actor-existing/profile-system-old.jpg",
+                "profileImageSource": "system",
+                "profileImageVersion": "profile-v2",
+                "profileImageScore": 1.0,
+                "faceExemplarRevision": 1,
+                "faceExemplars": [
+                    {
+                        "modelVersion": "model-v1",
+                        "embedding": [1.0, 0.0],
+                        "qualityScore": 1.0,
+                    }
+                ],
+                "faceCentroids": [
+                    {"modelVersion": "model-v1", "embedding": [1.0, 0.0]}
+                ],
+            }
+        ]
+    )
+    blob_store = FakeBlobStore()
+    analyzer = FakeAnalyzer(
+        [_cluster(_observation("frame_001.jpg"), _observation("frame_002.jpg"))],
+        profile_score=1.5,
+    )
+
+    asyncio.run(
+        _worker(
+            analyzer=analyzer,
+            database=FakeDatabase(actors=actors),
+            blob_store=blob_store,
+        )._process(_torrent())
+    )
+
+    assert len(blob_store.uploads) == 1
+    assert blob_store.deletes == ["actors/actor-existing/profile-system-old.jpg"]
+    profile_update = actors.updates[1]
+    assert profile_update[0]["profileImageKey"] == "actors/actor-existing/profile-system-old.jpg"
+    assert profile_update[1]["$set"]["profileImageVersion"] == "profile-v2"
+    assert profile_update[1]["$set"]["profileImageScore"] == 1.5
+
+
+def test_existing_system_profile_is_not_replaced_below_improvement_margin() -> None:
+    actors = FakeCollection(
+        [
+            {
+                "_id": "actor-existing",
+                "profileImageKey": "actors/actor-existing/profile-system-old.jpg",
+                "profileImageSource": "system",
+                "profileImageVersion": "profile-v2",
+                "profileImageScore": 1.45,
+                "faceExemplarRevision": 1,
+                "faceExemplars": [
+                    {
+                        "modelVersion": "model-v1",
+                        "embedding": [1.0, 0.0],
+                        "qualityScore": 1.0,
+                    }
+                ],
+                "faceCentroids": [
+                    {"modelVersion": "model-v1", "embedding": [1.0, 0.0]}
+                ],
+            }
+        ]
+    )
+    blob_store = FakeBlobStore()
+    analyzer = FakeAnalyzer(
+        [_cluster(_observation("frame_001.jpg"), _observation("frame_002.jpg"))],
+        profile_score=1.5,
+    )
+
+    asyncio.run(
+        _worker(
+            analyzer=analyzer,
+            database=FakeDatabase(actors=actors),
+            blob_store=blob_store,
+        )._process(_torrent())
+    )
+
+    assert blob_store.uploads == []
+    assert len(actors.updates) == 1
+
+
+def test_outdated_system_profile_is_replaced_without_comparing_scores() -> None:
+    actors = FakeCollection(
+        [
+            {
+                "_id": "actor-existing",
+                "profileImageKey": "actors/actor-existing/profile-system-old.jpg",
+                "profileImageSource": "system",
+                "profileImageVersion": "profile-v1",
+                "profileImageScore": 3.0,
+                "faceExemplarRevision": 1,
+                "faceExemplars": [
+                    {
+                        "modelVersion": "model-v1",
+                        "embedding": [1.0, 0.0],
+                        "qualityScore": 1.0,
+                    }
+                ],
+                "faceCentroids": [
+                    {"modelVersion": "model-v1", "embedding": [1.0, 0.0]}
+                ],
+            }
+        ]
+    )
+    blob_store = FakeBlobStore()
+    analyzer = FakeAnalyzer(
+        [_cluster(_observation("frame_001.jpg"), _observation("frame_002.jpg"))],
+        profile_score=1.5,
+    )
+
+    asyncio.run(
+        _worker(
+            analyzer=analyzer,
+            database=FakeDatabase(actors=actors),
+            blob_store=blob_store,
+        )._process(_torrent())
+    )
+
+    assert len(blob_store.uploads) == 1
+    assert actors.updates[1][1]["$set"]["profileImageVersion"] == "profile-v2"
+
+
+def test_legacy_generated_profile_is_inferred_as_system_managed() -> None:
+    worker = _worker()
+
+    assert worker._is_system_profile(
+        actor_id="actor-existing",
+        actor={
+            "profileImageKey": "actors/actor-existing/profile-actor-existing.jpg"
+        },
+    )
+    assert not worker._is_system_profile(
+        actor_id="actor-existing",
+        actor={"profileImageKey": "actors/actor-existing/profile-admin.jpg"},
+    )
+
+
+def test_lost_profile_update_race_deletes_abandoned_upload() -> None:
+    actors = FakeCollection(
+        [
+            {
+                "_id": "actor-existing",
+                "profileImageKey": "actors/actor-existing/profile-system-old.jpg",
+                "profileImageSource": "system",
+                "profileImageVersion": "profile-v2",
+                "profileImageScore": 1.0,
+                "faceExemplarRevision": 1,
+                "faceExemplars": [
+                    {
+                        "modelVersion": "model-v1",
+                        "embedding": [1.0, 0.0],
+                        "qualityScore": 1.0,
+                    }
+                ],
+                "faceCentroids": [
+                    {"modelVersion": "model-v1", "embedding": [1.0, 0.0]}
+                ],
+            }
+        ],
+        matched_counts=[1, 0],
+    )
+    blob_store = FakeBlobStore()
+    analyzer = FakeAnalyzer(
+        [_cluster(_observation("frame_001.jpg"), _observation("frame_002.jpg"))]
+    )
+
+    asyncio.run(
+        _worker(
+            analyzer=analyzer,
+            database=FakeDatabase(actors=actors),
+            blob_store=blob_store,
+        )._process(_torrent())
+    )
+
+    assert len(blob_store.uploads) == 1
+    assert blob_store.deletes == [blob_store.uploads[0][0]]
+
+
+def test_outdated_profile_refresh_selects_best_assigned_torrent_candidate() -> None:
+    assigned = _torrent(_id="torrent-assigned")
+    torrents = FakeCollection([assigned])
+    worker = _worker(database=FakeDatabase(torrents=torrents))
+    identity = ActorIdentity(
+        actor_id="actor-existing",
+        exemplars=[
+            ActorExemplar(
+                torrent_key="torrent-assigned",
+                frame_key="previews/assigned/frame_001.jpg",
+                embedding=np.asarray((1.0, 0.0), dtype=np.float32),
+                quality_score=1.0,
+            )
+        ],
+    )
+    cluster = _cluster(_observation("previews/assigned/frame_001.jpg"))
+    assigned_candidate = ProfileCandidate(
+        frame_key="previews/assigned/frame_001.jpg",
+        jpeg=b"assigned-profile",
+        score=2.0,
+        flags=(),
+        components={},
+    )
+    worker._analyze_frames = lambda torrent: FrameAnalysis(
+        clusters=(cluster,),
+        detected_face_count=1,
+        profile_candidates_by_cluster_index={0: assigned_candidate},
+    )
+
+    candidate, torrent_id = asyncio.run(
+        worker._best_refresh_candidate(
+            actor_id="actor-existing",
+            identity=identity,
+            current_candidate=ProfileCandidate(
+                frame_key="previews/current/frame_001.jpg",
+                jpeg=b"current-profile",
+                score=1.0,
+                flags=(),
+                components={},
+            ),
+            current_torrent_id="torrent-current",
+        )
+    )
+
+    assert candidate == assigned_candidate
+    assert torrent_id == "torrent-assigned"
 
 
 def test_failure_preserves_previous_system_assignments() -> None:

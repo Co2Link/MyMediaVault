@@ -180,10 +180,22 @@ exemplars. Ambiguous clusters remain unassigned. A successful run with no
 qualifying main actor writes an empty `systemActorIds` list.
 
 Actor records retain up to 12 exemplars, with at most two from one torrent.
-Centroids are recomputed whenever retained evidence changes. Actor names and
-profile images are set only when a UUID identity is first created, so admin
-edits survive reanalysis. Torrent deletion does not delete actor-owned biometric
-evidence.
+Centroids are recomputed whenever retained evidence changes. Actor names are set
+only when a UUID identity is first created. Profile selection is a separate
+deterministic display concern: the worker shortlists up to five accepted-cluster
+observations, creates `512x512` crops with the face occupying about 60 percent
+of the height and blurred edge extension, and scores detector confidence,
+resolution, sharpness, lighting, YuNet landmark pose and roll estimates,
+clipping, extension padding, and additional faces. Complete sufficiently large
+front-facing single-face crops rank ahead of angled or multi-face fallbacks.
+System-managed profiles improve opportunistically when a same-version candidate
+exceeds the persisted score by at least `0.10`. When a generated crop version is
+outdated, the worker lazily selects the best usable candidate across the actor's
+assigned torrents before replacing it once; unavailable preview frames are
+skipped. Admin-uploaded profiles remain authoritative and leave the generated
+version unset. Reliable closed-eye scoring is deferred until a portable Linux
+ARM64-compatible landmark model is selected. Torrent deletion does not delete
+actor-owned biometric evidence.
 
 Actor-analysis state lives on each torrent. Claims use a processing lease,
 expired leases return to `pending`, and unexpected failures retry immediately

@@ -22,9 +22,12 @@ from .actor_analysis import (
     FaceCluster,
     FaceObservation,
     InMemoryActorIndex,
+    ProfileCandidate,
+    profile_candidate_sort_key,
 )
 
-ACTOR_ANALYSIS_ALGORITHM_VERSION = "actor-analysis-v1"
+ACTOR_ANALYSIS_ALGORITHM_VERSION = "actor-analysis-v3"
+PROFILE_IMAGE_VERSION = "profile-v2"
 DEFAULT_ACTOR_ANALYSIS_MAX_ATTEMPTS = 3
 DEFAULT_ACTOR_ANALYSIS_LEASE_SECONDS = 1800
 DEFAULT_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS = 5.0
@@ -48,21 +51,20 @@ class RuntimeActorAnalyzer(Protocol):
         self, observations: list[FaceObservation]
     ) -> list[FaceCluster]: ...
 
-    def profile_crop(
+    def profile_candidates(
         self,
         *,
-        frame_path: Path,
-        observation: FaceObservation,
-        size: int = 256,
-        padding_ratio: float = 0.35,
-    ) -> bytes: ...
+        frame_paths_by_key: dict[str, Path],
+        cluster: FaceCluster,
+        observations: list[FaceObservation],
+    ) -> list[ProfileCandidate]: ...
 
 
 @dataclass(frozen=True)
 class FrameAnalysis:
     clusters: tuple[FaceCluster, ...]
     detected_face_count: int
-    profile_jpegs_by_frame_key: dict[str, bytes]
+    profile_candidates_by_cluster_index: dict[int, ProfileCandidate]
 
 
 class ActorAnalysisWorker:
@@ -285,11 +287,18 @@ class ActorAnalysisWorker:
             detected_face_count=frame_analysis.detected_face_count,
         )
         identities_by_id = {identity.actor_id: identity for identity in index.actors}
-        for actor_id in assignment.actor_ids:
+        for actor_id, cluster_index in zip(
+            assignment.actor_ids,
+            assignment.assigned_cluster_indices,
+            strict=True,
+        ):
             await self._persist_identity(
                 identity=identities_by_id[actor_id],
                 original=actors_by_id.get(actor_id),
-                profile_jpegs_by_frame_key=frame_analysis.profile_jpegs_by_frame_key,
+                profile_candidate=frame_analysis.profile_candidates_by_cluster_index[
+                    cluster_index
+                ],
+                torrent_id=str(torrent["_id"]),
             )
 
         now = datetime.now(UTC)
@@ -360,17 +369,23 @@ class ActorAnalysisWorker:
 
             observations = self._analyzer.analyze_frames(paths)
             clusters = self._analyzer.main_clusters(observations)
-            profile_jpegs_by_frame_key: dict[str, bytes] = {}
+            accepted_clusters: list[FaceCluster] = []
+            profile_candidates_by_cluster_index: dict[int, ProfileCandidate] = {}
+            frame_paths_by_key = {path.name: path for path in paths}
             for cluster in clusters:
-                best = max(
-                    cluster.observations,
-                    key=lambda observation: observation.quality_score,
+                candidates = self._analyzer.profile_candidates(
+                    frame_paths_by_key=frame_paths_by_key,
+                    cluster=cluster,
+                    observations=observations,
                 )
-                source_key = source_by_local_name[best.frame_key]
-                profile_jpegs_by_frame_key[source_key] = self._analyzer.profile_crop(
-                    frame_path=root / best.frame_key,
-                    observation=best,
+                if not candidates:
+                    continue
+                best = candidates[0]
+                profile_candidates_by_cluster_index[len(accepted_clusters)] = replace(
+                    best,
+                    frame_key=source_by_local_name[best.frame_key],
                 )
+                accepted_clusters.append(cluster)
 
             return FrameAnalysis(
                 clusters=tuple(
@@ -385,10 +400,10 @@ class ActorAnalysisWorker:
                         centroid=cluster.centroid,
                         quality_score=cluster.quality_score,
                     )
-                    for cluster in clusters
+                    for cluster in accepted_clusters
                 ),
                 detected_face_count=len(observations),
-                profile_jpegs_by_frame_key=profile_jpegs_by_frame_key,
+                profile_candidates_by_cluster_index=profile_candidates_by_cluster_index,
             )
 
     async def _load_active_actor_documents(self) -> list[dict[str, Any]]:
@@ -417,17 +432,15 @@ class ActorAnalysisWorker:
         *,
         identity: ActorIdentity,
         original: dict[str, Any] | None,
-        profile_jpegs_by_frame_key: dict[str, bytes],
+        profile_candidate: ProfileCandidate,
+        torrent_id: str,
     ) -> None:
         exemplars, centroids = self._evidence_values(identity, original)
         if original is None:
-            profile_image_key = (
-                f"actors/{identity.actor_id}/profile-{identity.actor_id}.jpg"
-            )
-            profile_jpeg = self._profile_jpeg(identity, profile_jpegs_by_frame_key)
+            profile_image_key = self._system_profile_key(identity.actor_id)
             await self._blob_store.put_bytes(
                 profile_image_key,
-                profile_jpeg,
+                profile_candidate.jpeg,
                 "image/jpeg",
             )
             now = datetime.now(UTC)
@@ -439,6 +452,11 @@ class ActorAnalysisWorker:
                         "description": None,
                         "profileImageKey": profile_image_key,
                         "profileImageMimeType": "image/jpeg",
+                        **self._profile_metadata(
+                            profile_candidate,
+                            torrent_id=torrent_id,
+                            now=now,
+                        ),
                         "faceExemplars": exemplars,
                         "faceCentroids": centroids,
                         "faceExemplarRevision": 1,
@@ -474,6 +492,13 @@ class ActorAnalysisWorker:
         if result.matched_count != 1:
             msg = f"Actor {identity.actor_id} biometric evidence changed concurrently."
             raise RuntimeError(msg)
+        await self._improve_system_profile(
+            actor_id=identity.actor_id,
+            identity=identity,
+            original=original,
+            candidate=profile_candidate,
+            torrent_id=torrent_id,
+        )
 
     def _evidence_values(
         self,
@@ -512,21 +537,132 @@ class ActorAnalysisWorker:
         ]
         return exemplars, centroids
 
-    @staticmethod
-    def _profile_jpeg(
+    async def _improve_system_profile(
+        self,
+        *,
+        actor_id: str,
         identity: ActorIdentity,
-        profile_jpegs_by_frame_key: dict[str, bytes],
-    ) -> bytes:
-        for exemplar in sorted(
-            identity.exemplars,
-            key=lambda value: value.quality_score,
-            reverse=True,
+        original: dict[str, Any],
+        candidate: ProfileCandidate,
+        torrent_id: str,
+    ) -> None:
+        old_key = str(original.get("profileImageKey") or "")
+        if not self._is_system_profile(actor_id=actor_id, actor=original):
+            return
+        old_version = original.get("profileImageVersion")
+        if old_version != PROFILE_IMAGE_VERSION:
+            candidate, torrent_id = await self._best_refresh_candidate(
+                actor_id=actor_id,
+                identity=identity,
+                current_candidate=candidate,
+                current_torrent_id=torrent_id,
+            )
+        old_score = original.get("profileImageScore")
+        if old_version == PROFILE_IMAGE_VERSION and old_score is not None and (
+            candidate.score < float(old_score) + self._analyzer.config.profile_replacement_margin
         ):
-            profile_jpeg = profile_jpegs_by_frame_key.get(exemplar.frame_key)
-            if profile_jpeg is not None:
-                return profile_jpeg
-        msg = f"Missing profile crop for new actor {identity.actor_id}."
-        raise RuntimeError(msg)
+            return
+        new_key = self._system_profile_key(actor_id)
+        await self._blob_store.put_bytes(new_key, candidate.jpeg, "image/jpeg")
+        now = datetime.now(UTC)
+        result = await self._actors.update_one(
+            {
+                "_id": actor_id,
+                "profileImageKey": old_key,
+                "$or": [
+                    {"profileImageSource": "system"},
+                    {"profileImageSource": {"$exists": False}},
+                ],
+            },
+            {
+                "$set": {
+                    "profileImageKey": new_key,
+                    "profileImageMimeType": "image/jpeg",
+                    **self._profile_metadata(
+                        candidate,
+                        torrent_id=torrent_id,
+                        now=now,
+                    ),
+                    "updatedAt": now,
+                }
+            },
+        )
+        if result.matched_count != 1:
+            await self._blob_store.delete_if_exists(new_key)
+            return
+        if old_key != new_key:
+            await self._blob_store.delete_if_exists(old_key)
+
+    async def _best_refresh_candidate(
+        self,
+        *,
+        actor_id: str,
+        identity: ActorIdentity,
+        current_candidate: ProfileCandidate,
+        current_torrent_id: str,
+    ) -> tuple[ProfileCandidate, str]:
+        candidates = [(current_candidate, current_torrent_id)]
+        cursor = self._torrents.find(
+            {
+                "systemActorIds": actor_id,
+                **self._eligible_query(),
+            }
+        )
+        assigned_torrents = await cursor.to_list(length=None)
+        index = InMemoryActorIndex(config=self._analyzer.config, actors=[identity])
+        for torrent in assigned_torrents:
+            torrent_id = str(torrent["_id"])
+            if torrent_id == current_torrent_id:
+                continue
+            try:
+                frame_analysis = await asyncio.to_thread(self._analyze_frames, torrent)
+            except Exception:
+                logger.warning(
+                    "Skipped actor {} profile refresh candidate torrent {}",
+                    actor_id,
+                    torrent_id,
+                )
+                continue
+            for cluster_index, cluster in enumerate(frame_analysis.clusters):
+                if index.match(cluster) is not identity:
+                    continue
+                candidates.append(
+                    (
+                        frame_analysis.profile_candidates_by_cluster_index[
+                            cluster_index
+                        ],
+                        torrent_id,
+                    )
+                )
+        return max(candidates, key=lambda value: profile_candidate_sort_key(value[0]))
+
+    @staticmethod
+    def _profile_metadata(
+        candidate: ProfileCandidate,
+        *,
+        torrent_id: str,
+        now: datetime,
+    ) -> dict[str, Any]:
+        return {
+            "profileImageSource": "system",
+            "profileImageVersion": PROFILE_IMAGE_VERSION,
+            "profileImageScore": candidate.score,
+            "profileImageFlags": list(candidate.flags),
+            "profileImageSourceTorrentId": torrent_id,
+            "profileImageSourceFrameKey": candidate.frame_key,
+            "profileImageUpdatedAt": now,
+        }
+
+    @staticmethod
+    def _is_system_profile(*, actor_id: str, actor: dict[str, Any]) -> bool:
+        source = actor.get("profileImageSource")
+        if source is not None:
+            return source == "system"
+        return actor.get("profileImageKey") == f"actors/{actor_id}/profile-{actor_id}.jpg"
+
+    @staticmethod
+    def _system_profile_key(actor_id: str) -> str:
+        return f"actors/{actor_id}/profile-system-{uuid4()}.jpg"
 
     def _build_fingerprint_prefix(self) -> str:
         value = json.dumps(

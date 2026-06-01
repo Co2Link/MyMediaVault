@@ -89,15 +89,44 @@ actor:
 
 - Use the UUID as the database ID.
 - Default the name to `actor-<uuid>`.
-- Extract the highest-quality face into a padded square `256x256` JPEG profile
-  image.
+- Extract a deterministic square `512x512` JPEG profile
+  image from the best display candidate.
 - Store the profile image in the existing private blob store under the actor
   namespace.
 
-The worker sets an actor name and profile image only during actor creation. It
-must never rename actors, delete actors, or replace profile images. Admin edits
-operate on the same stable actor record and survive preview regeneration and
-reanalysis.
+The worker sets an actor name only during creation. It may improve a
+system-managed profile image opportunistically when a same-version accepted
+cluster has a display score at least `0.10` higher than the persisted score. It
+must never
+rename actors, delete actors, or replace admin-managed profile images. Admin
+edits operate on the same stable actor record and survive preview regeneration
+and reanalysis.
+
+Display scoring remains separate from biometric exemplar quality. Rank all
+qualifying observations and retain the top five profile candidates using
+detector confidence, face resolution, sharpness, lighting, YuNet landmark pose
+and roll estimates, edge clipping, deterministic extension padding, and
+additional faces inside the final crop. Severe edge clipping rejects a display
+candidate. Prefer complete sufficiently large front-facing single-face crops,
+then fall back to angled or multi-face candidates. Use a face-relative crop
+that places the face at about 60 percent of image height with blurred
+deterministic edge extension. Candidate discovery may use a more permissive
+cosine threshold than biometric clustering because appearance variants such as
+glasses remain display-only and must not weaken identity assignment.
+
+Store system/admin provenance, generated crop version, the active system score,
+compact diagnostic flags, source torrent/frame metadata, and update time on the
+actor record. Use a new versioned blob key for each system replacement and
+optimistic concurrency against the expected prior key. When the generated crop
+version is stale, lazily select the best usable candidate across the actor's
+currently assigned torrents and replace it without comparing incompatible
+scores. Existing deterministic generated keys are treated as system-managed
+until upgraded naturally; other legacy keys are treated as admin-managed.
+Admin uploads leave the generated crop version unset.
+
+Reliable closed-eye scoring is deferred until a suitable Linux ARM64-compatible
+landmark model is selected. The VM-worker image must remain portable across
+`linux/amd64` and `linux/arm64`.
 
 Actors without biometric exemplars remain visible and manually assignable but
 are excluded from automatic matching.

@@ -53,7 +53,9 @@ uv run python scripts/download_face_models.py --output .local/models
 uv run python scripts/evaluate_actor_identification.py \
   --previews ../../tmp/previews \
   --ground-truth ../../tmp/GT.json \
-  --models-dir .local/models
+  --models-dir .local/models \
+  --output .local/actor-profile-evaluation/identity.json \
+  --profile-output .local/actor-profile-evaluation
 ```
 
 The strict corpus requires zero false merges, 100 percent recall, and zero
@@ -102,7 +104,7 @@ Tasks:
 8. Load preview frames from the existing private blob store.
 9. Match clusters against active-model actor centroids and exemplars.
 10. Create unmatched, well-supported actors with UUID-based names and one
-    generated `256x256` JPEG profile crop.
+    generated `512x512` JPEG profile crop.
 11. Atomically replace a torrent's `systemActorIds` only after successful
     analysis. Preserve previous assignments while a replacement run is pending
     or failed.
@@ -186,6 +188,13 @@ terraform fmt -check -recursive ../..
 terraform init -backend=false
 terraform validate
 ```
+
+The optional profile output writes ignored local `512x512` selections,
+annotated contact sheets, and a Markdown score-breakdown report. Visually review
+the report before deployment. Display scoring is intentionally separate from
+biometric quality and remains portable across the published `linux/amd64` and
+`linux/arm64` worker images. Reliable closed-eye scoring remains deferred until
+an ARM64-compatible landmark model is selected.
 
 ## Follow-Up Triggers
 

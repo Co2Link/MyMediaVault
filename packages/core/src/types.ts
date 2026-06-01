@@ -20,6 +20,9 @@ export type ActorRead = {
   name: string;
   description: string | null;
   hasProfileImage: boolean;
+  profileImageSource: "system" | "admin" | null;
+  profileImageScore: number | null;
+  profileImageFlags: string[];
   createdAt: string;
   updatedAt: string;
 };
