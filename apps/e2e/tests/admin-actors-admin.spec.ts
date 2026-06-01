@@ -20,12 +20,17 @@ test("admin users can create, edit, view, and delete actors", async ({ page }) =
   });
   await page.getByRole("button", { name: "Create actor" }).click();
 
+  await page.getByLabel("Filter catalog").fill(actorName);
+  await page.getByRole("button", { name: "Filter" }).click();
+
   const actorItem = page.locator("li").filter({ has: page.locator(`input[value="${actorName}"]`) });
   await expect(actorItem).toBeVisible();
   await expect(actorItem.getByRole("img", { name: `${actorName} profile image` })).toBeVisible();
 
   await actorItem.getByLabel("Name").fill(updatedName);
   await actorItem.getByRole("button", { name: "Save" }).click();
+  await page.getByLabel("Filter catalog").fill(updatedName);
+  await page.getByRole("button", { name: "Filter" }).click();
 
   const updatedItem = page.locator("li").filter({ has: page.locator(`input[value="${updatedName}"]`) });
   await expect(updatedItem).toBeVisible();
@@ -40,6 +45,8 @@ test("admin users can create, edit, view, and delete actors", async ({ page }) =
   await expect(page.getByRole("img", { name: `${updatedName} profile image` })).toBeVisible();
 
   await page.getByRole("link", { name: "Actors" }).click();
+  await page.getByLabel("Filter catalog").fill(updatedName);
+  await page.getByRole("button", { name: "Filter" }).click();
   await expect(updatedItem).toBeVisible();
   await updatedItem.getByRole("button", { name: "Delete" }).click();
   await expect(updatedItem).toHaveCount(0);

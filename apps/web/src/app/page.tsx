@@ -2,20 +2,24 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { VideoSearchForm } from "@/components/video-search-form";
 import { VideoCard } from "@/components/video-card";
+import { PaginationLinks } from "@/components/pagination-links";
+import { firstQueryValue, paginate } from "@/lib/pagination";
 import { searchVideos } from "@/lib/videos";
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ page?: string | string[]; q?: string | string[] }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/auth/sign-in");
   }
 
-  const { q = "" } = await searchParams;
+  const query = await searchParams;
+  const q = firstQueryValue(query.q) ?? "";
   const videos = await searchVideos(session.user.id, q);
+  const page = paginate(videos, firstQueryValue(query.page), 12);
 
   return (
     <main className="workspace">
@@ -30,15 +34,16 @@ export default async function Home({
         <VideoSearchForm query={q} />
       </section>
       <section className="content-grid">
-        {videos.length === 0 ? (
+        {page.items.length === 0 ? (
           <div className="empty-panel">
             <h2>No videos match this search.</h2>
             <p className="muted-copy">Try a broader term or add a new title to seed the collection.</p>
           </div>
         ) : (
-          videos.map((video) => <VideoCard key={video.id} video={video} />)
+          page.items.map((video) => <VideoCard key={video.id} video={video} />)
         )}
       </section>
+      <PaginationLinks page={page.page} pageCount={page.pageCount} pathname="/" query={q ? { q } : {}} />
     </main>
   );
 }

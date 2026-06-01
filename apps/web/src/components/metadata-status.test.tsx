@@ -9,7 +9,8 @@ describe("MetadataStatusBadge", () => {
   });
 
   it("renders errors for failed metadata", () => {
-    const { getByRole } = render(<MetadataStatusBadge error="Resolver failure" status="failed" />);
-    expect(getByRole("status")).toHaveTextContent("Resolver failure");
+    const { getByRole, getByText } = render(<MetadataStatusBadge error="Resolver failure" status="failed" />);
+    expect(getByRole("status")).toHaveTextContent("Metadata failed");
+    expect(getByText("Resolver failure")).toHaveClass("metadata-error");
   });
 });

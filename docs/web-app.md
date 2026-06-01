@@ -81,6 +81,12 @@ application.
 - Read-only tags on collection cards, actor and tag result cards, and video
   detail pages link to tag result pages. Actor and tag result pages list only
   the signed-in user's private collection in newest-first order.
+- Collection cards paginate in newest-first order. Admin actor, tag, and
+  torrent catalogs support URL-backed filtering and pagination so large
+  catalogs remain navigable.
+- Narrow layouts collapse primary navigation behind a menu button, keep
+  preview thumbnails in a compact two-column grid, and stack failed metadata
+  details below their status badge.
 
 ## Worker Boundary
 

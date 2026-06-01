@@ -17,6 +17,8 @@ test("admin users can delete torrents and their videos", async ({ page }) => {
 
   await page.goto("/admin/torrents");
   await expect(page.getByRole("heading", { name: "Torrent management" })).toBeVisible();
+  await page.getByLabel("Filter catalog").fill(infoHash);
+  await page.getByRole("button", { name: "Filter" }).click();
 
   const torrentItem = page.getByRole("listitem").filter({ hasText: infoHash });
   await expect(torrentItem).toBeVisible();

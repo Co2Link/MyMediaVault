@@ -15,9 +15,11 @@ export function MetadataStatusBadge({
   error?: string | null;
 }) {
   return (
-    <p className={`status-pill status-${status}`} role="status">
-      {labelByStatus[status]}
-      {status === "failed" && error ? `: ${error}` : ""}
-    </p>
+    <div className="metadata-status">
+      <p className={`status-pill status-${status}`} role="status">
+        {labelByStatus[status]}
+      </p>
+      {status === "failed" && error ? <p className="metadata-error">{error}</p> : null}
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
-import { UserMenu } from "@/components/user-menu";
+import { HeaderActions } from "@/components/header-actions";
 import type { AppSession } from "@/lib/auth/session";
 
 export async function Header({ session }: { session: AppSession | null }) {
@@ -18,25 +18,13 @@ export async function Header({ session }: { session: AppSession | null }) {
         </Link>
       </div>
       {session?.user?.id ? (
-        <div className="header-actions">
-          <nav aria-label="Primary" className="primary-nav">
-            <Link href="/">Collection</Link>
-            <Link href="/add">Add video</Link>
-            {session.user.isAdmin ? (
-              <>
-                <Link href="/admin/tags">Tags</Link>
-                <Link href="/admin/actors">Actors</Link>
-                <Link href="/admin/torrents">Torrents</Link>
-              </>
-            ) : null}
-          </nav>
-          <UserMenu
-            email={session.user.email}
-            image={session.user.image}
-            logoutAction={logoutAction}
-            name={session.user.name}
-          />
-        </div>
+        <HeaderActions
+          email={session.user.email}
+          image={session.user.image}
+          isAdmin={Boolean(session.user.isAdmin)}
+          logoutAction={logoutAction}
+          name={session.user.name}
+        />
       ) : null}
     </header>
   );
