@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Pin `torrent-preview` 5.3.3 so the preview harness continuously fills unused
+  concurrency slots while longer-running previews remain active.
+
 ## 0.2.0
 
 - Add sequential asynchronous torrent actor identification from durable preview

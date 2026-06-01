@@ -1,6 +1,6 @@
 [project]
 name = "mymediavault-vm-worker"
-version = "0.2.0"
+version = "0.2.1"
 description = "VM-hosted torrent metadata and preview worker for MyMediaVault"
 readme = "README.md"
 authors = [
@@ -14,7 +14,7 @@ dependencies = [
     "opencv-python-headless>=4.13.0.92,<4.14",
     "pydantic-settings>=2.14.1",
     "pymongo>=4.17.0",
-    "torrent-preview==5.3.2",
+    "torrent-preview==5.3.3",
 ]
 
 [dependency-groups]

@@ -140,7 +140,9 @@ torrent blob is available. It claims eligible torrents atomically by setting
 `previewStatus = "processing"`, increments `previewAttempts`, runs the pinned
 `torrent-preview` version, uploads the generated contact sheet and frames to R2,
 and writes status, artifact keys, dimensions, warnings, status reason, and
-diagnostics back to the torrent document.
+diagnostics back to the torrent document. While previews are running, the
+harness replenishes unused concurrency slots on its polling interval so newly
+eligible torrents do not wait for an earlier batch to drain.
 
 The pinned `torrent-preview` engine uses bounded in-attempt anchor retry to
 fill missing LLM-visible timeline anchors before ranking. The VM worker defaults
