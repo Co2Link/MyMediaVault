@@ -31,11 +31,20 @@ npm run test
 cd apps/vm-worker
 uv sync --locked
 uv run pytest
+uv run python scripts/download_face_models.py --output .local/models
+uv run python scripts/evaluate_actor_identification.py \
+  --previews ../../tmp/previews \
+  --ground-truth ../../tmp/GT.json \
+  --models-dir .local/models
 ```
 
 `packages/core` owns shared domain logic and Mongoose access. `apps/vm-worker`
 owns long-running metadata polling, resolver/DHT fallback, retry scheduling, and
-preview generation.
+preview generation. Its sequential actor-analysis tests cover queue claims,
+lease repair, bounded retries, UUID creation, successful empty results, and
+admin-edit survival. The offline YuNet and SFace evaluator runs against labeled
+preview fixtures and requires zero false merges, 100 percent recall, and zero
+unnecessary identity splits before actor-identification behavior changes land.
 
 `apps/e2e/scripts/run-local.sh` starts the Next.js app on top of the local
 MongoDB/Cosmos stack. Worker integration is covered separately by deployed dev
@@ -49,8 +58,9 @@ npm run test:local
 ```
 
 Playwright tests cover the authenticated header/account menu, add-video with
-actor and tag selection, detail-page actor/tag editing, collection search, and
-admin actor/tag flows against the Next.js app. Separate setup projects log in
+actor and tag selection, provenance-aware detail-page actor/tag editing,
+collection search, and admin actor/tag/torrent flows against the Next.js app.
+Separate setup projects log in
 through Entra for the normal user and admin user and store browser state in
 `apps/e2e/.auth/user.json` and `apps/e2e/.auth/admin.json`. Local runs require
 real test-user credentials in `apps/e2e/.env.local`. Copy

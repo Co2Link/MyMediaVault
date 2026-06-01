@@ -46,3 +46,5 @@ apps/e2e/.logs/
 
 .playwright-cli
 /todo.md
+
+/tmp

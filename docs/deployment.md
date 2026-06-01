@@ -74,7 +74,9 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   Hub image tag from `/etc/mymediavault/vm-worker.env` and starts the
   container in the foreground. The container image runs the Python worker as a
   non-root user and includes Python 3.13, `libtorrent`, `ffmpeg`, and
-  `ffprobe`; preview artifacts are stored in R2 so the VM stays stateless.
+  `ffprobe`. Its Docker build downloads checksum-pinned OpenCV YuNet and SFace
+  ONNX files into the image; runtime processing never downloads face models.
+  Preview artifacts are stored in R2 so the VM stays stateless.
   Routine Docker logs stay at `INFO`, while redacted JSON Lines `DEBUG` logs are
   written to the VM host at `/var/log/mymediavault/vm-worker/debug.log`, rotated
   at `100 MB`, and retained for `7 days`.

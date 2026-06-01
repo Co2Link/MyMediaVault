@@ -7,6 +7,9 @@ export type MetadataFailureKind = (typeof metadataFailureKinds)[number];
 export const previewStatuses = ["pending", "processing", "succeeded", "partial", "failed"] as const;
 export type PreviewStatus = (typeof previewStatuses)[number];
 
+export const actorAnalysisStatuses = ["pending", "processing", "succeeded", "failed"] as const;
+export type ActorAnalysisStatus = (typeof actorAnalysisStatuses)[number];
+
 export type TagRead = {
   id: string;
   name: string;
@@ -63,6 +66,16 @@ export type PreviewRead = {
   diagnostics: PreviewDiagnosticsRead;
 };
 
+export type ActorAnalysisRead = {
+  status: ActorAnalysisStatus;
+  attempts: number;
+  lastAttemptAt: string | null;
+  updatedAt: string | null;
+  fingerprint: string | null;
+  error: string | null;
+  diagnostics: Record<string, unknown>;
+};
+
 export type VideoSummary = {
   id: string;
   displayTitle: string | null;
@@ -86,6 +99,7 @@ export type TorrentSummary = {
   metadataStatus: MetadataStatus;
   metadataError: string | null;
   preview: PreviewRead;
+  actorAnalysis: ActorAnalysisRead;
   videoCount: number;
   createdAt: string;
   updatedAt: string;
@@ -96,4 +110,6 @@ export type VideoDetail = VideoSummary & {
   sizeBytes: number | null;
   metadataError: string | null;
   files: TorrentFileRead[];
+  systemActors: ActorRead[];
+  userActors: ActorRead[];
 };

@@ -2,14 +2,14 @@
 
 ## Target VM Worker
 
-MyMediaVault uses a single long-running VM worker process for dev metadata and
-preview processing. The worker runs on the manually managed Oracle Cloud VM that
+MyMediaVault uses a single long-running VM worker process for dev metadata,
+preview processing, and actor identification. The worker runs on the manually managed Oracle Cloud VM that
 supports UDP/DHT BitTorrent access. The VM worker replaces the former Azure
 Container Apps metadata job.
 
-The combined worker lives in `apps/vm-worker`. It keeps metadata and preview as
-separate internal pipelines because they have different readiness rules,
-failure modes, retry behavior, and resource costs.
+The combined worker lives in `apps/vm-worker`. It keeps metadata, preview, and
+actor analysis as separate internal pipelines because they have different
+readiness rules, failure modes, retry behavior, and resource costs.
 
 Metadata processing uses the `torrents` collection as its queue. Torrent
 documents carry metadata status, retry timing, lease timing, and diagnostics
@@ -48,6 +48,11 @@ VM worker environment:
 | `MMV_METADATA_WORKER_ENABLED` | Enables the metadata pipeline. |
 | `MMV_METADATA_WORKER_MAX_CONCURRENCY` | Maximum concurrent metadata tasks. Defaults to `10`. |
 | `MMV_PREVIEW_WORKER_ENABLED` | Enables the preview pipeline. |
+| `MMV_ACTOR_ANALYSIS_WORKER_ENABLED` | Enables sequential actor identification. Defaults to `true`. |
+| `MMV_ACTOR_ANALYSIS_MODELS_DIR` | Directory containing checksum-verified YuNet and SFace ONNX files. Defaults to `.local/models`. |
+| `MMV_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS` | Idle actor-analysis polling interval. Defaults to `5`. |
+| `MMV_ACTOR_ANALYSIS_LEASE_SECONDS` | Actor-analysis processing lease. Defaults to `1800`. |
+| `MMV_ACTOR_ANALYSIS_MAX_ATTEMPTS` | Immediate actor-analysis attempt limit. Defaults to `3`. |
 | `MMV_TORRENT_PROVIDER` | `http` for resolver/DHT processing, or `fake` for deterministic local metadata. |
 | `MMV_TORRENT_RESOLVER_URLS` | JSON list of HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | Per-resolver HTTP timeout. |
@@ -67,16 +72,18 @@ VM worker environment:
 
 ## Responsibilities
 
-- Poll torrent documents that need metadata or preview work.
+- Poll torrent documents that need metadata, preview, or actor-analysis work.
 - Fetch the raw `.torrent` payload through the configured provider.
 - Store the raw torrent in Cloudflare R2.
 - Write parsed torrent metadata and file lists back to the database.
 - Repair stale metadata and preview processing leases.
 - Generate preview artifacts after metadata succeeds.
+- Identify main actors from durable preview frames and persist reusable global
+  identities with capped biometric evidence.
 
 ## Triggers
 
-- Long-running VM worker process. Metadata and preview loops use atomic MongoDB
+- Long-running VM worker process. Metadata, preview, and actor-analysis loops use atomic MongoDB
   `findOneAndUpdate` claims on torrent documents, so duplicate worker processes
   can only claim distinct eligible torrents.
 
@@ -93,6 +100,11 @@ does not require Auth.js or Entra variables.
 | `MMV_METADATA_WORKER_ENABLED` | Enables the metadata pipeline. |
 | `MMV_METADATA_WORKER_MAX_CONCURRENCY` | Maximum concurrent metadata tasks. Defaults to `10`. |
 | `MMV_PREVIEW_WORKER_ENABLED` | Enables the preview pipeline. |
+| `MMV_ACTOR_ANALYSIS_WORKER_ENABLED` | Enables sequential actor identification. Defaults to `true`. |
+| `MMV_ACTOR_ANALYSIS_MODELS_DIR` | Directory containing checksum-verified YuNet and SFace ONNX files. Defaults to `.local/models`. |
+| `MMV_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS` | Idle actor-analysis polling interval. Defaults to `5`. |
+| `MMV_ACTOR_ANALYSIS_LEASE_SECONDS` | Actor-analysis processing lease. Defaults to `1800`. |
+| `MMV_ACTOR_ANALYSIS_MAX_ATTEMPTS` | Immediate actor-analysis attempt limit. Defaults to `3`. |
 | `MMV_TORRENT_PROVIDER` | `http` for resolver/DHT processing, or `fake` for deterministic local metadata. |
 | `MMV_TORRENT_RESOLVER_URLS` | HTTP resolver URL templates. |
 | `MMV_TORRENT_FETCH_TIMEOUT_SECONDS` | HTTP torrent fetch timeout. |
@@ -152,6 +164,35 @@ or fingerprint is missing or stale for the current worker, resetting the attempt
 count for that new artifact recipe. If a regeneration run produces no
 replacement frame or sheet artifacts, the worker keeps any existing preview
 artifact keys. Admins can reset preview attempts from torrent management.
+
+## Actor Analysis Pipeline
+
+The worker consumes persisted preview frames only; contact sheets are excluded.
+It uses checksum-pinned OpenCV YuNet and SFace ONNX models baked into the Docker
+image. Analysis runs sequentially so UUID actor creation and exact
+application-side cosine matching remain simple and deterministic.
+
+Eligible torrents have a successful preview with at least one durable frame, or
+a partial preview with at least two durable frames. The worker clusters faces
+within a torrent, keeps only frequent high-quality main-actor clusters, and
+matches those clusters against active-model actor centroids and capped
+exemplars. Ambiguous clusters remain unassigned. A successful run with no
+qualifying main actor writes an empty `systemActorIds` list.
+
+Actor records retain up to 12 exemplars, with at most two from one torrent.
+Centroids are recomputed whenever retained evidence changes. Actor names and
+profile images are set only when a UUID identity is first created, so admin
+edits survive reanalysis. Torrent deletion does not delete actor-owned biometric
+evidence.
+
+Actor-analysis state lives on each torrent. Claims use a processing lease,
+expired leases return to `pending`, and unexpected failures retry immediately
+up to `MMV_ACTOR_ANALYSIS_MAX_ATTEMPTS`. Replacing preview artifacts queues
+downstream analysis while preserving visible detected assignments until a new
+run succeeds. Completion writes are conditional on the claimed preview
+generation and processing state, so stale in-flight work cannot overwrite a
+newer preview or admin reset. Admins can queue one selected torrent from torrent
+management.
 
 The deployed VM runs the VM worker with Docker and systemd. The container image
 includes Python 3.13, `libtorrent`, `ffmpeg`, and `ffprobe`, runs the

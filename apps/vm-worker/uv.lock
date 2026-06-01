@@ -382,12 +382,13 @@ wheels = [
 
 [[package]]
 name = "mymediavault-vm-worker"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "beanie" },
     { name = "boto3" },
     { name = "libtorrent" },
+    { name = "opencv-python-headless" },
     { name = "pydantic-settings" },
     { name = "pymongo" },
     { name = "torrent-preview" },
@@ -403,6 +404,7 @@ requires-dist = [
     { name = "beanie", specifier = ">=2.1.0" },
     { name = "boto3", specifier = ">=1.43.9" },
     { name = "libtorrent", specifier = ">=2.0.11" },
+    { name = "opencv-python-headless", specifier = ">=4.13.0.92,<4.14" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pymongo", specifier = ">=4.17.0" },
     { name = "torrent-preview", specifier = "==5.3.2", index = "https://pkgs.dev.azure.com/lingxt/_packaging/lingxt/pypi/simple/" },

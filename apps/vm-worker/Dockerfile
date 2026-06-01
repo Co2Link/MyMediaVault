@@ -9,11 +9,14 @@ ENV UV_LINK_MODE=copy
 
 COPY apps/vm-worker/pyproject.toml apps/vm-worker/uv.lock apps/vm-worker/README.md ./
 COPY apps/vm-worker/src ./src
+COPY apps/vm-worker/models ./models
+COPY apps/vm-worker/scripts/download_face_models.py ./scripts/download_face_models.py
 
 RUN --mount=type=secret,id=uv_index_lingxt_password \
     UV_INDEX_LINGXT_USERNAME=az \
     UV_INDEX_LINGXT_PASSWORD="$(cat /run/secrets/uv_index_lingxt_password)" \
     uv sync --locked --no-dev
+RUN python scripts/download_face_models.py --output .local/models
 
 FROM python:3.13-slim-bookworm AS runner
 
@@ -33,6 +36,8 @@ ENV MMV_VM_WORKER_DEBUG_LOG_PATH="/var/log/mymediavault/vm-worker/debug.log"
 COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/.venv ./.venv
 COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/src ./src
 COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/pyproject.toml ./pyproject.toml
+COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/models ./models
+COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/.local/models ./.local/models
 
 USER mymediavault-vm
 

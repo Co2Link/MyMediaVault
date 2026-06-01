@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { ActorModel, connectMongo, TagModel, disconnectMongo } from "@mymediavault/core/db";
+import { ActorModel, connectMongo, TagModel, TorrentModel, disconnectMongo } from "@mymediavault/core/db";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const adminStorageState = path.join(dirname, "..", ".auth", "admin.json");
@@ -60,12 +60,21 @@ test("user can assign and edit video tags and actors", async ({ browser, page })
   await expect(page.getByLabel(actorName)).toBeChecked();
   await expect(page.getByLabel(tagName)).toBeChecked();
 
+  const actor = await ActorModel.findOne({ name: actorName }).lean().exec();
+  if (!actor) {
+    throw new Error("Expected actor fixture to exist.");
+  }
+  await TorrentModel.updateOne({ infoHash }, { $set: { systemActorIds: [actor._id] } }).exec();
+  await page.reload();
+  await expect(page.getByRole("group", { name: "Detected actors" }).getByText(actorName)).toBeVisible();
+
   await page.getByLabel(actorName).uncheck();
   await page.getByLabel(tagName).uncheck();
   await page.getByRole("button", { name: "Save details" }).click();
   await expect(page.getByText("Video details saved.")).toBeVisible();
 
   await page.reload();
+  await expect(page.getByRole("group", { name: "Detected actors" }).getByText(actorName)).toBeVisible();
   await expect(page.getByLabel(actorName)).not.toBeChecked();
   await expect(page.getByLabel(tagName)).not.toBeChecked();
 });

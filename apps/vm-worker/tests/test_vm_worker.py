@@ -49,7 +49,9 @@ def _preview_diagnostics(**overrides: object) -> PreviewDiagnostics:
     return PreviewDiagnostics(**values)
 
 
-def test_settings_require_openai_api_key_for_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_require_openai_api_key_for_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
@@ -67,12 +69,15 @@ def test_settings_reject_blank_openai_api_key() -> None:
         )
 
 
-def test_settings_allow_metadata_only_without_openai_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_allow_metadata_only_without_openai_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     settings = PreviewWorkerSettings(
         mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
         preview_worker_enabled=False,
+        actor_analysis_worker_enabled=False,
         _env_file=None,
     )
 
@@ -403,9 +408,7 @@ def test_parse_torrent_reads_single_file_payload() -> None:
 
     assert metadata["name"] == "movie.mkv"
     assert metadata["sizeBytes"] == 123
-    assert metadata["files"] == [
-        {"path": "movie.mkv", "sizeBytes": 123, "position": 0}
-    ]
+    assert metadata["files"] == [{"path": "movie.mkv", "sizeBytes": 123, "position": 0}]
     assert metadata["raw"] == raw
 
 
@@ -453,9 +456,7 @@ def test_artifact_stale_query_includes_completed_statuses_and_missing_fields() -
         artifact_fingerprint="sha256:current",
     )
 
-    assert stale_query["previewStatus"] == {
-        "$in": ["succeeded", "failed", "partial"]
-    }
+    assert stale_query["previewStatus"] == {"$in": ["succeeded", "failed", "partial"]}
     assert {"previewDiagnostics.artifactVersion": {"$exists": False}} in stale_query[
         "$or"
     ]
@@ -529,7 +530,9 @@ def test_vm_worker_logging_keeps_console_info_and_json_debug_file(
     assert debug_record["extra"]["openai_api_key"] == "[redacted]"
 
 
-def test_artifact_stale_claim_resets_attempts_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_artifact_stale_claim_resets_attempts_to_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCollection:
         def __init__(self) -> None:
             self.update: dict[str, object] | None = None
@@ -607,6 +610,8 @@ def test_success_update_persists_preview_result_artifact_fields() -> None:
     assert update["previewDiagnostics"]["selectedFilePath"] == "movie.mkv"
     assert update["previewFrames"][0]["key"] == "previews/abc/frame_001.jpg"
     assert update["previewSheet"]["key"] == "previews/abc/preview_sheet.jpg"
+    assert update["actorAnalysisStatus"] == "pending"
+    assert update["actorAnalysisAttempts"] == 0
 
 
 def test_success_update_serializes_integer_diagnostic_keys_as_strings(
@@ -656,9 +661,9 @@ def test_success_update_serializes_integer_diagnostic_keys_as_strings(
         artifact_fingerprint="sha256:current",
     )["$set"]
 
-    retry_attempt = update["previewDiagnostics"]["details"]["anchor_retry"][
-        "attempts"
-    ][0]
+    retry_attempt = update["previewDiagnostics"]["details"]["anchor_retry"]["attempts"][
+        0
+    ]
     assert retry_attempt["decoded_candidate_counts_by_anchor"] == {"1": 2}
     assert retry_attempt["llm_visible_candidate_counts_by_anchor"] == {"1": 0}
 
@@ -750,13 +755,21 @@ def test_job_lease_uploads_preview_artifacts(tmp_path: Path) -> None:
         retry_delays_seconds=[900, 3600],
     )
 
-    frames = asyncio.run(lease._store_frames(
-        "abc",
-        [GeneratedFrame(path=frame_path, width=640, height=360, timestamp_seconds=1.25)],
-    ))
-    sheet = asyncio.run(lease._store_sheet(
-        "abc", GeneratedSheet(path=sheet_path, width=640, height=360)
-    ))
+    frames = asyncio.run(
+        lease._store_frames(
+            "abc",
+            [
+                GeneratedFrame(
+                    path=frame_path, width=640, height=360, timestamp_seconds=1.25
+                )
+            ],
+        )
+    )
+    sheet = asyncio.run(
+        lease._store_sheet(
+            "abc", GeneratedSheet(path=sheet_path, width=640, height=360)
+        )
+    )
 
     assert frames[0]["key"] == "previews/abc/frame_001.jpg"
     assert sheet is not None

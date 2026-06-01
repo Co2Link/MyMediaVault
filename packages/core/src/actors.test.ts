@@ -149,7 +149,16 @@ describe("actors", () => {
     await deleteActor("actor-1");
 
     expect(mocks.models.ActorModel.deleteOne).toHaveBeenCalledWith({ _id: "actor-1" });
-    expect(mocks.models.TorrentModel.updateMany).toHaveBeenCalledWith({}, { $pull: { actorIds: "actor-1" } });
+    expect(mocks.models.TorrentModel.updateMany).toHaveBeenCalledWith(
+      {},
+      {
+        $pull: {
+          actorIds: "actor-1",
+          userActorIds: "actor-1",
+          systemActorIds: "actor-1",
+        },
+      },
+    );
     expect(mocks.blobStore.deleteIfExists).toHaveBeenCalledWith("actors/actor-1/profile.jpg");
   });
 });

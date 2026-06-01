@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import mongoose, { Schema, type Model } from "mongoose";
 import { getDatabaseEnv } from "./env.js";
-import type { MetadataFailureKind, MetadataStatus, PreviewStatus } from "./types.js";
+import type { ActorAnalysisStatus, MetadataFailureKind, MetadataStatus, PreviewStatus } from "./types.js";
 
 export type UserDoc = {
   _id: string;
@@ -60,8 +60,24 @@ export type ActorDoc = {
   description: string | null;
   profileImageKey: string;
   profileImageMimeType: string;
+  faceExemplars: ActorFaceExemplarDoc[];
+  faceCentroids: ActorFaceCentroidDoc[];
+  faceExemplarRevision: number;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type ActorFaceExemplarDoc = {
+  modelVersion: string;
+  embedding: number[];
+  qualityScore: number;
+  sourceTorrentId: string | null;
+  sourceFrameKey: string | null;
+};
+
+export type ActorFaceCentroidDoc = {
+  modelVersion: string;
+  embedding: number[];
 };
 
 export type TorrentFileDoc = {
@@ -113,7 +129,17 @@ export type TorrentDoc = {
   metadataLeaseUntil: Date | null;
   metadataDiagnostics: Record<string, unknown>;
   files: TorrentFileDoc[];
-  actorIds: string[];
+  actorIds?: string[];
+  userActorIds?: string[];
+  systemActorIds?: string[];
+  actorAnalysisStatus?: ActorAnalysisStatus;
+  actorAnalysisAttempts?: number;
+  actorAnalysisLastAttemptAt?: Date | null;
+  actorAnalysisUpdatedAt?: Date | null;
+  actorAnalysisLeaseUntil?: Date | null;
+  actorAnalysisFingerprint?: string | null;
+  actorAnalysisError?: string | null;
+  actorAnalysisDiagnostics?: Record<string, unknown>;
   previewStatus: PreviewStatus;
   previewAttempts: number;
   previewLastAttemptAt: Date | null;
@@ -221,6 +247,25 @@ const tagSchema = new Schema<TagDoc>(
   schemaOptions,
 );
 
+const actorFaceExemplarSchema = new Schema<ActorFaceExemplarDoc>(
+  {
+    modelVersion: { type: String, required: true },
+    embedding: { type: [Number], required: true },
+    qualityScore: { type: Number, required: true },
+    sourceTorrentId: { type: String, default: null },
+    sourceFrameKey: { type: String, default: null },
+  },
+  { _id: false, versionKey: false },
+);
+
+const actorFaceCentroidSchema = new Schema<ActorFaceCentroidDoc>(
+  {
+    modelVersion: { type: String, required: true },
+    embedding: { type: [Number], required: true },
+  },
+  { _id: false, versionKey: false },
+);
+
 const actorSchema = new Schema<ActorDoc>(
   {
     _id: { type: String, default: newId },
@@ -228,6 +273,9 @@ const actorSchema = new Schema<ActorDoc>(
     description: { type: String, default: null },
     profileImageKey: { type: String, required: true },
     profileImageMimeType: { type: String, required: true },
+    faceExemplars: { type: [actorFaceExemplarSchema], default: [] },
+    faceCentroids: { type: [actorFaceCentroidSchema], default: [] },
+    faceExemplarRevision: { type: Number, default: 0 },
   },
   schemaOptions,
 );
@@ -294,7 +342,22 @@ const torrentSchema = new Schema<TorrentDoc>(
     metadataLeaseUntil: { type: Date, default: null, index: true },
     metadataDiagnostics: { type: Schema.Types.Mixed, default: () => ({}) },
     files: { type: [torrentFileSchema], default: [] },
-    actorIds: { type: [String], default: [], index: true },
+    actorIds: { type: [String], index: true },
+    userActorIds: { type: [String], default: [], index: true },
+    systemActorIds: { type: [String], default: [], index: true },
+    actorAnalysisStatus: {
+      type: String,
+      enum: ["pending", "processing", "succeeded", "failed"],
+      default: "pending",
+      index: true,
+    },
+    actorAnalysisAttempts: { type: Number, default: 0 },
+    actorAnalysisLastAttemptAt: { type: Date, default: null },
+    actorAnalysisUpdatedAt: { type: Date, default: null },
+    actorAnalysisLeaseUntil: { type: Date, default: null, index: true },
+    actorAnalysisFingerprint: { type: String, default: null },
+    actorAnalysisError: { type: String, default: null },
+    actorAnalysisDiagnostics: { type: Schema.Types.Mixed, default: () => ({}) },
     previewStatus: {
       type: String,
       enum: ["pending", "processing", "succeeded", "partial", "failed"],
@@ -312,6 +375,7 @@ const torrentSchema = new Schema<TorrentDoc>(
   schemaOptions,
 );
 torrentSchema.index({ metadataStatus: 1, previewStatus: 1, updatedAt: 1, _id: 1 });
+torrentSchema.index({ actorAnalysisStatus: 1, actorAnalysisLeaseUntil: 1, actorAnalysisUpdatedAt: 1, _id: 1 });
 
 const videoSchema = new Schema<VideoDoc>(
   {
@@ -470,7 +534,18 @@ export async function resetE2EState(usernames: string[]) {
 
   await Promise.all([
     staleActorIds.length > 0 ? ActorModel.deleteMany({ _id: { $in: staleActorIds } }).exec() : Promise.resolve(),
-    staleActorIds.length > 0 ? TorrentModel.updateMany({}, { $pull: { actorIds: { $in: staleActorIds } } }).exec() : Promise.resolve(),
+    staleActorIds.length > 0
+      ? TorrentModel.updateMany(
+          {},
+          {
+            $pull: {
+              actorIds: { $in: staleActorIds },
+              userActorIds: { $in: staleActorIds },
+              systemActorIds: { $in: staleActorIds },
+            },
+          },
+        ).exec()
+      : Promise.resolve(),
     TagModel.deleteMany({ name: /^e2e-tag-/ }).exec(),
     userIds.length > 0 ? UserModel.deleteMany({ _id: { $in: userIds } }).exec() : Promise.resolve(),
     userIds.length > 0 ? AccountModel.deleteMany({ userId: { $in: userIds } }).exec() : Promise.resolve(),

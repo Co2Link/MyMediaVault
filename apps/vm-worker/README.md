@@ -1,12 +1,14 @@
 # MyMediaVault VM Worker
 
-VM-hosted Python worker that polls MongoDB for torrent metadata and preview
-work. Metadata processing uses torrent documents as the queue, resolves
+VM-hosted Python worker that polls MongoDB for torrent metadata, preview, and
+actor-identification work. Metadata processing uses torrent documents as the queue, resolves
 `.torrent` payloads through configured HTTP resolvers, uploads raw torrents to
 R2-compatible storage, and writes parsed metadata back to the canonical torrent
 document. Preview processing delegates concurrent media preview generation to
 the `torrent-preview` worker harness and stores generated sheets and frames in
-the same blob store.
+the same blob store. Sequential actor analysis consumes durable frames, uses
+OpenCV YuNet and SFace to identify main actors, and stores reusable UUID
+identities plus system-managed torrent assignments.
 
 ## Run
 
@@ -17,6 +19,34 @@ uv run mymediavault-vm-worker
 
 Local native runs require Python 3.13, `libtorrent`, `ffmpeg`, and preferably
 `ffprobe`. Environment variables are documented in `.env.example`.
+
+## Face Models
+
+The offline actor-identification analyzer uses pinned OpenCV YuNet and SFace
+ONNX models. The model binaries are not committed to Git. Download and verify
+them from the checked-in manifest before running actor-identification
+evaluation locally:
+
+```bash
+uv run python scripts/download_face_models.py --output .local/models
+```
+
+The VM-worker Docker build downloads and verifies the same model files, then
+bakes them into the image. Runtime job processing does not download models.
+Actor identification is enabled by default. See `.env.example` for the model
+directory, polling interval, lease duration, and maximum attempt settings.
+
+Run the strict offline fixture gate from `apps/vm-worker`:
+
+```bash
+uv run python scripts/evaluate_actor_identification.py \
+  --previews ../../tmp/previews \
+  --ground-truth ../../tmp/GT.json \
+  --models-dir .local/models
+```
+
+The gate requires zero false merges, 100 percent recall, and zero unnecessary
+identity splits.
 
 ## Deploy
 

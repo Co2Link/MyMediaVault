@@ -152,6 +152,28 @@ describe("torrent and video deletion", () => {
     );
   });
 
+  it("resets actor analysis for immediate processing", async () => {
+    const { resetTorrentActorAnalysis } = await import("./videos.js");
+
+    await resetTorrentActorAnalysis("torrent-1");
+
+    expect(mocks.models.TorrentModel.updateOne).toHaveBeenCalledWith(
+      { _id: "torrent-1" },
+      {
+        $set: {
+          actorAnalysisStatus: "pending",
+          actorAnalysisAttempts: 0,
+          actorAnalysisLastAttemptAt: null,
+          actorAnalysisUpdatedAt: expect.any(Date),
+          actorAnalysisLeaseUntil: null,
+          actorAnalysisFingerprint: null,
+          actorAnalysisError: null,
+          actorAnalysisDiagnostics: {},
+        },
+      },
+    );
+  });
+
   it("deletes a user's video and removes the orphan torrent blob", async () => {
     mocks.state.videoFindOne = {
       _id: "video-1",

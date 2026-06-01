@@ -20,3 +20,15 @@ testing, or workflow behavior changes.
 - [Deployment](deployment.md): dev deployment flow and Azure resources.
 - [Branching Strategy](branching-strategy.md): branch rules and release
   boundaries.
+
+## Feature Design
+
+- [Actor Identification Plan](actor-identification-plan.md): staged
+  implementation record and verification plan for asynchronous main-actor
+  identification.
+
+## Architecture Decisions
+
+- [ADR 001: Asynchronous Actor Identification](decisions/001-asynchronous-actor-identification.md):
+  accepted design for durable global actor identities, biometric evidence, and
+  the downstream VM-worker pipeline.

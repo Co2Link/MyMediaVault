@@ -6,6 +6,16 @@ describe("VideoActorPicker", () => {
   it("shows available actors and selected state", () => {
     const { getByLabelText, getByText } = render(
       <VideoActorPicker
+        detectedActors={[
+          {
+            id: "actor-3",
+            name: "Detected Actor",
+            description: null,
+            hasProfileImage: false,
+            createdAt: "2024-01-01T00:00:00.000Z",
+            updatedAt: "2024-01-01T00:00:00.000Z",
+          },
+        ]}
         selectedActorIds={["actor-2"]}
         actors={[
           {
@@ -28,7 +38,9 @@ describe("VideoActorPicker", () => {
       />,
     );
 
-    expect(getByText("Actors")).toBeVisible();
+    expect(getByText("Detected actors")).toBeVisible();
+    expect(getByText("Detected Actor")).toBeVisible();
+    expect(getByText("Manual actors")).toBeVisible();
     expect(getByLabelText("Jane Actor")).not.toBeChecked();
     expect(getByLabelText("Sam Actor")).toBeChecked();
   });

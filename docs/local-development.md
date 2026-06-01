@@ -29,8 +29,17 @@ exercise real resolvers and DHT fallback.
 ```bash
 cd apps/vm-worker
 uv sync
+uv run python scripts/download_face_models.py --output .local/models
 uv run mymediavault-vm-worker
 ```
+
+The face-model setup command downloads checksum-verified OpenCV YuNet and SFace
+ONNX artifacts declared in `apps/vm-worker/models/face_models.json`. The files
+stay under ignored local storage and are also baked into deployed worker
+images. Actor identification is enabled by default and runs sequentially after
+durable preview frames are available. Set
+`MMV_ACTOR_ANALYSIS_WORKER_ENABLED=false` only when intentionally running a
+subset of worker pipelines.
 
 ## End-to-End Local Stack
 

@@ -1,5 +1,9 @@
 import type { TorrentSummary } from "@/lib/types";
-import { deleteTorrentAction, retryTorrentPreviewAction } from "@/app/admin/torrents/actions";
+import {
+  deleteTorrentAction,
+  reanalyzeTorrentActorsAction,
+  retryTorrentPreviewAction,
+} from "@/app/admin/torrents/actions";
 import { VideoPreviewGallery } from "@/components/video-preview-gallery";
 
 export function TorrentAdminPanel({
@@ -60,8 +64,28 @@ export function TorrentAdminPanel({
                   </pre>
                 ) : null}
               </details>
+              <details className="admin-diagnostics">
+                <summary>Actor analysis: {torrent.actorAnalysis.status}</summary>
+                <dl className="diagnostics-grid">
+                  <DiagnosticTerm label="Attempts" value={torrent.actorAnalysis.attempts} />
+                  <DiagnosticTerm label="Last attempt" value={formatDate(torrent.actorAnalysis.lastAttemptAt)} />
+                  <DiagnosticTerm label="Updated" value={formatDate(torrent.actorAnalysis.updatedAt)} />
+                  <DiagnosticTerm label="Fingerprint" value={torrent.actorAnalysis.fingerprint} />
+                  <DiagnosticTerm label="Error" value={torrent.actorAnalysis.error} />
+                </dl>
+                {Object.keys(torrent.actorAnalysis.diagnostics).length > 0 ? (
+                  <pre className="diagnostics-json">
+                    {JSON.stringify(torrent.actorAnalysis.diagnostics, null, 2)}
+                  </pre>
+                ) : null}
+              </details>
             </div>
             <div className="admin-actions">
+              <form action={reanalyzeTorrentActorsAction.bind(null, torrent.id)}>
+                <button className="ghost-button" type="submit">
+                  Reanalyze actors
+                </button>
+              </form>
               <form action={retryTorrentPreviewAction.bind(null, torrent.id)}>
                 <button className="ghost-button" type="submit">
                   Retry preview

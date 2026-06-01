@@ -45,7 +45,11 @@ export function VideoDetailForm({
             ))}
           </select>
         </label>
-        <VideoActorPicker actors={actors} selectedActorIds={video.actors.map((actor) => actor.id)} />
+        <VideoActorPicker
+          actors={actors}
+          detectedActors={video.systemActors}
+          selectedActorIds={video.userActors.map((actor) => actor.id)}
+        />
         <VideoTagPicker tags={tags} selectedTagIds={video.tags.map((tag) => tag.id)} />
         {state.error ? <p className="error-copy">{state.error}</p> : null}
         {state.success ? <p className="success-copy">{state.success}</p> : null}

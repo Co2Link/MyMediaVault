@@ -26,7 +26,8 @@ application.
 - `/`: the signed-in user collection with search.
 - `/add`: add a video by torrent info hash and assign existing actors and tags.
 - `/actors/[id]`: view the shared actor profile, description, and profile image.
-- `/videos/[id]`: view, edit actors/tags, and delete private video details.
+- `/videos/[id]`: view detected actors, edit manual actors/tags, and delete
+  private video details.
 - `/admin/actors`: admin-only actor catalog management.
 - `/admin/tags`: admin-only tag management.
 - `/admin/torrents`: admin-only torrent management and deletion.
@@ -47,11 +48,12 @@ application.
 - Sign-in upserts the local `users` document with the Entra object ID, admin
   flag, name, email, and image.
 - Adding a video normalizes the info hash, reuses or creates the canonical
-  torrent, applies selected actors to the shared torrent actor list, creates the
+  torrent, applies selected actors to the shared manual actor list, creates the
   user-owned video, attaches any selected tags, and marks metadata as pending.
 - Updating a video detail view can change the private fields, replace the
   video's existing tag links with the selected catalog tags, and replace the
-  canonical torrent's shared actor list.
+  canonical torrent's shared manual actor list. Detected actors remain
+  read-only in this form.
 - Deleting a video removes its private tags and, when it was the last video
   referencing the canonical torrent, deletes the torrent metadata and raw blob.
 - Admin torrent deletion removes the torrent, its dependent videos and video
@@ -59,6 +61,8 @@ application.
 - Admin torrent management can view stored preview sheets and frames by torrent
   ID and reset preview attempts, which returns preview status to `pending`
   without deleting existing artifacts.
+- Admin torrent management shows actor-analysis status and can queue one
+  selected torrent for reanalysis without clearing its current detected actors.
 - Admin actor deletion removes the actor, pulls it from all torrent actor lists,
   and deletes the stored profile image.
 - Detail and admin changes revalidate the affected routes so the server-rendered
@@ -74,10 +78,11 @@ application.
 
 ## Worker Boundary
 
-The web app marks torrent metadata as pending, but it does not process torrent
-metadata or preview images itself. Metadata and preview generation are handled
-by the VM-hosted `apps/vm-worker` process. Shared domain logic for the web app
-stays in `packages/core`.
+The web app marks torrent metadata or actor reanalysis as pending, but it does
+not process torrent metadata, preview images, or faces itself. Metadata, preview
+generation, and actor identification are handled by the VM-hosted
+`apps/vm-worker` process. Shared domain logic for the web app stays in
+`packages/core`.
 
 ## Environment Variables
 

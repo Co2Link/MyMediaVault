@@ -15,11 +15,12 @@ import { resolveActorIds } from "./actors.js";
 import { ConflictError, NotFoundError } from "./errors.js";
 import { buildBlobStore } from "./storage.js";
 import type {
+  ActorAnalysisRead,
+  ActorRead,
   PreviewDiagnosticsRead,
   PreviewFrameRead,
   PreviewRead,
   PreviewSheetRead,
-  ActorRead,
   TagRead,
   TorrentFileRead,
   TorrentSummary,
@@ -33,6 +34,8 @@ type VideoRecord = {
   torrent: TorrentDoc;
   tags: TagDoc[];
   actors: ActorDoc[];
+  systemActors: ActorDoc[];
+  userActors: ActorDoc[];
 };
 
 export async function searchVideos(userId: string, query?: string) {
@@ -158,7 +161,7 @@ export async function createVideo(
   let torrent = (await TorrentModel.findOne({ infoHash }).lean().exec()) as TorrentDoc | null;
 
   if (!torrent) {
-    const createdTorrent = await TorrentModel.create({ infoHash, metadataStatus: "pending", actorIds });
+    const createdTorrent = await TorrentModel.create({ infoHash, metadataStatus: "pending", userActorIds: actorIds });
     torrent = createdTorrent.toObject() as TorrentDoc;
   }
 
@@ -168,9 +171,9 @@ export async function createVideo(
     throw new ConflictError("This video is already in your collection.");
   }
 
-  if (actorIds.length > 0 && !arraysEqual(actorIds, torrent.actorIds ?? [])) {
-    await TorrentModel.updateOne({ _id: torrent._id }, { $set: { actorIds } }).exec();
-    torrent = { ...torrent, actorIds };
+  if (actorIds.length > 0 && !arraysEqual(actorIds, torrentUserActorIds(torrent))) {
+    await TorrentModel.updateOne({ _id: torrent._id }, { $set: { userActorIds: actorIds }, $unset: { actorIds: "" } }).exec();
+    torrent = { ...torrent, actorIds: undefined, userActorIds: actorIds };
   }
 
   const tagIds = await resolveTagIds(input.tagIds);
@@ -221,7 +224,10 @@ export async function updateVideo(
   }
   await Promise.all([
     syncVideoTags(updated._id, tagIds),
-    TorrentModel.updateOne({ _id: updated.torrentId }, { $set: { actorIds } }).exec(),
+    TorrentModel.updateOne(
+      { _id: updated.torrentId },
+      { $set: { userActorIds: actorIds }, $unset: { actorIds: "" } },
+    ).exec(),
   ]);
   return toVideoDetail(await hydrateVideo(updated));
 }
@@ -278,6 +284,28 @@ export async function resetTorrentPreview(torrentId: string) {
   }
 }
 
+export async function resetTorrentActorAnalysis(torrentId: string) {
+  await connectMongo();
+  const result = await TorrentModel.updateOne(
+    { _id: torrentId },
+    {
+      $set: {
+        actorAnalysisStatus: "pending",
+        actorAnalysisAttempts: 0,
+        actorAnalysisLastAttemptAt: null,
+        actorAnalysisUpdatedAt: new Date(),
+        actorAnalysisLeaseUntil: null,
+        actorAnalysisFingerprint: null,
+        actorAnalysisError: null,
+        actorAnalysisDiagnostics: {},
+      },
+    },
+  ).exec();
+  if (result.matchedCount === 0) {
+    throw new NotFoundError("Torrent was not found.");
+  }
+}
+
 export async function enqueueTorrentMetadata(torrentId: string) {
   await connectMongo();
   const torrent = await TorrentModel.findById(torrentId).lean().exec();
@@ -317,7 +345,7 @@ async function hydrateVideos(videos: VideoDoc[]): Promise<VideoRecord[]> {
   const tagIds = [...new Set(videoTags.map((videoTag) => videoTag.tagId))];
   const tags =
     tagIds.length > 0 ? ((await TagModel.find({ _id: { $in: tagIds } }).lean().exec()) as TagDoc[]) : [];
-  const actorIds = [...new Set(torrents.flatMap((torrent) => torrent.actorIds ?? []))];
+  const actorIds = [...new Set(torrents.flatMap(torrentVisibleActorIds))];
   const actors =
     actorIds.length > 0 ? ((await ActorModel.find({ _id: { $in: actorIds } }).lean().exec()) as ActorDoc[]) : [];
   const torrentsById = new Map(torrents.map((torrent) => [torrent._id, torrent]));
@@ -334,11 +362,19 @@ async function hydrateVideos(videos: VideoDoc[]): Promise<VideoRecord[]> {
       .map((videoTag) => tagsById.get(videoTag.tagId))
       .filter((tag): tag is TagDoc => Boolean(tag))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const actorsForVideo = (torrent.actorIds ?? [])
-      .map((actorId) => actorsById.get(actorId))
-      .filter((actor): actor is ActorDoc => Boolean(actor))
-      .sort(compareActorNames);
-    return [{ video, torrent, tags: tagsForVideo, actors: actorsForVideo }];
+    const actorsForVideo = mapActors(torrentVisibleActorIds(torrent), actorsById);
+    const systemActorsForVideo = mapActors(torrent.systemActorIds ?? [], actorsById);
+    const userActorsForVideo = mapActors(torrentUserActorIds(torrent), actorsById);
+    return [
+      {
+        video,
+        torrent,
+        tags: tagsForVideo,
+        actors: actorsForVideo,
+        systemActors: systemActorsForVideo,
+        userActors: userActorsForVideo,
+      },
+    ];
   });
 }
 
@@ -381,6 +417,21 @@ function groupVideoTags(videoTags: VideoTagDoc[]) {
     grouped.set(videoTag.videoId, tags);
   }
   return grouped;
+}
+
+function mapActors(actorIds: string[], actorsById: Map<string, ActorDoc>) {
+  return actorIds
+    .map((actorId) => actorsById.get(actorId))
+    .filter((actor): actor is ActorDoc => Boolean(actor))
+    .sort(compareActorNames);
+}
+
+function torrentUserActorIds(torrent: TorrentDoc) {
+  return torrent.userActorIds ?? torrent.actorIds ?? [];
+}
+
+function torrentVisibleActorIds(torrent: TorrentDoc) {
+  return [...new Set([...(torrent.systemActorIds ?? []), ...torrentUserActorIds(torrent)])];
 }
 
 function compareNewestVideoFirst(a: VideoDoc, b: VideoDoc) {
@@ -433,6 +484,8 @@ function toVideoDetail(record: VideoRecord): VideoDetail {
         path: file.path,
         sizeBytes: file.sizeBytes,
       })),
+    systemActors: toActorReads(record.systemActors),
+    userActors: toActorReads(record.userActors),
   };
 }
 
@@ -445,6 +498,7 @@ function toTorrentSummary(torrent: TorrentDoc, videoCount: number): TorrentSumma
     metadataStatus: torrent.metadataStatus,
     metadataError: torrent.metadataError,
     preview: toPreview(torrent),
+    actorAnalysis: toActorAnalysis(torrent),
     videoCount,
     createdAt: torrent.createdAt.toISOString(),
     updatedAt: torrent.updatedAt.toISOString(),
@@ -459,7 +513,11 @@ function toTags(record: VideoRecord): TagRead[] {
 }
 
 function toActors(record: VideoRecord): ActorRead[] {
-  return record.actors.map((actor) => ({
+  return toActorReads(record.actors);
+}
+
+function toActorReads(actors: ActorDoc[]): ActorRead[] {
+  return actors.map((actor) => ({
     id: actor._id,
     name: actor.name,
     description: actor.description,
@@ -467,6 +525,18 @@ function toActors(record: VideoRecord): ActorRead[] {
     createdAt: actor.createdAt.toISOString(),
     updatedAt: actor.updatedAt.toISOString(),
   }));
+}
+
+function toActorAnalysis(torrent: TorrentDoc): ActorAnalysisRead {
+  return {
+    status: torrent.actorAnalysisStatus ?? "pending",
+    attempts: torrent.actorAnalysisAttempts ?? 0,
+    lastAttemptAt: torrent.actorAnalysisLastAttemptAt?.toISOString() ?? null,
+    updatedAt: torrent.actorAnalysisUpdatedAt?.toISOString() ?? null,
+    fingerprint: torrent.actorAnalysisFingerprint ?? null,
+    error: torrent.actorAnalysisError ?? null,
+    diagnostics: normalizeUnknownRecord(torrent.actorAnalysisDiagnostics),
+  };
 }
 
 async function deleteTorrentRecord(torrent: TorrentDoc, videoIds: string[]) {

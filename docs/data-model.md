@@ -24,8 +24,9 @@ erDiagram
 - `sessions`: Auth.js database sessions keyed by unique `sessionToken`.
 - `verification_tokens`: Auth.js verification token storage.
 - `torrents`: canonical torrent metadata keyed by unique normalized `infoHash`.
-- `actors`: shared actor catalog keyed by unique actor name. Actor records store
-  a name, optional description, and private profile-image blob metadata.
+- `actors`: shared actor catalog keyed by stable UUID with a unique actor name.
+  Actor records store a name, optional description, private profile-image blob
+  metadata, versioned face centroids, and capped private exemplars.
 - `videos`: user-owned collection item with private title, description, and
   rating; unique by `(userId, torrentId)`.
 - `tags`: global tag catalog keyed by unique tag name.
@@ -51,9 +52,21 @@ unique.
 Actor names are trimmed, whitespace-normalized, non-empty, and unique. Actor
 profile images are stored in the configured blob store under private object
 keys and are served through authenticated web route handlers. Torrent actor
-attribution is stored as `torrents.actorIds`, so all videos that reference the
-same canonical torrent share the same actor list. Deleting an actor removes its
-ID from every torrent before deleting the actor's profile image blob.
+attribution is split between worker-owned `systemActorIds` and user-owned
+`userActorIds`, so all videos that reference the same canonical torrent share
+the same visible deduplicated union without automated analysis overwriting
+manual curation. The legacy `actorIds` field remains a compatibility read
+fallback until an existing torrent is updated. Deleting an actor removes its ID
+from every attribution source before deleting the actor's profile image blob.
+
+Worker-created actors use UUID IDs and default names such as `actor-<uuid>`.
+Admins may replace that name and profile image without changing identity.
+Automatic analysis never renames an existing actor or replaces its profile
+image. Each actor retains up to 12 SFace exemplars with at most two from any one
+torrent. The normalized centroid is recomputed whenever retained exemplars
+change. Exemplars and centroids are versioned by face-model recipe and remain
+private MongoDB fields. Torrent deletion preserves actor-owned evidence; only
+explicit actor deletion removes it.
 
 ## Metadata State
 
@@ -93,3 +106,19 @@ scheduled retry timestamp, and keeps existing artifacts. The worker regenerates
 previews when their recorded `torrent-preview` artifact contract version or
 fingerprint is missing or differs from the worker's current library recipe.
 Artifact-stale claims reset `previewAttempts` for the new recipe.
+
+## Actor Analysis State
+
+`Torrent.actorAnalysisStatus` tracks `pending`, `processing`, `succeeded`, or
+`failed`. The sequential VM-worker actor pipeline claims durable preview frames,
+stores detected assignments in `systemActorIds`, and leaves `userActorIds`
+untouched. A successful analysis with no qualifying main actor stores an empty
+system list.
+
+`actorAnalysisAttempts`, attempt/update timestamps, `actorAnalysisLeaseUntil`,
+`actorAnalysisFingerprint`, `actorAnalysisError`, and compact diagnostics record
+queue state. Replacing preview artifacts queues downstream analysis while
+preserving previous system assignments until replacement analysis succeeds.
+Expired leases return to `pending`; unexpected failures retry immediately up to
+three total attempts. Admin torrent management can reset one selected torrent
+to `pending`.

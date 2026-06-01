@@ -155,7 +155,16 @@ export async function deleteActor(actorId: string) {
 
   await Promise.all([
     ActorModel.deleteOne({ _id: actorId }).exec(),
-    TorrentModel.updateMany({}, { $pull: { actorIds: actorId } }).exec(),
+    TorrentModel.updateMany(
+      {},
+      {
+        $pull: {
+          actorIds: actorId,
+          userActorIds: actorId,
+          systemActorIds: actorId,
+        },
+      },
+    ).exec(),
   ]);
   await buildBlobStore().deleteIfExists(actor.profileImageKey);
 }

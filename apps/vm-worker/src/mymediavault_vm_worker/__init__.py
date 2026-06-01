@@ -33,6 +33,14 @@ from torrent_preview import (
     configure_default_logging,
 )
 
+from .actor_analysis import DEFAULT_MODELS_DIR, FaceModels, YuNetSFaceAnalyzer
+from .actor_worker import (
+    DEFAULT_ACTOR_ANALYSIS_LEASE_SECONDS,
+    DEFAULT_ACTOR_ANALYSIS_MAX_ATTEMPTS,
+    DEFAULT_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS,
+    ActorAnalysisWorker,
+)
+
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
@@ -70,9 +78,7 @@ SENSITIVE_LOG_KEYS = {
     "set_cookie",
 }
 OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
-MONGODB_CREDENTIAL_PATTERN = re.compile(
-    r"(mongodb(?:\+srv)?://[^:/@\s]+:)([^@\s]+)(@)"
-)
+MONGODB_CREDENTIAL_PATTERN = re.compile(r"(mongodb(?:\+srv)?://[^:/@\s]+:)([^@\s]+)(@)")
 PREVIEW_RETRY_DELAY_PATTERN = re.compile(r"([1-9][0-9]*)([mhd])")
 
 
@@ -100,8 +106,30 @@ class PreviewWorkerSettings(BaseSettings):
     r2_secret_access_key: str | None = Field(default=None, alias="R2_SECRET_ACCESS_KEY")
     r2_bucket_name: str = Field(default="torrent-raw", alias="R2_BUCKET_NAME")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
-    metadata_worker_enabled: bool = Field(default=True, alias="MMV_METADATA_WORKER_ENABLED")
-    preview_worker_enabled: bool = Field(default=True, alias="MMV_PREVIEW_WORKER_ENABLED")
+    metadata_worker_enabled: bool = Field(
+        default=True, alias="MMV_METADATA_WORKER_ENABLED"
+    )
+    preview_worker_enabled: bool = Field(
+        default=True, alias="MMV_PREVIEW_WORKER_ENABLED"
+    )
+    actor_analysis_worker_enabled: bool = Field(
+        default=True, alias="MMV_ACTOR_ANALYSIS_WORKER_ENABLED"
+    )
+    actor_analysis_models_dir: Path = Field(
+        default=DEFAULT_MODELS_DIR, alias="MMV_ACTOR_ANALYSIS_MODELS_DIR"
+    )
+    actor_analysis_poll_interval_seconds: float = Field(
+        default=DEFAULT_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS,
+        alias="MMV_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS",
+    )
+    actor_analysis_lease_seconds: int = Field(
+        default=DEFAULT_ACTOR_ANALYSIS_LEASE_SECONDS,
+        alias="MMV_ACTOR_ANALYSIS_LEASE_SECONDS",
+    )
+    actor_analysis_max_attempts: int = Field(
+        default=DEFAULT_ACTOR_ANALYSIS_MAX_ATTEMPTS,
+        alias="MMV_ACTOR_ANALYSIS_MAX_ATTEMPTS",
+    )
     preview_worker_max_concurrency: int = Field(
         default=DEFAULT_MAX_CONCURRENCY, alias="MMV_PREVIEW_WORKER_MAX_CONCURRENCY"
     )
@@ -184,8 +212,12 @@ class PreviewWorkerSettings(BaseSettings):
         if any(credentials) and not all(credentials):
             msg = "R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY must be set together"
             raise ValueError(msg)
-        if not self.metadata_worker_enabled and not self.preview_worker_enabled:
-            msg = "At least one of MMV_METADATA_WORKER_ENABLED or MMV_PREVIEW_WORKER_ENABLED must be true"
+        if (
+            not self.metadata_worker_enabled
+            and not self.preview_worker_enabled
+            and not self.actor_analysis_worker_enabled
+        ):
+            msg = "At least one VM-worker pipeline must be enabled"
             raise ValueError(msg)
         if self.preview_worker_enabled and not (self.openai_api_key or "").strip():
             msg = "OPENAI_API_KEY must be set for torrent-preview Pydantic AI ranking"
@@ -215,6 +247,15 @@ class PreviewWorkerSettings(BaseSettings):
             raise ValueError(msg)
         if any(delay <= 0 for delay in self.metadata_retry_delays_seconds):
             msg = "MMV_TORRENT_METADATA_RETRY_DELAYS_SECONDS values must be positive"
+            raise ValueError(msg)
+        if self.actor_analysis_poll_interval_seconds <= 0:
+            msg = "MMV_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS must be greater than 0"
+            raise ValueError(msg)
+        if self.actor_analysis_lease_seconds <= 0:
+            msg = "MMV_ACTOR_ANALYSIS_LEASE_SECONDS must be greater than 0"
+            raise ValueError(msg)
+        if self.actor_analysis_max_attempts <= 0:
+            msg = "MMV_ACTOR_ANALYSIS_MAX_ATTEMPTS must be greater than 0"
             raise ValueError(msg)
         return self
 
@@ -284,6 +325,16 @@ class Torrent(Document):
     previewDiagnostics: TorrentPreviewDiagnostics = Field(
         default_factory=TorrentPreviewDiagnostics
     )
+    systemActorIds: list[str] = Field(default_factory=list)
+    userActorIds: list[str] = Field(default_factory=list)
+    actorAnalysisStatus: str = "pending"
+    actorAnalysisAttempts: int = 0
+    actorAnalysisLastAttemptAt: datetime | None = None
+    actorAnalysisUpdatedAt: datetime | None = None
+    actorAnalysisLeaseUntil: datetime | None = None
+    actorAnalysisFingerprint: str | None = None
+    actorAnalysisError: str | None = None
+    actorAnalysisDiagnostics: dict[str, Any] = Field(default_factory=dict)
 
     class Settings:
         name = "torrents"
@@ -410,7 +461,9 @@ class HttpTorrentMetadataResolver:
             ) as response:
                 raw = response.read()
         except urllib.error.HTTPError as error:
-            failure_kind = "transient" if error.code in TRANSIENT_HTTP_STATUSES else "permanent"
+            failure_kind = (
+                "transient" if error.code in TRANSIENT_HTTP_STATUSES else "permanent"
+            )
             raise MetadataResolutionError(
                 f"Resolver returned {error.code}",
                 failure_kind=failure_kind,
@@ -452,7 +505,9 @@ class DhtTorrentMetadataResolver:
 
     def _fetch_sync(self, info_hash: str) -> dict[str, Any]:
         normalized = info_hash.strip().lower()
-        if len(normalized) != 40 or any(char not in "0123456789abcdef" for char in normalized):
+        if len(normalized) != 40 or any(
+            char not in "0123456789abcdef" for char in normalized
+        ):
             raise MetadataResolutionError(
                 "Info hash must be 40 hexadecimal characters for DHT fallback.",
                 failure_kind="permanent",
@@ -538,7 +593,8 @@ class MetadataWorker:
             DhtTorrentMetadataResolver(
                 timeout_seconds=settings.metadata_dht_timeout_seconds
             )
-            if settings.metadata_dht_fallback_enabled and settings.torrent_provider == "http"
+            if settings.metadata_dht_fallback_enabled
+            and settings.torrent_provider == "http"
             else None
         )
         self._stopping = False
@@ -672,7 +728,9 @@ class MetadataWorker:
                     *metadata["resolverDiagnostics"],
                 ]
             except MetadataResolutionError as dht_error:
-                await self._fail(torrent, _combine_metadata_errors(http_error, dht_error))
+                await self._fail(
+                    torrent, _combine_metadata_errors(http_error, dht_error)
+                )
                 return
 
         blob_key = f"torrents/{torrent.infoHash}.torrent"
@@ -708,7 +766,9 @@ class MetadataWorker:
         permanent = error.failure_kind == "permanent"
         status = "failed" if permanent or exhausted else "pending"
         next_attempt_at = (
-            None if status == "failed" else now + timedelta(seconds=self._next_delay(torrent.metadataAttempts))
+            None
+            if status == "failed"
+            else now + timedelta(seconds=self._next_delay(torrent.metadataAttempts))
         )
         message = str(error)
         if exhausted and not permanent:
@@ -940,7 +1000,9 @@ class MongoPreviewJobLease(PreviewJobLease):
             downloaded_bytes=result.diagnostics.downloaded_bytes,
             elapsed_seconds=round(result.diagnostics.elapsed_seconds, 2),
         ).debug("Completing preview job")
-        stored_frames = await self._store_frames(result.info_hash, result.artifact.frames)
+        stored_frames = await self._store_frames(
+            result.info_hash, result.artifact.frames
+        )
         stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
         has_replacement_artifacts = bool(stored_frames or stored_sheet)
         next_attempt_at = _preview_next_attempt_at(
@@ -1260,6 +1322,21 @@ class PreviewWorker:
         )
         self._database = self._client[settings.mongodb_database]
         self._blob_store = BlobStore(settings)
+        if settings.actor_analysis_worker_enabled:
+            face_models = FaceModels.from_manifest(
+                models_dir=settings.actor_analysis_models_dir
+            )
+            self._actor_analysis_worker = ActorAnalysisWorker(
+                database=self._database,
+                blob_store=self._blob_store,
+                analyzer=YuNetSFaceAnalyzer(models=face_models),
+                model_version=face_models.version,
+                poll_interval_seconds=settings.actor_analysis_poll_interval_seconds,
+                lease_seconds=settings.actor_analysis_lease_seconds,
+                max_attempts=settings.actor_analysis_max_attempts,
+            )
+        else:
+            self._actor_analysis_worker = None
         self._metadata_worker = (
             MetadataWorker(
                 settings=settings,
@@ -1285,9 +1362,10 @@ class PreviewWorker:
     async def run(self) -> None:
         await init_beanie(database=self._database, document_models=[Torrent])
         logger.info(
-            "VM worker started with metadata_enabled={} preview_enabled={}",
+            "VM worker started with metadata_enabled={} preview_enabled={} actor_analysis_enabled={}",
             self._metadata_worker is not None,
             self._engine is not None,
+            self._actor_analysis_worker is not None,
         )
         tasks: list[asyncio.Task[None]] = []
         if self._metadata_worker is not None:
@@ -1313,6 +1391,8 @@ class PreviewWorker:
                 self._engine.artifact_fingerprint,
             )
             tasks.append(asyncio.create_task(self._harness.run()))
+        if self._actor_analysis_worker is not None:
+            tasks.append(asyncio.create_task(self._actor_analysis_worker.run()))
         try:
             done, pending = await asyncio.wait(
                 set(tasks),
@@ -1326,12 +1406,16 @@ class PreviewWorker:
         finally:
             if self._metadata_worker is not None:
                 self._metadata_worker.stop()
+            if self._actor_analysis_worker is not None:
+                self._actor_analysis_worker.stop()
             await self._client.close()
             self._harness = None
 
     def stop(self) -> None:
         if self._metadata_worker is not None:
             self._metadata_worker.stop()
+        if self._actor_analysis_worker is not None:
+            self._actor_analysis_worker.stop()
         if self._harness is not None:
             self._harness.stop()
 
@@ -1368,6 +1452,10 @@ def _success_update(
     if replace_artifacts:
         values["previewFrames"] = stored_frames
         values["previewSheet"] = stored_sheet
+        values["actorAnalysisStatus"] = "pending"
+        values["actorAnalysisAttempts"] = 0
+        values["actorAnalysisLeaseUntil"] = None
+        values["actorAnalysisError"] = None
     return {"$set": values}
 
 
