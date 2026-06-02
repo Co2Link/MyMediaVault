@@ -42,9 +42,6 @@ DEFAULT_LLM_MODEL = "gpt-5.4-mini"
 DEFAULT_LLM_TIMEOUT_SECONDS = 8.0
 DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR = 5
 DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
-DEFAULT_WARM_SWARM_MAX_HANDLES = 40
-DEFAULT_WARM_SWARM_IDLE_SECONDS = 2 * 60 * 60
-DEFAULT_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND = 64 * 1024
 
 
 def _default_torrent_cache_dir() -> Path:
@@ -101,11 +98,6 @@ class PreviewEngineConfig:
     llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
     anchor_candidates_per_anchor: int = DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR
     anchor_retry_range_mb: tuple[float, ...] = DEFAULT_ANCHOR_RETRY_RANGE_MB
-    warm_swarm_max_handles: int = DEFAULT_WARM_SWARM_MAX_HANDLES
-    warm_swarm_idle_seconds: float = DEFAULT_WARM_SWARM_IDLE_SECONDS
-    warm_swarm_download_limit_bytes_per_second: int = (
-        DEFAULT_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND
-    )
 
     def __post_init__(self) -> None:
         positive_ints = {
@@ -113,9 +105,6 @@ class PreviewEngineConfig:
             "max_concurrent_decodes": self.max_concurrent_decodes,
             "target_frames": self.target_frames,
             "anchor_candidates_per_anchor": self.anchor_candidates_per_anchor,
-            "warm_swarm_download_limit_bytes_per_second": (
-                self.warm_swarm_download_limit_bytes_per_second
-            ),
         }
         for name, value in positive_ints.items():
             if value < 1:
@@ -147,18 +136,6 @@ class PreviewEngineConfig:
             raise ValueError(msg)
         if self.download_progress_timeout_seconds <= 0:
             msg = "PreviewEngineConfig.download_progress_timeout_seconds must be greater than 0"
-            raise ValueError(msg)
-        if self.warm_swarm_max_handles < 0:
-            msg = "PreviewEngineConfig.warm_swarm_max_handles must be non-negative"
-            raise ValueError(msg)
-        if self.warm_swarm_idle_seconds <= 0:
-            msg = "PreviewEngineConfig.warm_swarm_idle_seconds must be greater than 0"
-            raise ValueError(msg)
-        if self.warm_swarm_download_limit_bytes_per_second < 1:
-            msg = (
-                "PreviewEngineConfig.warm_swarm_download_limit_bytes_per_second "
-                "must be at least 1"
-            )
             raise ValueError(msg)
         if self.max_decode_time_seconds <= 0:
             msg = "PreviewEngineConfig.max_decode_time_seconds must be greater than 0"

@@ -35,9 +35,9 @@ export default async function VideoDetailPage({
             <h1>{video.displayTitle ?? video.infoHash}</h1>
             <p className="muted-copy">{video.torrentName ?? video.infoHash}</p>
           </div>
-          <MetadataStatusBadge error={video.metadataError} status={video.metadataStatus} />
+          <MetadataStatusBadge error={video.processingError} status={video.processingState} />
         </div>
-        {query.created === "1" ? <p className="success-copy">Video added. Metadata processing has been queued.</p> : null}
+        {query.created === "1" ? <p className="success-copy">Video added. Preview processing has been queued.</p> : null}
         <VideoPreviewGallery preview={video.preview} videoId={video.id} />
         <dl className="detail-meta-grid">
           <div>

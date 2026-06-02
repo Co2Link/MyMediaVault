@@ -73,46 +73,32 @@ retained exemplars change. Exemplars and centroids are versioned by face-model
 recipe and remain private MongoDB fields. Torrent deletion preserves
 actor-owned evidence; only explicit actor deletion removes it.
 
-## Metadata State
+## Torrent Processing State
 
-`Torrent.metadataStatus` tracks `pending`, `processing`, `succeeded`, or
-`failed`. Failed metadata processing stores `metadataError` and
-`metadataFailureKind`; successful processing stores `name`, `sizeBytes`,
-`rawBlobKey`, and ordered files. The VM worker uses the `torrents` collection as
-the metadata queue. `metadataNextAttemptAt` controls retry scheduling,
-`metadataLeaseUntil` protects in-flight claims, attempt and timing fields record
-processing progress, and `metadataDiagnostics` stores resolver-level failure
-details.
+`Torrent.processingState` tracks `queued`, `running`, `partial`, `complete`,
+`exhausted`, or `cancelled`. Metadata resolution and preview generation share
+this lifecycle. Successful metadata acquisition stores `name`, `sizeBytes`,
+`rawBlobKey`, and ordered files. Preview output stores a contact sheet in
+`previewSheet` and up to nine frame records in `previewFrames`; both store
+private R2 object keys and dimensions. Partial artifacts stay visible while the
+torrent remains eligible for improvement.
 
-## Preview State
-
-`Torrent.previewStatus` tracks `pending`, `processing`, `succeeded`, `partial`,
-or `failed`. The VM worker preview pipeline only claims torrents whose metadata
-has succeeded and whose raw torrent blob is available. Successful preview output
-stores a contact sheet in `previewSheet` and up to nine frame records in
-`previewFrames`; both store private R2 object keys and dimensions. Partial
-preview output is retained for diagnostics but is presented as degraded to
-users.
+`processingQueuedAt` preserves FIFO order. `processingAvailableAt` is null for
+normal download work and records one fixed cooldown after resolver or external
+service failures. `processingLeaseUntil` supports crash recovery.
+`processingPhase`, `processingFailureCount`, `processingLastOutcome`,
+`processingLastError`, and `processingDiagnostics` keep the scheduler easy to
+debug without introducing a second state machine.
 
 `previewDiagnostics` stores the preview artifact contract version and
 fingerprint, selected file, downloaded bytes, elapsed time, status reason,
 warnings, and low-level torrent diagnostics. Engine-specific diagnostic details,
 including bounded anchor retry summaries, live in the mixed `details` payload.
-The worker increments `previewAttempts` and updates `previewLastAttemptAt`
-whenever it claims a torrent.
-
-The VM worker automatically retries `failed` and `partial` previews using its
-configured retry-delay schedule. Total attempts equal one initial attempt plus
-the number of configured delays. `previewNextAttemptAt` stores the next
-scheduled retry timestamp. Sparse stalled downloads may retain a process-local
-low-rate libtorrent handle so useful background progress can promote a delayed
-retry early without adding durable queue state. Admins can reset a torrent preview attempt count from
-torrent management, which sets the preview status back to `pending`, clears the
-scheduled retry timestamp, and keeps existing artifacts. The worker regenerates
-`succeeded`, `partial`, and `failed`
-previews when their recorded preview artifact contract version or
-fingerprint is missing or differs from the worker's current library recipe.
-Artifact-stale claims reset `previewAttempts` for the new recipe.
+Sparse downloads retain their active libtorrent handle only while they own a
+slot. Under queue pressure they save resume data, release the handle, and join
+the FIFO tail. Admin `Queue again` preserves artifacts while clearing cooldown
+and failure state. Complete previews are queued again when the recorded artifact
+version or fingerprint differs from the worker recipe.
 
 ## Actor Analysis State
 

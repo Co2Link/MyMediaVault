@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "@/lib/auth/session";
-import { deleteTorrent, resetTorrentActorAnalysis, resetTorrentPreview } from "@/lib/videos";
+import { cancelTorrentProcessing, deleteTorrent, queueTorrentProcessing, resetTorrentActorAnalysis } from "@/lib/videos";
 
 export async function deleteTorrentAction(torrentId: string) {
   await requireAdminSession();
@@ -11,9 +11,16 @@ export async function deleteTorrentAction(torrentId: string) {
   revalidatePath("/admin/torrents");
 }
 
-export async function retryTorrentPreviewAction(torrentId: string) {
+export async function queueTorrentProcessingAction(torrentId: string) {
   await requireAdminSession();
-  await resetTorrentPreview(torrentId);
+  await queueTorrentProcessing(torrentId);
+  revalidatePath("/");
+  revalidatePath("/admin/torrents");
+}
+
+export async function cancelTorrentProcessingAction(torrentId: string) {
+  await requireAdminSession();
+  await cancelTorrentProcessing(torrentId);
   revalidatePath("/");
   revalidatePath("/admin/torrents");
 }

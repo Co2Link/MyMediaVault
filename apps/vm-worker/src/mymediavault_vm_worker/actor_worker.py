@@ -207,11 +207,11 @@ class ActorAnalysisWorker:
         return {
             "$or": [
                 {
-                    "previewStatus": "succeeded",
+                    "processingState": "complete",
                     "previewFrames.0": {"$exists": True},
                 },
                 {
-                    "previewStatus": "partial",
+                    "processingState": "partial",
                     "previewFrames.1": {"$exists": True},
                 },
             ]
@@ -307,7 +307,7 @@ class ActorAnalysisWorker:
             {
                 "_id": torrent["_id"],
                 "actorAnalysisStatus": "processing",
-                "previewUpdatedAt": torrent.get("previewUpdatedAt"),
+                "processingUpdatedAt": torrent.get("processingUpdatedAt"),
             },
             {
                 "$set": {

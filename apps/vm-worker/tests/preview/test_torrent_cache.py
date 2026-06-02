@@ -15,7 +15,7 @@ from mymediavault_vm_worker.preview.core.models import (
 )
 from mymediavault_vm_worker.preview.torrent.client import (
     LibtorrentTorrentClient,
-    _WarmTorrent,
+    _ActiveTorrent,
     _add_torrent_with_resume_fallback,
     _bootstrap_dht,
     _collect_relevant_alerts,
@@ -401,25 +401,10 @@ def test_request_dht_peers_uses_info_hash_digest() -> None:
     assert session.digest == bytes.fromhex("f73f3045b59b32fdb5905a7233619c6fd9617cd3")
 
 
-def test_warm_torrent_progress_is_reported_and_released(tmp_path) -> None:
+def test_active_torrent_is_released_when_scheduler_yields_slot(tmp_path) -> None:
     class Handle:
         def __init__(self) -> None:
-            self.download_limit: int | None = None
             self.downloaded = 0
-            self.pieces: set[int] = set()
-
-        def set_download_limit(self, limit: int) -> None:
-            self.download_limit = limit
-
-        def file_progress(self) -> list[int]:
-            return [self.downloaded]
-
-        def have_piece(self, piece_index: int) -> bool:
-            return piece_index in self.pieces
-
-        @staticmethod
-        def status() -> object:
-            return object()
 
     class Session:
         def __init__(self) -> None:
@@ -435,7 +420,7 @@ def test_warm_torrent_progress_is_reported_and_released(tmp_path) -> None:
     config = PreviewEngineConfig(torrent_cache_dir=tmp_path / "cache")
     output_dir = config.torrent_cache_dir / "abc123"
     output_dir.mkdir(parents=True)
-    warm = _WarmTorrent(
+    active = _ActiveTorrent(
         info_hash="abc123",
         handle=handle,
         output_dir=output_dir,
@@ -445,18 +430,11 @@ def test_warm_torrent_progress_is_reported_and_released(tmp_path) -> None:
         config=config,
         downloaded_bytes=0,
         complete_piece_count=0,
-        last_progress_at=time.monotonic(),
     )
 
-    client._retain_warm_torrent(warm, config)
-    handle.downloaded = 10
-    handle.pieces.add(0)
+    client._retain_active_torrent(active)
+    client._release_active_torrent("abc123", config)
 
-    assert client._maintain_warm_torrents(config) == {"abc123"}
-
-    client._release_warm_torrent("abc123", config)
-
-    assert handle.download_limit == config.warm_swarm_download_limit_bytes_per_second
     assert session.removed == [handle]
 
 

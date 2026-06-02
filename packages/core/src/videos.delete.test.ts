@@ -90,10 +90,7 @@ describe("torrent and video deletion", () => {
         name: "Old Torrent",
         sizeBytes: 10,
         rawBlobKey: "torrents/old.torrent",
-        metadataStatus: "succeeded",
-        metadataError: null,
-        metadataAttempts: 1,
-        metadataLastAttemptAt: null,
+        processingState: "complete",
         files: [],
         createdAt: new Date("2024-01-01T00:00:00Z"),
         updatedAt: new Date("2024-01-01T00:00:00Z"),
@@ -104,11 +101,8 @@ describe("torrent and video deletion", () => {
         name: "New Torrent",
         sizeBytes: 20,
         rawBlobKey: "torrents/new.torrent",
-        metadataStatus: "pending",
-        metadataError: null,
-        metadataAttempts: 0,
-        metadataLastAttemptAt: null,
-        previewNextAttemptAt: new Date("2024-02-02T00:00:00Z"),
+        processingState: "queued",
+        processingQueuedAt: new Date("2024-02-02T00:00:00Z"),
         files: [],
         createdAt: new Date("2024-02-01T00:00:00Z"),
         updatedAt: new Date("2024-02-01T00:00:00Z"),
@@ -124,15 +118,15 @@ describe("torrent and video deletion", () => {
       expect.objectContaining({
         id: "torrent-new",
         videoCount: 3,
-        preview: expect.objectContaining({
-          nextAttemptAt: "2024-02-02T00:00:00.000Z",
-        }),
+        processingState: "queued",
+        preview: expect.objectContaining({ queuedAt: "2024-02-02T00:00:00.000Z" }),
       }),
       expect.objectContaining({ id: "torrent-old", videoCount: 1 }),
     ]);
   });
 
-  it("resets a scheduled preview retry for immediate processing", async () => {
+  it("queues torrent processing again for immediate processing", async () => {
+    mocks.state.torrentFindById = { _id: "torrent-1", processingState: "exhausted" };
     const { resetTorrentPreview } = await import("./videos.js");
 
     await resetTorrentPreview("torrent-1");
@@ -141,12 +135,15 @@ describe("torrent and video deletion", () => {
       { _id: "torrent-1" },
       {
         $set: {
-          previewStatus: "pending",
-          previewAttempts: 0,
-          previewLastAttemptAt: null,
-          previewNextAttemptAt: null,
-          previewUpdatedAt: expect.any(Date),
-          previewDiagnostics: {},
+          processingState: "queued",
+          processingPhase: null,
+          processingQueuedAt: expect.any(Date),
+          processingAvailableAt: null,
+          processingLeaseUntil: null,
+          processingFailureCount: 0,
+          processingLastOutcome: "queued_by_admin",
+          processingLastError: null,
+          processingUpdatedAt: expect.any(Date),
         },
       },
     );
@@ -192,8 +189,8 @@ describe("torrent and video deletion", () => {
       name: "Torrent",
       sizeBytes: 123,
       rawBlobKey: "torrents/abc.torrent",
-      metadataStatus: "succeeded",
-      metadataError: null,
+      processingState: "complete",
+      processingLastError: null,
       metadataAttempts: 1,
       metadataLastAttemptAt: null,
       files: [],
@@ -225,8 +222,8 @@ describe("torrent and video deletion", () => {
       name: "Torrent",
       sizeBytes: 123,
       rawBlobKey: "torrents/def.torrent",
-      metadataStatus: "succeeded",
-      metadataError: null,
+      processingState: "complete",
+      processingLastError: null,
       metadataAttempts: 1,
       metadataLastAttemptAt: null,
       files: [],

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import mongoose, { Schema, type Model } from "mongoose";
 import { getDatabaseEnv } from "./env.js";
-import type { ActorAnalysisStatus, MetadataFailureKind, MetadataStatus, PreviewStatus } from "./types.js";
+import type { ActorAnalysisStatus, TorrentProcessingState } from "./types.js";
 
 export type UserDoc = {
   _id: string;
@@ -125,16 +125,16 @@ export type TorrentDoc = {
   name: string | null;
   sizeBytes: number | null;
   rawBlobKey: string | null;
-  metadataStatus: MetadataStatus;
-  metadataError: string | null;
-  metadataFailureKind: MetadataFailureKind | null;
-  metadataAttempts: number;
-  metadataNextAttemptAt: Date | null;
-  metadataLastAttemptAt: Date | null;
-  metadataStartedAt: Date | null;
-  metadataFinishedAt: Date | null;
-  metadataLeaseUntil: Date | null;
-  metadataDiagnostics: Record<string, unknown>;
+  processingState: TorrentProcessingState;
+  processingPhase: string | null;
+  processingQueuedAt: Date | null;
+  processingAvailableAt: Date | null;
+  processingLeaseUntil: Date | null;
+  processingFailureCount: number;
+  processingLastOutcome: string | null;
+  processingLastError: string | null;
+  processingUpdatedAt: Date | null;
+  processingDiagnostics: Record<string, unknown>;
   files: TorrentFileDoc[];
   actorIds?: string[];
   userActorIds?: string[];
@@ -147,11 +147,6 @@ export type TorrentDoc = {
   actorAnalysisFingerprint?: string | null;
   actorAnalysisError?: string | null;
   actorAnalysisDiagnostics?: Record<string, unknown>;
-  previewStatus: PreviewStatus;
-  previewAttempts: number;
-  previewLastAttemptAt: Date | null;
-  previewNextAttemptAt: Date | null;
-  previewUpdatedAt: Date | null;
   previewFrames: TorrentPreviewFrameDoc[];
   previewSheet: TorrentPreviewSheetDoc | null;
   previewDiagnostics: TorrentPreviewDiagnosticsDoc;
@@ -345,16 +340,21 @@ const torrentSchema = new Schema<TorrentDoc>(
     name: { type: String, default: null },
     sizeBytes: { type: Number, default: null },
     rawBlobKey: { type: String, default: null },
-    metadataStatus: { type: String, enum: ["pending", "processing", "succeeded", "failed"], default: "pending" },
-    metadataError: { type: String, default: null },
-    metadataFailureKind: { type: String, enum: ["transient", "permanent"], default: null },
-    metadataAttempts: { type: Number, default: 0 },
-    metadataNextAttemptAt: { type: Date, default: null, index: true },
-    metadataLastAttemptAt: { type: Date, default: null },
-    metadataStartedAt: { type: Date, default: null },
-    metadataFinishedAt: { type: Date, default: null },
-    metadataLeaseUntil: { type: Date, default: null, index: true },
-    metadataDiagnostics: { type: Schema.Types.Mixed, default: () => ({}) },
+    processingState: {
+      type: String,
+      enum: ["queued", "running", "partial", "complete", "exhausted", "cancelled"],
+      default: "queued",
+      index: true,
+    },
+    processingPhase: { type: String, default: null },
+    processingQueuedAt: { type: Date, default: Date.now, index: true },
+    processingAvailableAt: { type: Date, default: null, index: true },
+    processingLeaseUntil: { type: Date, default: null, index: true },
+    processingFailureCount: { type: Number, default: 0 },
+    processingLastOutcome: { type: String, default: null },
+    processingLastError: { type: String, default: null },
+    processingUpdatedAt: { type: Date, default: Date.now },
+    processingDiagnostics: { type: Schema.Types.Mixed, default: () => ({}) },
     files: { type: [torrentFileSchema], default: [] },
     actorIds: { type: [String], index: true },
     userActorIds: { type: [String], default: [], index: true },
@@ -372,23 +372,13 @@ const torrentSchema = new Schema<TorrentDoc>(
     actorAnalysisFingerprint: { type: String, default: null },
     actorAnalysisError: { type: String, default: null },
     actorAnalysisDiagnostics: { type: Schema.Types.Mixed, default: () => ({}) },
-    previewStatus: {
-      type: String,
-      enum: ["pending", "processing", "succeeded", "partial", "failed"],
-      default: "pending",
-      index: true,
-    },
-    previewAttempts: { type: Number, default: 0 },
-    previewLastAttemptAt: { type: Date, default: null },
-    previewNextAttemptAt: { type: Date, default: null, index: true },
-    previewUpdatedAt: { type: Date, default: null },
     previewFrames: { type: [torrentPreviewFrameSchema], default: [] },
     previewSheet: { type: torrentPreviewSheetSchema, default: null },
     previewDiagnostics: { type: torrentPreviewDiagnosticsSchema, default: () => ({}) },
   },
   schemaOptions,
 );
-torrentSchema.index({ metadataStatus: 1, previewStatus: 1, updatedAt: 1, _id: 1 });
+torrentSchema.index({ processingState: 1, processingAvailableAt: 1, processingQueuedAt: 1, _id: 1 });
 torrentSchema.index({ actorAnalysisStatus: 1, actorAnalysisLeaseUntil: 1, actorAnalysisUpdatedAt: 1, _id: 1 });
 
 const videoSchema = new Schema<VideoDoc>(

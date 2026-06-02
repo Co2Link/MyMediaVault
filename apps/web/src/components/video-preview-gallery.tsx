@@ -27,7 +27,7 @@ export function VideoPreviewGallery({
       <details className={`preview-gallery preview-${preview.status}`} open={defaultOpen}>
         <summary>Torrent preview</summary>
         <p className="muted-copy">
-          {preview.status === "processing" ? "Preview generation is running." : "Preview images are not available yet."}
+          {preview.status === "running" ? "Preview generation is running." : "Preview images are not available yet."}
         </p>
       </details>
     );
@@ -45,7 +45,7 @@ export function VideoPreviewGallery({
       <summary>Torrent preview</summary>
       <div className="preview-gallery-body">
         <div>
-          {preview.status === "partial" || preview.status === "failed" ? (
+          {preview.status === "partial" || preview.status === "exhausted" ? (
             <p className="error-copy">Preview generation degraded or failed.</p>
           ) : null}
         </div>

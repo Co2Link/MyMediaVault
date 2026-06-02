@@ -1,8 +1,9 @@
 import type { TorrentSummary } from "@/lib/types";
 import {
+  cancelTorrentProcessingAction,
   deleteTorrentAction,
+  queueTorrentProcessingAction,
   reanalyzeTorrentActorsAction,
-  retryTorrentPreviewAction,
 } from "@/app/admin/torrents/actions";
 import { VideoPreviewGallery } from "@/components/video-preview-gallery";
 
@@ -24,7 +25,7 @@ export function TorrentAdminPanel({
               <strong>{torrent.name ?? torrent.infoHash}</strong>
               <p className="muted-copy">{torrent.infoHash}</p>
               <p className="muted-copy">
-                {torrent.videoCount} video{torrent.videoCount === 1 ? "" : "s"} · {torrent.metadataStatus}
+                {torrent.videoCount} video{torrent.videoCount === 1 ? "" : "s"} · {torrent.processingState}
               </p>
               <VideoPreviewGallery
                 artifactBasePath={`/api/admin/torrents/${torrent.id}/preview`}
@@ -34,9 +35,11 @@ export function TorrentAdminPanel({
               <details className="admin-diagnostics">
                 <summary>Preview: {torrent.preview.status}</summary>
                 <dl className="diagnostics-grid">
-                  <DiagnosticTerm label="Attempts" value={torrent.preview.attempts} />
-                  <DiagnosticTerm label="Last attempt" value={formatDate(torrent.preview.lastAttemptAt)} />
-                  <DiagnosticTerm label="Next attempt" value={formatDate(torrent.preview.nextAttemptAt)} />
+                  <DiagnosticTerm label="Phase" value={torrent.preview.phase} />
+                  <DiagnosticTerm label="Failures" value={torrent.preview.failureCount} />
+                  <DiagnosticTerm label="Last outcome" value={torrent.preview.lastOutcome} />
+                  <DiagnosticTerm label="Last error" value={torrent.preview.lastError} />
+                  <DiagnosticTerm label="Queued" value={formatDate(torrent.preview.queuedAt)} />
                   <DiagnosticTerm label="Updated" value={formatDate(torrent.preview.updatedAt)} />
                   <DiagnosticTerm label="Artifact version" value={torrent.preview.diagnostics.artifactVersion} />
                   <DiagnosticTerm label="Fingerprint" value={torrent.preview.diagnostics.artifactFingerprint} />
@@ -86,9 +89,14 @@ export function TorrentAdminPanel({
                   Reanalyze actors
                 </button>
               </form>
-              <form action={retryTorrentPreviewAction.bind(null, torrent.id)}>
+              <form action={queueTorrentProcessingAction.bind(null, torrent.id)}>
                 <button className="ghost-button" type="submit">
-                  Retry preview
+                  Queue again
+                </button>
+              </form>
+              <form action={cancelTorrentProcessingAction.bind(null, torrent.id)}>
+                <button className="ghost-button" type="submit">
+                  Cancel
                 </button>
               </form>
               <form action={deleteTorrentAction.bind(null, torrent.id)}>

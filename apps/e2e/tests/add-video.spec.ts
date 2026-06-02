@@ -8,7 +8,7 @@ test("standard user can add a video for metadata processing", async ({ page }) =
   await page.getByLabel("Info hash").fill(uniqueInfoHash);
   await page.getByLabel("Title").fill(title);
   await page.locator("form").getByRole("button", { name: "Add video" }).click();
-  await expect(page.getByText("Video added. Metadata processing has been queued.")).toBeVisible();
-  await expect(page.getByRole("status")).toContainText(/Metadata (pending|processing|ready)/);
+  await expect(page.getByText("Video added. Preview processing has been queued.")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(/Preview (queued|processing|ready|improving)/);
   await expect(page.getByRole("heading", { name: "Torrent files" })).toBeVisible();
 });

@@ -1,12 +1,11 @@
 # MyMediaVault VM Worker
 
-VM-hosted Python worker that polls MongoDB for torrent metadata, preview, and
-actor-identification work. Metadata processing uses torrent documents as the queue, resolves
-`.torrent` payloads through configured HTTP resolvers, uploads raw torrents to
-R2-compatible storage, and writes parsed metadata back to the canonical torrent
-document. Preview processing uses the worker's internal torrent-preview engine,
-retains stalled sparse swarms in a bounded low-rate warm pool, and stores
-generated sheets and frames in the same blob store. Sequential actor analysis consumes durable frames, uses
+VM-hosted Python worker that polls MongoDB for torrent processing and
+actor-identification work. A single FIFO torrent lifecycle resolves `.torrent`
+payloads, downloads useful byte ranges, selects preview frames with the
+OpenAI-backed ranker, and stores generated sheets and frames. Sparse downloads
+retain their slot while capacity is available, then save resume data and yield
+to the FIFO tail under queue pressure. Sequential actor analysis consumes durable frames, uses
 OpenCV YuNet and SFace to identify main actors, and stores reusable UUID
 identities plus system-managed torrent assignments.
 
@@ -97,16 +96,19 @@ Use `.env.example` for worker variables. Add the exact image tag:
 ```bash
 MMV_VM_WORKER_IMAGE=<web-image-repo>-vm-worker:<commit-sha>
 MMV_VM_WORKER_DEBUG_LOG_PATH=/var/log/mymediavault/vm-worker/debug.log
+MMV_PREVIEW_CACHE_DIR=/var/cache/mymediavault/vm-worker
 ```
 
-Deployment should be stateless: configure R2 for artifacts, MongoDB/Cosmos for
-status, and treat container-local files as disposable. The worker writes
+Configure R2 for artifacts and MongoDB/Cosmos for authoritative status. Persist
+the rebuildable libtorrent cache across container replacement so sparse-swarm
+progress is not discarded. The worker writes
 human-readable `INFO` logs to Docker stdout and rotated JSON Lines `DEBUG` logs
 to `/var/log/mymediavault/vm-worker/debug.log`. Store that debug path on the VM
 host so it survives container replacement:
 
 ```bash
 sudo install -d -m 750 -o 10001 -g 10001 /var/log/mymediavault/vm-worker
+sudo install -d -m 750 -o 10001 -g 10001 /var/cache/mymediavault/vm-worker
 ```
 
 ### Install the service
@@ -123,9 +125,10 @@ Wants=network-online.target
 Type=simple
 EnvironmentFile=/etc/mymediavault/vm-worker.env
 ExecStartPre=/usr/bin/install -d -m 750 -o 10001 -g 10001 /var/log/mymediavault/vm-worker
+ExecStartPre=/usr/bin/install -d -m 750 -o 10001 -g 10001 /var/cache/mymediavault/vm-worker
 ExecStartPre=-/usr/bin/docker rm -f mymediavault-vm-worker
 ExecStartPre=/usr/bin/docker pull ${MMV_VM_WORKER_IMAGE}
-ExecStart=/usr/bin/docker run --rm --name mymediavault-vm-worker --publish 6881:6881/tcp --publish 6881:6881/udp --env-file /etc/mymediavault/vm-worker.env --mount type=bind,source=/var/log/mymediavault/vm-worker,target=/var/log/mymediavault/vm-worker ${MMV_VM_WORKER_IMAGE}
+ExecStart=/usr/bin/docker run --rm --name mymediavault-vm-worker --publish 6881:6881/tcp --publish 6881:6881/udp --env-file /etc/mymediavault/vm-worker.env --mount type=bind,source=/var/log/mymediavault/vm-worker,target=/var/log/mymediavault/vm-worker --mount type=bind,source=/var/cache/mymediavault/vm-worker,target=/var/cache/mymediavault/vm-worker ${MMV_VM_WORKER_IMAGE}
 ExecStop=/usr/bin/docker stop mymediavault-vm-worker
 Restart=always
 RestartSec=10

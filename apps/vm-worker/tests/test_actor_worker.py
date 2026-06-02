@@ -195,8 +195,8 @@ def test_claim_plans_prioritize_pending_then_stale_then_failed_retry() -> None:
 def test_eligible_query_requires_durable_preview_frames() -> None:
     assert _worker()._eligible_query() == {
         "$or": [
-            {"previewStatus": "succeeded", "previewFrames.0": {"$exists": True}},
-            {"previewStatus": "partial", "previewFrames.1": {"$exists": True}},
+            {"processingState": "complete", "previewFrames.0": {"$exists": True}},
+            {"processingState": "partial", "previewFrames.1": {"$exists": True}},
         ]
     }
 
@@ -260,7 +260,7 @@ def test_process_creates_uuid_actor_and_replaces_system_assignments() -> None:
     assert torrents.updates[0][0] == {
         "_id": "torrent-1",
         "actorAnalysisStatus": "processing",
-        "previewUpdatedAt": None,
+        "processingUpdatedAt": None,
     }
     assert torrents.updates[0][1]["$set"]["systemActorIds"] == [actor_id]
     assert torrents.updates[0][1]["$set"]["actorAnalysisStatus"] == "succeeded"

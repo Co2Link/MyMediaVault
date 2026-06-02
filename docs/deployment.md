@@ -76,7 +76,9 @@ Dev infrastructure is defined in `infra/terraform/envs/dev` and modules under
   non-root user and includes Python 3.13, `libtorrent`, `ffmpeg`, and
   `ffprobe`. Its Docker build downloads checksum-pinned OpenCV YuNet and SFace
   ONNX files into the image; runtime processing never downloads face models.
-  Preview artifacts are stored in R2 so the VM stays stateless.
+  Preview artifacts are stored in R2. Rebuildable libtorrent bytes and resume
+  data are bind mounted at `/var/cache/mymediavault/vm-worker` so sparse-swarm
+  progress survives container replacement.
   Routine Docker logs stay at `INFO`, while redacted JSON Lines `DEBUG` logs are
   written to the VM host at `/var/log/mymediavault/vm-worker/debug.log`, rotated
   at `100 MB`, and retained for `7 days`.

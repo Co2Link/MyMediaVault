@@ -155,10 +155,10 @@ class PreviewEngine:
             await self._torrent_session.close()
             self._started = False
 
-    async def warm_ready_info_hashes(self) -> set[str]:
-        """Return retained sparse torrents that made useful background progress."""
+    async def release_session(self, info_hash: str) -> None:
+        """Save resume data and release a torrent session after yielding its slot."""
 
-        return await self._torrent_session.maintain(self.config)
+        await self._torrent_session.release(info_hash, self.config)
 
     @asynccontextmanager
     async def preview_artifact(
@@ -394,10 +394,6 @@ class PreviewEngine:
                     anchor_retry=retry_diagnostics.anchor_retry,
                     target_frames=len(layout.anchors),
                 )
-                if result.status == "succeeded":
-                    await self._torrent_session.release_warm(
-                        result.info_hash, self.config
-                    )
                 return _finish_preview_span(result, span, span_context)
         except Exception:
             span_context.__exit__(*sys.exc_info())

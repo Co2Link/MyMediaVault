@@ -176,13 +176,13 @@ export async function createVideo(
   let torrent = (await TorrentModel.findOne({ infoHash }).lean().exec()) as TorrentDoc | null;
 
   if (!torrent) {
-    const createdTorrent = await TorrentModel.create({ infoHash, metadataStatus: "pending", userActorIds: actorIds });
+    const createdTorrent = await TorrentModel.create({ infoHash, processingState: "queued", processingQueuedAt: new Date(), processingAvailableAt: null, userActorIds: actorIds });
     torrent = createdTorrent.toObject() as TorrentDoc;
   }
 
   const existing = await VideoModel.findOne({ userId, torrentId: torrent._id }).select({ _id: 1 }).lean().exec();
   if (existing) {
-    await enqueueTorrentMetadata(torrent._id);
+    await ensureTorrentProcessingQueued(torrent._id);
     throw new ConflictError("This video is already in your collection.");
   }
 
@@ -202,11 +202,11 @@ export async function createVideo(
       rating: input.rating,
     });
     await syncVideoTags(created._id, tagIds);
-    await enqueueTorrentMetadata(torrent._id);
+    await ensureTorrentProcessingQueued(torrent._id);
     return toVideoDetail(await hydrateVideo(created.toObject()));
   } catch (error) {
     if (isDuplicateKeyError(error)) {
-      await enqueueTorrentMetadata(torrent._id);
+      await ensureTorrentProcessingQueued(torrent._id);
       throw new ConflictError("This video is already in your collection.");
     }
     throw error;
@@ -280,17 +280,20 @@ export async function deleteTorrent(torrentId: string) {
 }
 
 export async function resetTorrentPreview(torrentId: string) {
+  return queueTorrentProcessing(torrentId);
+}
+
+export async function cancelTorrentProcessing(torrentId: string) {
   await connectMongo();
   const result = await TorrentModel.updateOne(
     { _id: torrentId },
     {
       $set: {
-        previewStatus: "pending",
-        previewAttempts: 0,
-        previewLastAttemptAt: null,
-        previewNextAttemptAt: null,
-        previewUpdatedAt: new Date(),
-        previewDiagnostics: {},
+        processingState: "cancelled",
+        processingPhase: null,
+        processingLeaseUntil: null,
+        processingLastOutcome: "cancelled_by_admin",
+        processingUpdatedAt: new Date(),
       },
     },
   ).exec();
@@ -321,31 +324,42 @@ export async function resetTorrentActorAnalysis(torrentId: string) {
   }
 }
 
-export async function enqueueTorrentMetadata(torrentId: string) {
+export async function queueTorrentProcessing(torrentId: string) {
   await connectMongo();
   const torrent = await TorrentModel.findById(torrentId).lean().exec();
   if (!torrent) {
     throw new NotFoundError("Torrent was not found.");
   }
-  if (torrent.metadataStatus === "succeeded" && torrent.rawBlobKey) {
-    return null;
-  }
-
+  const now = new Date();
   await TorrentModel.updateOne(
     { _id: torrentId },
     {
       $set: {
-        metadataStatus: "pending",
-        metadataError: null,
-        metadataFailureKind: null,
-        metadataNextAttemptAt: null,
-        metadataLeaseUntil: null,
-        metadataFinishedAt: null,
+        processingState: "queued",
+        processingPhase: null,
+        processingQueuedAt: now,
+        processingAvailableAt: null,
+        processingLeaseUntil: null,
+        processingFailureCount: 0,
+        processingLastOutcome: "queued_by_admin",
+        processingLastError: null,
+        processingUpdatedAt: now,
       },
     },
   ).exec();
 
   return { torrentId };
+}
+
+async function ensureTorrentProcessingQueued(torrentId: string) {
+  const torrent = await TorrentModel.findById(torrentId).lean().exec();
+  if (!torrent) {
+    throw new NotFoundError("Torrent was not found.");
+  }
+  if (torrent.processingState === "complete" || torrent.processingState === "running") {
+    return null;
+  }
+  return queueTorrentProcessing(torrentId);
 }
 
 async function hydrateVideos(videos: VideoDoc[]): Promise<VideoRecord[]> {
@@ -482,7 +496,7 @@ function toVideoSummary(record: VideoRecord): VideoSummary {
     rating: record.video.rating,
     infoHash: record.torrent.infoHash,
     torrentName: record.torrent.name,
-    metadataStatus: record.torrent.metadataStatus,
+    processingState: record.torrent.processingState,
     preview: toPreview(record.torrent),
     tags: toTags(record),
     actors: toActors(record),
@@ -496,7 +510,7 @@ function toVideoDetail(record: VideoRecord): VideoDetail {
     ...toVideoSummary(record),
     description: record.video.description,
     sizeBytes: record.torrent.sizeBytes,
-    metadataError: record.torrent.metadataError,
+    processingError: record.torrent.processingLastError,
     files: record.torrent.files
       .slice()
       .sort((a, b) => a.position - b.position)
@@ -515,8 +529,8 @@ function toTorrentSummary(torrent: TorrentDoc, videoCount: number): TorrentSumma
     infoHash: torrent.infoHash,
     name: torrent.name,
     sizeBytes: torrent.sizeBytes,
-    metadataStatus: torrent.metadataStatus,
-    metadataError: torrent.metadataError,
+    processingState: torrent.processingState,
+    processingError: torrent.processingLastError,
     preview: toPreview(torrent),
     actorAnalysis: toActorAnalysis(torrent),
     videoCount,
@@ -582,13 +596,15 @@ async function deleteTorrentRecord(torrent: TorrentDoc, videoIds: string[]) {
 
 function toPreview(torrent: TorrentDoc): PreviewRead {
   const frames = torrent.previewFrames ?? [];
-  const status = torrent.previewStatus ?? "pending";
+  const status = torrent.processingState ?? "queued";
   return {
     status,
-    attempts: torrent.previewAttempts ?? 0,
-    lastAttemptAt: torrent.previewLastAttemptAt?.toISOString() ?? null,
-    nextAttemptAt: torrent.previewNextAttemptAt?.toISOString() ?? null,
-    updatedAt: torrent.previewUpdatedAt?.toISOString() ?? null,
+    phase: torrent.processingPhase ?? null,
+    failureCount: torrent.processingFailureCount ?? 0,
+    lastOutcome: torrent.processingLastOutcome ?? null,
+    lastError: torrent.processingLastError ?? null,
+    queuedAt: torrent.processingQueuedAt?.toISOString() ?? null,
+    updatedAt: torrent.processingUpdatedAt?.toISOString() ?? null,
     frames: frames.map<PreviewFrameRead>((frame) => ({
       key: frame.key,
       width: frame.width,

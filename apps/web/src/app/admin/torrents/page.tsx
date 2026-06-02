@@ -30,7 +30,7 @@ export default async function AdminTorrentsPage({
   const q = firstQueryValue(query.q)?.trim() ?? "";
   const normalizedQuery = q.toLowerCase();
   const torrents = (await listTorrents()).filter((torrent) =>
-    [torrent.name, torrent.infoHash, torrent.metadataStatus, torrent.preview.status, torrent.actorAnalysis.status].some(
+    [torrent.name, torrent.infoHash, torrent.processingState, torrent.preview.status, torrent.actorAnalysis.status].some(
       (value) => value?.toLowerCase().includes(normalizedQuery),
     ),
   );

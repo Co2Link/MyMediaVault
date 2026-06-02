@@ -1,11 +1,5 @@
-export const metadataStatuses = ["pending", "processing", "succeeded", "failed"] as const;
-export type MetadataStatus = (typeof metadataStatuses)[number];
-
-export const metadataFailureKinds = ["transient", "permanent"] as const;
-export type MetadataFailureKind = (typeof metadataFailureKinds)[number];
-
-export const previewStatuses = ["pending", "processing", "succeeded", "partial", "failed"] as const;
-export type PreviewStatus = (typeof previewStatuses)[number];
+export const torrentProcessingStates = ["queued", "running", "partial", "complete", "exhausted", "cancelled"] as const;
+export type TorrentProcessingState = (typeof torrentProcessingStates)[number];
 
 export const actorAnalysisStatuses = ["pending", "processing", "succeeded", "failed"] as const;
 export type ActorAnalysisStatus = (typeof actorAnalysisStatuses)[number];
@@ -59,10 +53,12 @@ export type PreviewDiagnosticsRead = {
 };
 
 export type PreviewRead = {
-  status: PreviewStatus;
-  attempts: number;
-  lastAttemptAt: string | null;
-  nextAttemptAt: string | null;
+  status: TorrentProcessingState;
+  phase: string | null;
+  failureCount: number;
+  lastOutcome: string | null;
+  lastError: string | null;
+  queuedAt: string | null;
   updatedAt: string | null;
   frames: PreviewFrameRead[];
   sheet: PreviewSheetRead | null;
@@ -86,7 +82,7 @@ export type VideoSummary = {
   rating: number | null;
   infoHash: string;
   torrentName: string | null;
-  metadataStatus: MetadataStatus;
+  processingState: TorrentProcessingState;
   preview: PreviewRead;
   tags: TagRead[];
   actors: ActorRead[];
@@ -99,8 +95,8 @@ export type TorrentSummary = {
   infoHash: string;
   name: string | null;
   sizeBytes: number | null;
-  metadataStatus: MetadataStatus;
-  metadataError: string | null;
+  processingState: TorrentProcessingState;
+  processingError: string | null;
   preview: PreviewRead;
   actorAnalysis: ActorAnalysisRead;
   videoCount: number;
@@ -111,7 +107,7 @@ export type TorrentSummary = {
 export type VideoDetail = VideoSummary & {
   description: string | null;
   sizeBytes: number | null;
-  metadataError: string | null;
+  processingError: string | null;
   files: TorrentFileRead[];
   systemActors: ActorRead[];
   userActors: ActorRead[];

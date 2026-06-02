@@ -28,8 +28,9 @@ test("admin users can delete torrents and their videos", async ({ page }) => {
     { infoHash },
     {
       $set: {
-        previewStatus: "failed",
-        previewNextAttemptAt: new Date("2026-05-31T02:15:00.000Z"),
+        processingState: "exhausted",
+        processingFailureCount: 2,
+        processingLastError: "Preview service failed.",
         actorAnalysisStatus: "failed",
         actorAnalysisAttempts: 3,
         actorAnalysisError: "Actor analysis failed.",
@@ -37,9 +38,9 @@ test("admin users can delete torrents and their videos", async ({ page }) => {
     },
   ).exec();
   await page.reload();
-  await torrentItem.getByText("Preview: failed").click();
-  await expect(torrentItem.getByText("Next attempt")).toBeVisible();
-  await expect(torrentItem.getByText("5/31/2026, 2:15:00 AM")).toBeVisible();
+  await torrentItem.getByText("Preview: exhausted").click();
+  await expect(torrentItem.getByText("Failures")).toBeVisible();
+  await expect(torrentItem.getByText("Preview service failed.")).toBeVisible();
   await torrentItem.getByText("Actor analysis: failed").click();
   await expect(torrentItem.getByText("Actor analysis failed.")).toBeVisible();
 
@@ -47,6 +48,16 @@ test("admin users can delete torrents and their videos", async ({ page }) => {
   await expect
     .poll(async () => (await TorrentModel.findOne({ infoHash }).lean().exec())?.actorAnalysisStatus)
     .toBe("pending");
+
+  await torrentItem.getByRole("button", { name: "Queue again" }).click();
+  await expect
+    .poll(async () => (await TorrentModel.findOne({ infoHash }).lean().exec())?.processingState)
+    .toBe("queued");
+
+  await torrentItem.getByRole("button", { name: "Cancel" }).click();
+  await expect
+    .poll(async () => (await TorrentModel.findOne({ infoHash }).lean().exec())?.processingState)
+    .toBe("cancelled");
 
   await torrentItem.getByRole("button", { name: "Delete torrent" }).click();
   await expect(torrentItem).toHaveCount(0);

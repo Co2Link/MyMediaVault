@@ -1,17 +1,19 @@
-import type { MetadataStatus } from "@/lib/types";
+import type { TorrentProcessingState } from "@/lib/types";
 
-const labelByStatus: Record<MetadataStatus, string> = {
-  pending: "Metadata pending",
-  processing: "Metadata processing",
-  succeeded: "Metadata ready",
-  failed: "Metadata failed",
+const labelByStatus: Record<TorrentProcessingState, string> = {
+  queued: "Preview queued",
+  running: "Preview processing",
+  partial: "Preview improving",
+  complete: "Preview ready",
+  exhausted: "Preview needs attention",
+  cancelled: "Preview cancelled",
 };
 
 export function MetadataStatusBadge({
   status,
   error,
 }: {
-  status: MetadataStatus;
+  status: TorrentProcessingState;
   error?: string | null;
 }) {
   return (
@@ -19,7 +21,7 @@ export function MetadataStatusBadge({
       <p className={`status-pill status-${status}`} role="status">
         {labelByStatus[status]}
       </p>
-      {status === "failed" && error ? <p className="metadata-error">{error}</p> : null}
+      {status === "exhausted" && error ? <p className="metadata-error">{error}</p> : null}
     </div>
   );
 }

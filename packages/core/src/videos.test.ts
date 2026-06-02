@@ -6,8 +6,8 @@ const mocks = vi.hoisted(() => {
     torrent: {
       _id: "torrent-1",
       infoHash: "abc",
-      metadataStatus: "failed",
-      metadataError: "old error",
+      processingState: "exhausted",
+      processingLastError: "old error",
       rawBlobKey: null,
     } as Record<string, unknown> | null,
   };
@@ -46,7 +46,7 @@ vi.mock("./storage.js", () => ({
   buildBlobStore: () => ({ putBytes: vi.fn(), deleteIfExists: vi.fn() }),
 }));
 
-describe("torrent metadata scheduling", () => {
+describe("torrent processing scheduling", () => {
   beforeEach(() => {
     mocks.connectMongo.mockClear();
     mocks.models.TorrentModel.findById.mockClear();
@@ -54,44 +54,47 @@ describe("torrent metadata scheduling", () => {
     mocks.state.torrent = {
       _id: "torrent-1",
       infoHash: "abc",
-      metadataStatus: "failed",
-      metadataError: "old error",
+      processingState: "exhausted",
+      processingLastError: "old error",
       rawBlobKey: null,
     };
   });
 
-  it("marks unfinished torrent metadata ready for the VM worker", async () => {
-    const { enqueueTorrentMetadata } = await import("./videos.js");
+  it("queues torrent processing for the VM worker", async () => {
+    const { queueTorrentProcessing } = await import("./videos.js");
 
-    await expect(enqueueTorrentMetadata("torrent-1")).resolves.toEqual({ torrentId: "torrent-1" });
+    await expect(queueTorrentProcessing("torrent-1")).resolves.toEqual({ torrentId: "torrent-1" });
 
     expect(mocks.models.TorrentModel.updateOne).toHaveBeenCalledWith(
       { _id: "torrent-1" },
       {
         $set: {
-          metadataStatus: "pending",
-          metadataError: null,
-          metadataFailureKind: null,
-          metadataNextAttemptAt: null,
-          metadataLeaseUntil: null,
-          metadataFinishedAt: null,
+          processingState: "queued",
+          processingPhase: null,
+          processingQueuedAt: expect.any(Date),
+          processingAvailableAt: null,
+          processingLeaseUntil: null,
+          processingFailureCount: 0,
+          processingLastOutcome: "queued_by_admin",
+          processingLastError: null,
+          processingUpdatedAt: expect.any(Date),
         },
       },
     );
   });
 
-  it("does not requeue completed torrent metadata", async () => {
+  it("allows an admin to queue completed torrent processing again", async () => {
     mocks.state.torrent = {
       _id: "torrent-1",
       infoHash: "abc",
-      metadataStatus: "succeeded",
-      metadataError: null,
+      processingState: "complete",
+      processingLastError: null,
       rawBlobKey: "torrents/abc.torrent",
     };
-    const { enqueueTorrentMetadata } = await import("./videos.js");
+    const { queueTorrentProcessing } = await import("./videos.js");
 
-    await expect(enqueueTorrentMetadata("torrent-1")).resolves.toBeNull();
+    await expect(queueTorrentProcessing("torrent-1")).resolves.toEqual({ torrentId: "torrent-1" });
 
-    expect(mocks.models.TorrentModel.updateOne).not.toHaveBeenCalled();
+    expect(mocks.models.TorrentModel.updateOne).toHaveBeenCalledOnce();
   });
 });

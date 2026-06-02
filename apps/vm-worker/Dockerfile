@@ -22,13 +22,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 mymediavault-vm \
     && useradd --uid 10001 --gid mymediavault-vm --home-dir /app --create-home --shell /usr/sbin/nologin mymediavault-vm \
-    && install -d -m 750 -o mymediavault-vm -g mymediavault-vm /var/log/mymediavault/vm-worker
+    && install -d -m 750 -o mymediavault-vm -g mymediavault-vm /var/log/mymediavault/vm-worker \
+    && install -d -m 750 -o mymediavault-vm -g mymediavault-vm /var/cache/mymediavault/vm-worker
 
 WORKDIR /app/apps/vm-worker
 
 ENV PATH="/app/apps/vm-worker/.venv/bin:${PATH}"
 ENV PYTHONUNBUFFERED=1
 ENV MMV_VM_WORKER_DEBUG_LOG_PATH="/var/log/mymediavault/vm-worker/debug.log"
+ENV MMV_PREVIEW_CACHE_DIR="/var/cache/mymediavault/vm-worker"
 
 COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/.venv ./.venv
 COPY --from=builder --chown=mymediavault-vm:mymediavault-vm /app/apps/vm-worker/src ./src

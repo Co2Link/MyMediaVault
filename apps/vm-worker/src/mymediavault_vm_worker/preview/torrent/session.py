@@ -21,8 +21,5 @@ class TorrentSession:
     async def close(self) -> None:
         await self.client.close()
 
-    async def maintain(self, config: PreviewEngineConfig) -> set[str]:
-        return await self.client.maintain(config)
-
-    async def release_warm(self, info_hash: str, config: PreviewEngineConfig) -> None:
-        await self.client.release_warm(info_hash, config)
+    async def release(self, info_hash: str, config: PreviewEngineConfig) -> None:
+        await self.client.release(info_hash, config)

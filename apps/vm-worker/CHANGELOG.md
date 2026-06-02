@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+- Replace split metadata, preview retry, and warm-pool schedulers with one
+  Mongo-backed FIFO torrent processing lifecycle.
+- Keep sparse torrents active while slots are available; save resume data,
+  release the handle, and queue the torrent at the FIFO tail under pressure.
+- Add persistent bounded cache configuration, fixed external-failure cooldowns,
+  unified admin controls, and a one-way migration script.
+
 ## 0.3.0
 
 - Internalize preview generation so the VM worker no longer depends on a

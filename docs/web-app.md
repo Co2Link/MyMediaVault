@@ -85,14 +85,14 @@ application.
   torrent catalogs support URL-backed filtering and pagination so large
   catalogs remain navigable.
 - Narrow layouts collapse primary navigation behind a menu button, keep
-  preview thumbnails in a compact two-column grid, and stack failed metadata
+  preview thumbnails in a compact two-column grid, and stack exhausted processing
   details below their status badge.
 
 ## Worker Boundary
 
-The web app marks torrent metadata or actor reanalysis as pending, but it does
-not process torrent metadata, preview images, or faces itself. Metadata, preview
-generation, and actor identification are handled by the VM-hosted
+The web app queues torrent processing or actor reanalysis, but it does not
+resolve metadata, download preview bytes, generate images, or analyze faces
+itself. Torrent processing and actor identification are handled by the VM-hosted
 `apps/vm-worker` process. Shared domain logic for the web app stays in
 `packages/core`.
 

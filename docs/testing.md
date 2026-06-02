@@ -39,8 +39,8 @@ uv run python scripts/evaluate_actor_identification.py \
 ```
 
 `packages/core` owns shared domain logic and Mongoose access. `apps/vm-worker`
-owns long-running metadata polling, resolver/DHT fallback, retry scheduling, and
-preview generation. Its sequential actor-analysis tests cover queue claims,
+owns unified FIFO torrent processing, resolver/DHT fallback, sparse download
+session yielding, and preview generation. Its sequential actor-analysis tests cover queue claims,
 lease repair, bounded retries, UUID creation, successful empty results, and
 admin-edit survival. The offline YuNet and SFace evaluator runs against labeled
 preview fixtures and requires zero false merges, 100 percent recall, and zero
@@ -99,7 +99,7 @@ against the deployed dev URL. `DEV_SMOKE_COMMIT_SHA` is a diagnostic override
 for investigating a specific deployed commit; it should not be used to claim
 that unpushed local changes passed dev smoke. The smoke verifies the full user
 add-video path through the web app, Cosmos DB, the VM worker, Cloudflare R2,
-preview generation, preview UI behavior, and the UI metadata-ready state.
+preview generation, preview UI behavior, and the UI processing-ready state.
 Preview UI assertions cover collection carousel navigation and full-size
 preview navigation, accepting both complete and degraded preview artifacts when
 the VM worker returns a usable result. The smoke expects the Oracle VM worker to

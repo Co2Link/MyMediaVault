@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import random
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import boto3
 from beanie import Document, init_beanie
@@ -23,13 +23,10 @@ from pymongo import AsyncMongoClient, ReturnDocument
 from mymediavault_vm_worker.preview import (
     GeneratedFrame,
     GeneratedSheet,
-    PreviewHarnessConfig,
     PreviewEngine,
     PreviewEngineConfig,
-    PreviewJobLease,
-    PreviewJobSource,
+    PreviewRequest,
     PreviewResult,
-    PreviewWorkerHarness,
     configure_default_logging,
 )
 
@@ -47,26 +44,14 @@ DEFAULT_STALE_PROCESSING_MINUTES = 120
 DEFAULT_TARGET_FRAMES = 9
 DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
 DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 120.0
-DEFAULT_WARM_SWARM_MAX_HANDLES = 40
-DEFAULT_WARM_SWARM_IDLE_SECONDS = 7200.0
-DEFAULT_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND = 64 * 1024
-DEFAULT_PREVIEW_RETRY_DELAYS = (
-    "15m",
-    "1h",
-    "2h",
-    "4h",
-    "8h",
-    "12h",
-    "1d",
-    "1d",
-    "1d",
-)
+DEFAULT_PREVIEW_SESSION_FAIRNESS_SECONDS = 2 * 60 * 60
+DEFAULT_PREVIEW_FAILURE_LIMIT = 3
+DEFAULT_EXTERNAL_FAILURE_COOLDOWN_SECONDS = 300
+DEFAULT_PREVIEW_CACHE_DIR = Path("/var/cache/mymediavault/vm-worker")
+DEFAULT_PREVIEW_CACHE_MAX_MB = 32768.0
 DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
 DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
-DEFAULT_METADATA_RETRY_DELAYS_SECONDS = (60, 120, 240, 480, 960, 1920)
-DEFAULT_METADATA_LEASE_SECONDS = 1800
-DEFAULT_METADATA_MAX_CONCURRENCY = 10
 DEFAULT_METADATA_DHT_TIMEOUT_SECONDS = 600
 REDACTED_LOG_VALUE = "[redacted]"
 SENSITIVE_LOG_KEYS = {
@@ -82,7 +67,6 @@ SENSITIVE_LOG_KEYS = {
 }
 OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 MONGODB_CREDENTIAL_PATTERN = re.compile(r"(mongodb(?:\+srv)?://[^:/@\s]+:)([^@\s]+)(@)")
-PREVIEW_RETRY_DELAY_PATTERN = re.compile(r"([1-9][0-9]*)([mhd])")
 
 
 class MetadataResolutionError(Exception):
@@ -109,9 +93,6 @@ class PreviewWorkerSettings(BaseSettings):
     r2_secret_access_key: str | None = Field(default=None, alias="R2_SECRET_ACCESS_KEY")
     r2_bucket_name: str = Field(default="torrent-raw", alias="R2_BUCKET_NAME")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
-    metadata_worker_enabled: bool = Field(
-        default=True, alias="MMV_METADATA_WORKER_ENABLED"
-    )
     preview_worker_enabled: bool = Field(
         default=True, alias="MMV_PREVIEW_WORKER_ENABLED"
     )
@@ -155,21 +136,25 @@ class PreviewWorkerSettings(BaseSettings):
         default=DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
         alias="MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS",
     )
-    preview_retry_delays: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_PREVIEW_RETRY_DELAYS),
-        alias="MMV_PREVIEW_RETRY_DELAYS",
+    preview_session_fairness_seconds: float = Field(
+        default=DEFAULT_PREVIEW_SESSION_FAIRNESS_SECONDS,
+        alias="MMV_PREVIEW_SESSION_FAIRNESS_SECONDS",
     )
-    preview_warm_swarm_max_handles: int = Field(
-        default=DEFAULT_WARM_SWARM_MAX_HANDLES,
-        alias="MMV_PREVIEW_WARM_SWARM_MAX_HANDLES",
+    preview_failure_limit: int = Field(
+        default=DEFAULT_PREVIEW_FAILURE_LIMIT,
+        alias="MMV_PREVIEW_FAILURE_LIMIT",
     )
-    preview_warm_swarm_idle_seconds: float = Field(
-        default=DEFAULT_WARM_SWARM_IDLE_SECONDS,
-        alias="MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS",
+    preview_external_failure_cooldown_seconds: int = Field(
+        default=DEFAULT_EXTERNAL_FAILURE_COOLDOWN_SECONDS,
+        alias="MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS",
     )
-    preview_warm_swarm_download_limit_bytes_per_second: int = Field(
-        default=DEFAULT_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND,
-        alias="MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND",
+    preview_cache_dir: Path = Field(
+        default=DEFAULT_PREVIEW_CACHE_DIR,
+        alias="MMV_PREVIEW_CACHE_DIR",
+    )
+    preview_cache_max_mb: float = Field(
+        default=DEFAULT_PREVIEW_CACHE_MAX_MB,
+        alias="MMV_PREVIEW_CACHE_MAX_MB",
     )
     vm_worker_debug_log_path: Path = Field(
         default=DEFAULT_DEBUG_LOG_PATH, alias="MMV_VM_WORKER_DEBUG_LOG_PATH"
@@ -182,27 +167,12 @@ class PreviewWorkerSettings(BaseSettings):
         default=DEFAULT_DEBUG_LOG_RETENTION,
         alias="MMV_VM_WORKER_DEBUG_LOG_RETENTION",
     )
-    metadata_worker_poll_interval_seconds: float = Field(
-        default=5.0, alias="MMV_METADATA_WORKER_POLL_INTERVAL_SECONDS"
-    )
-    metadata_worker_max_concurrency: int = Field(
-        default=DEFAULT_METADATA_MAX_CONCURRENCY,
-        alias="MMV_METADATA_WORKER_MAX_CONCURRENCY",
-    )
     metadata_fetch_timeout_seconds: int = Field(
         default=20, alias="MMV_TORRENT_FETCH_TIMEOUT_SECONDS"
     )
     metadata_resolver_urls: list[str] = Field(
         default_factory=lambda: ["https://itorrents.org/torrent/{info_hash}.torrent"],
         alias="MMV_TORRENT_RESOLVER_URLS",
-    )
-    metadata_retry_delays_seconds: list[int] = Field(
-        default_factory=lambda: list(DEFAULT_METADATA_RETRY_DELAYS_SECONDS),
-        alias="MMV_TORRENT_METADATA_RETRY_DELAYS_SECONDS",
-    )
-    metadata_lease_seconds: int = Field(
-        default=DEFAULT_METADATA_LEASE_SECONDS,
-        alias="MMV_TORRENT_METADATA_LEASE_SECONDS",
     )
     metadata_dht_fallback_enabled: bool = Field(
         default=True, alias="MMV_TORRENT_DHT_FALLBACK_ENABLED"
@@ -228,8 +198,7 @@ class PreviewWorkerSettings(BaseSettings):
             msg = "R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY must be set together"
             raise ValueError(msg)
         if (
-            not self.metadata_worker_enabled
-            and not self.preview_worker_enabled
+            not self.preview_worker_enabled
             and not self.actor_analysis_worker_enabled
         ):
             msg = "At least one VM-worker pipeline must be enabled"
@@ -252,28 +221,23 @@ class PreviewWorkerSettings(BaseSettings):
         if self.preview_download_progress_timeout_seconds <= 0:
             msg = "MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS must be greater than 0"
             raise ValueError(msg)
-        if self.preview_warm_swarm_max_handles < 0:
-            msg = "MMV_PREVIEW_WARM_SWARM_MAX_HANDLES must be non-negative"
+        if self.preview_session_fairness_seconds <= 0:
+            msg = "MMV_PREVIEW_SESSION_FAIRNESS_SECONDS must be greater than 0"
             raise ValueError(msg)
-        if self.preview_warm_swarm_idle_seconds <= 0:
-            msg = "MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS must be greater than 0"
+        if self.preview_failure_limit <= 0:
+            msg = "MMV_PREVIEW_FAILURE_LIMIT must be greater than 0"
             raise ValueError(msg)
-        if self.preview_warm_swarm_download_limit_bytes_per_second <= 0:
-            msg = (
-                "MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND "
-                "must be greater than 0"
-            )
+        if self.preview_external_failure_cooldown_seconds <= 0:
+            msg = "MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS must be greater than 0"
             raise ValueError(msg)
-        for delay in self.preview_retry_delays:
-            _parse_preview_retry_delay(delay)
+        if self.preview_cache_max_mb <= 0:
+            msg = "MMV_PREVIEW_CACHE_MAX_MB must be greater than 0"
+            raise ValueError(msg)
         if not self.metadata_resolver_urls:
             msg = "MMV_TORRENT_RESOLVER_URLS must include at least one resolver URL"
             raise ValueError(msg)
         if self.torrent_provider not in {"fake", "http"}:
             msg = "MMV_TORRENT_PROVIDER must be fake or http"
-            raise ValueError(msg)
-        if any(delay <= 0 for delay in self.metadata_retry_delays_seconds):
-            msg = "MMV_TORRENT_METADATA_RETRY_DELAYS_SECONDS values must be positive"
             raise ValueError(msg)
         if self.actor_analysis_poll_interval_seconds <= 0:
             msg = "MMV_ACTOR_ANALYSIS_POLL_INTERVAL_SECONDS must be greater than 0"
@@ -291,12 +255,6 @@ class PreviewWorkerSettings(BaseSettings):
         return bool(
             self.r2_endpoint and self.r2_access_key_id and self.r2_secret_access_key
         )
-
-    @property
-    def preview_retry_delays_seconds(self) -> list[int]:
-        return [
-            _parse_preview_retry_delay(delay) for delay in self.preview_retry_delays
-        ]
 
 
 class TorrentPreviewFrame(BaseModel):
@@ -331,22 +289,17 @@ class Torrent(Document):
     name: str | None = None
     sizeBytes: int | None = None
     rawBlobKey: str | None = None
-    metadataStatus: str = "pending"
-    metadataError: str | None = None
-    metadataFailureKind: str | None = None
-    metadataAttempts: int = 0
-    metadataNextAttemptAt: datetime | None = None
-    metadataLastAttemptAt: datetime | None = None
-    metadataStartedAt: datetime | None = None
-    metadataFinishedAt: datetime | None = None
-    metadataLeaseUntil: datetime | None = None
-    metadataDiagnostics: dict[str, Any] = Field(default_factory=dict)
+    processingState: str = "queued"
+    processingPhase: str | None = None
+    processingQueuedAt: datetime | None = None
+    processingAvailableAt: datetime | None = None
+    processingLeaseUntil: datetime | None = None
+    processingFailureCount: int = 0
+    processingLastOutcome: str | None = None
+    processingLastError: str | None = None
+    processingUpdatedAt: datetime | None = None
+    processingDiagnostics: dict[str, Any] = Field(default_factory=dict)
     files: list[dict[str, Any]] = Field(default_factory=list)
-    previewStatus: str = "pending"
-    previewAttempts: int = 0
-    previewLastAttemptAt: datetime | None = None
-    previewNextAttemptAt: datetime | None = None
-    previewUpdatedAt: datetime | None = None
     previewFrames: list[TorrentPreviewFrame] = Field(default_factory=list)
     previewSheet: TorrentPreviewSheet | None = None
     previewDiagnostics: TorrentPreviewDiagnostics = Field(
@@ -594,245 +547,6 @@ class DhtTorrentMetadataResolver:
 TRANSIENT_HTTP_STATUSES = {408, 409, 425, 429, *range(500, 600)}
 
 
-class MetadataWorker:
-    def __init__(
-        self,
-        *,
-        settings: PreviewWorkerSettings,
-        blob_store: BlobStore,
-    ) -> None:
-        self._blob_store = blob_store
-        self._poll_interval_seconds = max(
-            0.5, settings.metadata_worker_poll_interval_seconds
-        )
-        self._retry_delays_seconds = settings.metadata_retry_delays_seconds
-        self._lease_seconds = max(60, settings.metadata_lease_seconds)
-        self._max_concurrency = max(1, settings.metadata_worker_max_concurrency)
-        self._resolver = (
-            FakeTorrentMetadataResolver()
-            if settings.torrent_provider == "fake"
-            else HttpTorrentMetadataResolver(
-                resolver_urls=settings.metadata_resolver_urls,
-                timeout_seconds=settings.metadata_fetch_timeout_seconds,
-            )
-        )
-        self._dht_resolver = (
-            DhtTorrentMetadataResolver(
-                timeout_seconds=settings.metadata_dht_timeout_seconds
-            )
-            if settings.metadata_dht_fallback_enabled
-            and settings.torrent_provider == "http"
-            else None
-        )
-        self._stopping = False
-
-    async def run(self) -> None:
-        logger.info(
-            "Metadata worker started with metadata_max_concurrency={} retry_delays_seconds={}",
-            self._max_concurrency,
-            self._retry_delays_seconds,
-        )
-        tasks: set[asyncio.Task[None]] = set()
-        try:
-            while not self._stopping:
-                await self._repair_stale_processing()
-                while len(tasks) < self._max_concurrency:
-                    claimed = await self._claim_one()
-                    if claimed is None:
-                        break
-                    tasks.add(
-                        asyncio.create_task(
-                            self._run_claimed(claimed),
-                            name=f"metadata:{claimed.id}",
-                        )
-                    )
-                if not tasks:
-                    await asyncio.sleep(self._poll_interval_seconds)
-                    continue
-                done, tasks = await asyncio.wait(
-                    tasks,
-                    timeout=self._poll_interval_seconds,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for task in done:
-                    task.result()
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def _run_claimed(self, claimed: Torrent) -> None:
-        try:
-            await self._process(claimed)
-        except Exception:
-            logger.exception(
-                "Unexpected metadata processing failure for torrent {}",
-                claimed.id,
-            )
-            await self._fail(
-                claimed,
-                MetadataResolutionError(
-                    "Unexpected metadata processing failure.",
-                    failure_kind="transient",
-                ),
-            )
-
-    def stop(self) -> None:
-        self._stopping = True
-
-    async def _claim_one(self) -> Torrent | None:
-        now = datetime.now(UTC)
-        lease_until = now + timedelta(seconds=self._lease_seconds)
-        document = await Torrent.get_pymongo_collection().find_one_and_update(
-            {
-                "metadataStatus": "pending",
-                "$and": [
-                    {
-                        "$or": [
-                            {"metadataNextAttemptAt": None},
-                            {"metadataNextAttemptAt": {"$lte": now}},
-                            {"metadataNextAttemptAt": {"$exists": False}},
-                        ]
-                    },
-                    {
-                        "$or": [
-                            {"metadataLeaseUntil": None},
-                            {"metadataLeaseUntil": {"$lt": now}},
-                            {"metadataLeaseUntil": {"$exists": False}},
-                        ]
-                    },
-                ],
-            },
-            {
-                "$set": {
-                    "metadataStatus": "processing",
-                    "metadataError": None,
-                    "metadataStartedAt": now,
-                    "metadataLastAttemptAt": now,
-                    "metadataLeaseUntil": lease_until,
-                },
-                "$inc": {"metadataAttempts": 1},
-            },
-            sort=[("metadataNextAttemptAt", 1), ("updatedAt", 1), ("_id", 1)],
-            return_document=ReturnDocument.AFTER,
-        )
-        return Torrent.model_validate(document) if document else None
-
-    async def _repair_stale_processing(self) -> None:
-        now = datetime.now(UTC)
-        result = await Torrent.get_pymongo_collection().update_many(
-            {
-                "metadataStatus": "processing",
-                "$or": [
-                    {"metadataLeaseUntil": None},
-                    {"metadataLeaseUntil": {"$lt": now}},
-                    {"metadataLeaseUntil": {"$exists": False}},
-                ],
-            },
-            {
-                "$set": {
-                    "metadataStatus": "pending",
-                    "metadataError": "Metadata processing lease expired and was requeued.",
-                    "metadataNextAttemptAt": None,
-                    "metadataLeaseUntil": None,
-                }
-            },
-        )
-        if result.modified_count:
-            logger.info("Requeued {} stale metadata jobs", result.modified_count)
-
-    async def _process(self, torrent: Torrent) -> None:
-        try:
-            metadata = await self._resolver.fetch(torrent.infoHash)
-        except MetadataResolutionError as http_error:
-            if self._dht_resolver is None:
-                await self._fail(torrent, http_error)
-                return
-            try:
-                metadata = await self._dht_resolver.fetch(torrent.infoHash)
-                metadata["resolverDiagnostics"] = [
-                    *http_error.diagnostics.get("resolvers", []),
-                    *metadata["resolverDiagnostics"],
-                ]
-            except MetadataResolutionError as dht_error:
-                await self._fail(
-                    torrent, _combine_metadata_errors(http_error, dht_error)
-                )
-                return
-
-        blob_key = f"torrents/{torrent.infoHash}.torrent"
-        await self._blob_store.put_bytes(
-            blob_key, metadata["raw"], "application/x-bittorrent"
-        )
-        now = datetime.now(UTC)
-        await Torrent.get_pymongo_collection().update_one(
-            {"_id": torrent.id},
-            {
-                "$set": {
-                    "name": metadata["name"],
-                    "sizeBytes": metadata["sizeBytes"],
-                    "rawBlobKey": blob_key,
-                    "metadataStatus": "succeeded",
-                    "metadataError": None,
-                    "metadataFailureKind": None,
-                    "metadataNextAttemptAt": None,
-                    "metadataLeaseUntil": None,
-                    "metadataFinishedAt": now,
-                    "metadataDiagnostics": {
-                        "resolvers": metadata["resolverDiagnostics"],
-                    },
-                    "files": metadata["files"],
-                }
-            },
-        )
-        logger.info("Metadata succeeded for torrent {}", torrent.id)
-
-    async def _fail(self, torrent: Torrent, error: MetadataResolutionError) -> None:
-        now = datetime.now(UTC)
-        exhausted = torrent.metadataAttempts >= self.max_attempts
-        permanent = error.failure_kind == "permanent"
-        status = "failed" if permanent or exhausted else "pending"
-        next_attempt_at = (
-            None
-            if status == "failed"
-            else now + timedelta(seconds=self._next_delay(torrent.metadataAttempts))
-        )
-        message = str(error)
-        if exhausted and not permanent:
-            message = f"{message} Metadata retry attempts exhausted."
-        await Torrent.get_pymongo_collection().update_one(
-            {"_id": torrent.id},
-            {
-                "$set": {
-                    "metadataStatus": status,
-                    "metadataError": message,
-                    "metadataFailureKind": error.failure_kind,
-                    "metadataNextAttemptAt": next_attempt_at,
-                    "metadataLeaseUntil": None,
-                    "metadataFinishedAt": now if status == "failed" else None,
-                    "metadataDiagnostics": error.diagnostics,
-                }
-            },
-        )
-        logger.warning(
-            "Metadata {} for torrent {}: {}",
-            status,
-            torrent.id,
-            message,
-        )
-
-    @property
-    def max_attempts(self) -> int:
-        return len(self._retry_delays_seconds) + 1
-
-    def _next_delay(self, current_attempt: int) -> int:
-        index = max(0, current_attempt - 1)
-        if index >= len(self._retry_delays_seconds):
-            return self._retry_delays_seconds[-1]
-        jitter = random.uniform(0.8, 1.2)
-        return max(1, round(self._retry_delays_seconds[index] * jitter))
-
-
 def parse_torrent(raw: bytes) -> dict[str, Any]:
     decoded, offset = _bdecode(raw, 0)
     if offset != len(raw) or not isinstance(decoded, dict):
@@ -978,7 +692,7 @@ def _to_int(value: Any) -> int:
     return value if isinstance(value, int) else 0
 
 
-class MongoPreviewJobLease(PreviewJobLease):
+class MongoPreviewJobLease:
     def __init__(
         self,
         *,
@@ -986,15 +700,11 @@ class MongoPreviewJobLease(PreviewJobLease):
         blob_store: BlobStore,
         artifact_version: str,
         artifact_fingerprint: str,
-        max_attempts: int,
-        retry_delays_seconds: list[int],
     ) -> None:
         self._torrent = torrent
         self._blob_store = blob_store
         self._artifact_version = artifact_version
         self._artifact_fingerprint = artifact_fingerprint
-        self._max_attempts = max_attempts
-        self._retry_delays_seconds = retry_delays_seconds
         self._old_keys = _preview_keys(torrent)
 
     @property
@@ -1032,14 +742,8 @@ class MongoPreviewJobLease(PreviewJobLease):
         )
         stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
         has_replacement_artifacts = bool(stored_frames or stored_sheet)
-        next_attempt_at = _preview_next_attempt_at(
-            status=result.status,
-            attempts=self._torrent.previewAttempts,
-            max_attempts=self._max_attempts,
-            retry_delays_seconds=self._retry_delays_seconds,
-        )
-        await Torrent.get_pymongo_collection().update_one(
-            {"_id": self._torrent.id},
+        update_result = await Torrent.get_pymongo_collection().update_one(
+            {"_id": self._torrent.id, "processingState": "running"},
             _success_update(
                 result,
                 stored_frames=stored_frames,
@@ -1047,22 +751,15 @@ class MongoPreviewJobLease(PreviewJobLease):
                 artifact_version=self._artifact_version,
                 artifact_fingerprint=self._artifact_fingerprint,
                 replace_artifacts=has_replacement_artifacts,
-                next_attempt_at=next_attempt_at,
             ),
         )
-        if has_replacement_artifacts:
+        if has_replacement_artifacts and update_result.matched_count:
             await self._delete_old_keys(
                 _preview_keys_from_stored(stored_frames, stored_sheet)
             )
 
     async def fail(self, error: Exception) -> None:
         message = str(error) or error.__class__.__name__
-        next_attempt_at = _preview_next_attempt_at(
-            status="failed",
-            attempts=self._torrent.previewAttempts,
-            max_attempts=self._max_attempts,
-            retry_delays_seconds=self._retry_delays_seconds,
-        )
         logger.bind(
             job_id=self._torrent.id,
             info_hash=self._torrent.infoHash,
@@ -1073,9 +770,8 @@ class MongoPreviewJobLease(PreviewJobLease):
             {"_id": self._torrent.id},
             {
                 "$set": {
-                    "previewStatus": "failed",
-                    "previewUpdatedAt": datetime.now(UTC),
-                    "previewNextAttemptAt": next_attempt_at,
+                    "processingState": "running",
+                    "processingUpdatedAt": datetime.now(UTC),
                     "previewDiagnostics.statusReason": message,
                     "previewDiagnostics.artifactVersion": self._artifact_version,
                     "previewDiagnostics.artifactFingerprint": self._artifact_fingerprint,
@@ -1119,225 +815,411 @@ class MongoPreviewJobLease(PreviewJobLease):
         }
 
 
-class MongoPreviewJobSource(PreviewJobSource):
+class TorrentProcessingScheduler:
+    """Run FIFO torrent preview sessions with explicit slot ownership."""
+
     def __init__(
         self,
         *,
+        settings: PreviewWorkerSettings,
         blob_store: BlobStore,
-        stale_processing_minutes: int,
-        retry_delays_seconds: list[int] | None = None,
-        warm_ready_info_hashes: Callable[[], Awaitable[set[str]]] | None = None,
+        engine: PreviewEngine,
     ) -> None:
         self._blob_store = blob_store
-        self._stale_processing_minutes = max(1, stale_processing_minutes)
-        self._retry_delays_seconds = (
-            [
-                _parse_preview_retry_delay(delay)
-                for delay in DEFAULT_PREVIEW_RETRY_DELAYS
-            ]
-            if retry_delays_seconds is None
-            else list(retry_delays_seconds)
+        self._engine = engine
+        self._poll_interval_seconds = max(
+            0.5, settings.preview_worker_poll_interval_seconds
         )
-        self._max_attempts = len(self._retry_delays_seconds) + 1
-        self._warm_ready_info_hashes = warm_ready_info_hashes
+        self._max_concurrency = max(1, settings.preview_worker_max_concurrency)
+        self._lease_seconds = max(
+            60,
+            settings.preview_repair_stale_processing_minutes * 60,
+            round(settings.preview_session_fairness_seconds * 2),
+        )
+        self._fairness_seconds = settings.preview_session_fairness_seconds
+        self._failure_limit = settings.preview_failure_limit
+        self._external_failure_cooldown_seconds = (
+            settings.preview_external_failure_cooldown_seconds
+        )
+        self._resolver = (
+            FakeTorrentMetadataResolver()
+            if settings.torrent_provider == "fake"
+            else HttpTorrentMetadataResolver(
+                resolver_urls=settings.metadata_resolver_urls,
+                timeout_seconds=settings.metadata_fetch_timeout_seconds,
+            )
+        )
+        self._dht_resolver = (
+            DhtTorrentMetadataResolver(
+                timeout_seconds=settings.metadata_dht_timeout_seconds
+            )
+            if settings.metadata_dht_fallback_enabled
+            and settings.torrent_provider == "http"
+            else None
+        )
+        self._stopping = False
 
-    async def claim_batch(
-        self,
-        *,
-        limit: int,
-        artifact_version: str,
-        artifact_fingerprint: str,
-    ) -> list[MongoPreviewJobLease]:
-        await self._repair_stale_processing()
-        claimed: list[MongoPreviewJobLease] = []
-        warm_ready_info_hashes = (
-            await self._warm_ready_info_hashes()
-            if self._warm_ready_info_hashes is not None
-            else set()
+    def stop(self) -> None:
+        self._stopping = True
+
+    async def run(self) -> None:
+        logger.info(
+            "Torrent processing scheduler started with max_concurrency={} fairness_seconds={}",
+            self._max_concurrency,
+            self._fairness_seconds,
         )
-        for query, reset_attempts, claim_reason in self._claim_plans(
-            artifact_version=artifact_version,
-            artifact_fingerprint=artifact_fingerprint,
-            warm_ready_info_hashes=warm_ready_info_hashes,
-        ):
-            while len(claimed) < limit:
-                torrent = await self._claim_one(query, reset_attempts=reset_attempts)
-                if torrent is None:
-                    break
-                logger.bind(
-                    job_id=torrent.id,
-                    info_hash=torrent.infoHash,
-                    claim_reason=claim_reason,
-                    preview_attempts=torrent.previewAttempts,
-                    preview_status=torrent.previewStatus,
-                    reset_attempts=reset_attempts,
-                    artifact_version=artifact_version,
-                    artifact_fingerprint=artifact_fingerprint,
-                ).debug("Claimed preview job")
-                claimed.append(
-                    MongoPreviewJobLease(
-                        torrent=torrent,
-                        blob_store=self._blob_store,
-                        artifact_version=artifact_version,
-                        artifact_fingerprint=artifact_fingerprint,
-                        max_attempts=self._max_attempts,
-                        retry_delays_seconds=self._retry_delays_seconds,
+        await self._engine.start()
+        tasks: set[asyncio.Task[None]] = set()
+        try:
+            while tasks or not self._stopping:
+                await self._repair_stale_running()
+                await self._queue_stale_artifacts()
+                while not self._stopping and len(tasks) < self._max_concurrency:
+                    torrent = await self._claim_one()
+                    if torrent is None:
+                        break
+                    tasks.add(
+                        asyncio.create_task(
+                            self._run_session(torrent),
+                            name=f"torrent-processing:{torrent.id}",
+                        )
                     )
+                if not tasks:
+                    await asyncio.sleep(self._poll_interval_seconds)
+                    continue
+                done, tasks = await asyncio.wait(
+                    tasks,
+                    timeout=self._poll_interval_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-            if len(claimed) >= limit:
-                break
-        if claimed:
-            logger.bind(
-                claimed_count=len(claimed),
-                limit=limit,
-            ).debug("Preview job claim scan finished")
-        else:
-            logger.bind(
-                limit=limit,
-                max_attempts=self._max_attempts,
-                claim_reasons=["pending", "artifact_stale", "retry"],
-                artifact_version=artifact_version,
-                artifact_fingerprint=artifact_fingerprint,
-            ).debug("No preview jobs claimed")
-        return claimed
+                for task in done:
+                    task.result()
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._engine.close()
 
-    def _claim_plans(
-        self,
-        *,
-        artifact_version: str,
-        artifact_fingerprint: str,
-        warm_ready_info_hashes: set[str] | None = None,
-    ) -> list[tuple[dict[str, Any], bool, str]]:
-        pending_query, retry_query = self._claim_queries(
-            artifact_version=artifact_version,
-            artifact_fingerprint=artifact_fingerprint,
-            warm_ready_info_hashes=warm_ready_info_hashes,
-        )
-        return [
-            (pending_query, False, "pending"),
-            (
-                self._artifact_stale_query(
-                    artifact_version=artifact_version,
-                    artifact_fingerprint=artifact_fingerprint,
-                ),
-                True,
-                "artifact_stale",
-            ),
-            (retry_query, False, "retry"),
-        ]
-
-    def _claim_queries(
-        self,
-        *,
-        artifact_version: str,
-        artifact_fingerprint: str,
-        warm_ready_info_hashes: set[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        base = {
-            "metadataStatus": "succeeded",
-            "rawBlobKey": {"$type": "string", "$ne": ""},
-        }
+    async def _claim_one(self) -> Torrent | None:
         now = datetime.now(UTC)
-        retry_schedule = [
-            {"previewNextAttemptAt": None},
-            {"previewNextAttemptAt": {"$lte": now}},
-            {"previewNextAttemptAt": {"$exists": False}},
-        ]
-        if warm_ready_info_hashes:
-            retry_schedule.append({"infoHash": {"$in": sorted(warm_ready_info_hashes)}})
-        retryable = {**base, "previewAttempts": {"$lt": self._max_attempts}}
-        return [
+        document = await Torrent.get_pymongo_collection().find_one_and_update(
             {
-                **retryable,
+                "processingState": {"$in": ["queued", "partial"]},
                 "$or": [
-                    {"previewStatus": {"$exists": False}},
-                    {"previewStatus": "pending"},
+                    {"processingAvailableAt": None},
+                    {"processingAvailableAt": {"$lte": now}},
+                    {"processingAvailableAt": {"$exists": False}},
                 ],
             },
             {
-                **retryable,
-                "previewStatus": {"$in": ["failed", "partial"]},
-                "$or": retry_schedule,
+                "$set": {
+                    "processingState": "running",
+                    "processingPhase": "resolving_metadata",
+                    "processingLeaseUntil": now + timedelta(seconds=self._lease_seconds),
+                    "processingUpdatedAt": now,
+                    "processingAvailableAt": None,
+                }
             },
-        ]
-
-    def _artifact_stale_query(
-        self,
-        *,
-        artifact_version: str,
-        artifact_fingerprint: str,
-    ) -> dict[str, Any]:
-        base = {
-            "metadataStatus": "succeeded",
-            "rawBlobKey": {"$type": "string", "$ne": ""},
-        }
-        return {
-            **base,
-            "previewStatus": {"$in": ["succeeded", "failed", "partial"]},
-            "$or": [
-                {"previewDiagnostics.artifactVersion": {"$exists": False}},
-                {"previewDiagnostics.artifactVersion": {"$ne": artifact_version}},
-                {"previewDiagnostics.artifactFingerprint": {"$exists": False}},
-                {
-                    "previewDiagnostics.artifactFingerprint": {
-                        "$ne": artifact_fingerprint
-                    }
-                },
-            ],
-        }
-
-    async def _claim_one(
-        self, query: dict[str, Any], *, reset_attempts: bool = False
-    ) -> Torrent | None:
-        now = datetime.now(UTC)
-        attempt_update = (
-            {
-                "$set": {
-                    "previewStatus": "processing",
-                    "previewLastAttemptAt": now,
-                    "previewNextAttemptAt": None,
-                    "previewAttempts": 1,
-                },
-            }
-            if reset_attempts
-            else {
-                "$set": {
-                    "previewStatus": "processing",
-                    "previewLastAttemptAt": now,
-                    "previewNextAttemptAt": None,
-                },
-                "$inc": {"previewAttempts": 1},
-            }
-        )
-        document = await Torrent.get_pymongo_collection().find_one_and_update(
-            query,
-            attempt_update,
-            sort=[("updatedAt", 1), ("_id", 1)],
+            sort=[("processingQueuedAt", 1), ("_id", 1)],
             return_document=ReturnDocument.AFTER,
         )
-        return Torrent.model_validate(document) if document else None
+        if document is None:
+            return None
+        torrent = Torrent.model_validate(document)
+        logger.bind(
+            job_id=torrent.id,
+            info_hash=torrent.infoHash,
+            queued_at=torrent.processingQueuedAt,
+        ).debug("Claimed FIFO torrent processing session")
+        return torrent
 
-    async def _repair_stale_processing(self) -> None:
-        stale_before = datetime.now(UTC) - timedelta(
-            minutes=self._stale_processing_minutes
-        )
+    async def _repair_stale_running(self) -> None:
+        now = datetime.now(UTC)
         result = await Torrent.get_pymongo_collection().update_many(
             {
-                "previewStatus": "processing",
+                "processingState": "running",
                 "$or": [
-                    {"previewLastAttemptAt": None},
-                    {"previewLastAttemptAt": {"$lt": stale_before}},
+                    {"processingLeaseUntil": None},
+                    {"processingLeaseUntil": {"$lt": now}},
+                    {"processingLeaseUntil": {"$exists": False}},
                 ],
             },
             {
                 "$set": {
-                    "previewStatus": "pending",
-                    "previewDiagnostics.statusReason": "Preview processing timed out and was requeued.",
+                    "processingState": "queued",
+                    "processingPhase": None,
+                    "processingQueuedAt": now,
+                    "processingAvailableAt": None,
+                    "processingLeaseUntil": None,
+                    "processingLastOutcome": "lease_expired",
+                    "processingUpdatedAt": now,
                 }
             },
         )
         if result.modified_count:
-            logger.info("Requeued {} stale preview jobs", result.modified_count)
+            logger.info("Requeued {} stale torrent processing sessions", result.modified_count)
+
+    async def _queue_stale_artifacts(self) -> None:
+        now = datetime.now(UTC)
+        result = await Torrent.get_pymongo_collection().update_many(
+            {
+                "processingState": "complete",
+                "$or": [
+                    {"previewDiagnostics.artifactVersion": {"$ne": self._engine.artifact_version}},
+                    {
+                        "previewDiagnostics.artifactFingerprint": {
+                            "$ne": self._engine.artifact_fingerprint
+                        }
+                    },
+                ],
+            },
+            {
+                "$set": {
+                    "processingState": "queued",
+                    "processingPhase": None,
+                    "processingQueuedAt": now,
+                    "processingAvailableAt": None,
+                    "processingLeaseUntil": None,
+                    "processingLastOutcome": "artifact_stale",
+                    "processingUpdatedAt": now,
+                }
+            },
+        )
+        if result.modified_count:
+            logger.info("Queued {} torrents with stale preview artifacts", result.modified_count)
+
+    async def _run_session(self, torrent: Torrent) -> None:
+        started_at = time.monotonic()
+        lease = MongoPreviewJobLease(
+            torrent=torrent,
+            blob_store=self._blob_store,
+            artifact_version=self._engine.artifact_version,
+            artifact_fingerprint=self._engine.artifact_fingerprint,
+        )
+        try:
+            torrent = await self._ensure_metadata(torrent)
+            lease = MongoPreviewJobLease(
+                torrent=torrent,
+                blob_store=self._blob_store,
+                artifact_version=self._engine.artifact_version,
+                artifact_fingerprint=self._engine.artifact_fingerprint,
+            )
+            while not self._stopping:
+                await self._set_phase(torrent.id, "generating_preview")
+                torrent_bytes = await lease.load_torrent_bytes()
+                async with self._engine.preview_artifact(
+                    PreviewRequest(torrent_bytes=torrent_bytes)
+                ) as result:
+                    await lease.complete(result)
+                if result.status == "succeeded":
+                    await self._finish(torrent, "complete", "completed")
+                    return
+                if _is_permanent_preview_failure(result):
+                    await self._finish(
+                        torrent,
+                        "exhausted",
+                        "invalid_media",
+                        result.status_reason,
+                    )
+                    return
+                if _is_external_preview_failure(result):
+                    await self._fail_or_requeue(torrent, result.status_reason)
+                    return
+                queue_pressure = await self._has_queued_work(exclude_id=torrent.id)
+                fairness_elapsed = time.monotonic() - started_at >= self._fairness_seconds
+                if queue_pressure:
+                    outcome = (
+                        "yielded_fairness" if fairness_elapsed else "yielded_inactive"
+                    )
+                    await self._yield(torrent, result, outcome)
+                    return
+                logger.bind(
+                    job_id=torrent.id,
+                    info_hash=torrent.infoHash,
+                    status=result.status,
+                    downloaded_bytes=result.diagnostics.downloaded_bytes,
+                ).debug("Continuing torrent session without queue pressure")
+            await self._requeue(torrent, "worker_stopped")
+        except MetadataResolutionError as error:
+            if error.failure_kind == "permanent":
+                await self._finish(torrent, "exhausted", "invalid_metadata", str(error))
+            else:
+                await self._requeue(
+                    torrent,
+                    "metadata_unavailable",
+                    str(error),
+                    cooldown_seconds=self._external_failure_cooldown_seconds,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.exception("Unexpected torrent processing failure for {}", torrent.id)
+            await self._fail_or_requeue(torrent, str(error) or error.__class__.__name__)
+        finally:
+            await self._engine.release_session(torrent.infoHash)
+
+    async def _ensure_metadata(self, torrent: Torrent) -> Torrent:
+        if torrent.rawBlobKey:
+            return torrent
+        try:
+            metadata = await self._resolver.fetch(torrent.infoHash)
+        except MetadataResolutionError as http_error:
+            if self._dht_resolver is None:
+                raise
+            try:
+                metadata = await self._dht_resolver.fetch(torrent.infoHash)
+                metadata["resolverDiagnostics"] = [
+                    *http_error.diagnostics.get("resolvers", []),
+                    *metadata["resolverDiagnostics"],
+                ]
+            except MetadataResolutionError as dht_error:
+                raise _combine_metadata_errors(http_error, dht_error) from dht_error
+        blob_key = f"torrents/{torrent.infoHash}.torrent"
+        await self._blob_store.put_bytes(blob_key, metadata["raw"], "application/x-bittorrent")
+        await Torrent.get_pymongo_collection().update_one(
+            {"_id": torrent.id, "processingState": "running"},
+            {
+                "$set": {
+                    "name": metadata["name"],
+                    "sizeBytes": metadata["sizeBytes"],
+                    "rawBlobKey": blob_key,
+                    "files": metadata["files"],
+                    "processingDiagnostics.metadata": {
+                        "resolvers": metadata["resolverDiagnostics"],
+                    },
+                }
+            },
+        )
+        torrent.rawBlobKey = blob_key
+        torrent.name = metadata["name"]
+        torrent.sizeBytes = metadata["sizeBytes"]
+        torrent.files = metadata["files"]
+        return torrent
+
+    async def _set_phase(self, torrent_id: str, phase: str) -> None:
+        now = datetime.now(UTC)
+        await Torrent.get_pymongo_collection().update_one(
+            {"_id": torrent_id, "processingState": "running"},
+            {
+                "$set": {
+                    "processingPhase": phase,
+                    "processingLeaseUntil": now + timedelta(seconds=self._lease_seconds),
+                    "processingUpdatedAt": now,
+                }
+            },
+        )
+
+    async def _has_queued_work(self, *, exclude_id: str) -> bool:
+        now = datetime.now(UTC)
+        return (
+            await Torrent.get_pymongo_collection().find_one(
+                {
+                    "_id": {"$ne": exclude_id},
+                    "processingState": {"$in": ["queued", "partial"]},
+                    "$or": [
+                        {"processingAvailableAt": None},
+                        {"processingAvailableAt": {"$lte": now}},
+                        {"processingAvailableAt": {"$exists": False}},
+                    ],
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    async def _yield(self, torrent: Torrent, result: PreviewResult, outcome: str) -> None:
+        state = "partial" if result.artifact.frames or torrent.previewFrames else "queued"
+        await self._requeue(torrent, outcome, state=state)
+
+    async def _fail_or_requeue(self, torrent: Torrent, error: str) -> None:
+        failure_count = torrent.processingFailureCount + 1
+        if failure_count >= self._failure_limit:
+            await self._finish(torrent, "exhausted", "failure_limit_reached", error, failure_count)
+            return
+        torrent.processingFailureCount = failure_count
+        await self._requeue(
+            torrent,
+            "transient_failure",
+            error,
+            failure_count=failure_count,
+            cooldown_seconds=self._external_failure_cooldown_seconds,
+        )
+
+    async def _requeue(
+        self,
+        torrent: Torrent,
+        outcome: str,
+        error: str | None = None,
+        *,
+        state: str = "queued",
+        failure_count: int | None = None,
+        cooldown_seconds: int | None = None,
+    ) -> None:
+        now = datetime.now(UTC)
+        values: dict[str, Any] = {
+            "processingState": state,
+            "processingPhase": None,
+            "processingQueuedAt": now,
+            "processingAvailableAt": (
+                now + timedelta(seconds=cooldown_seconds)
+                if cooldown_seconds is not None
+                else None
+            ),
+            "processingLeaseUntil": None,
+            "processingLastOutcome": outcome,
+            "processingLastError": error,
+            "processingUpdatedAt": now,
+        }
+        if failure_count is not None:
+            values["processingFailureCount"] = failure_count
+        await Torrent.get_pymongo_collection().update_one(
+            {"_id": torrent.id, "processingState": "running"},
+            {"$set": values},
+        )
+        logger.bind(job_id=torrent.id, info_hash=torrent.infoHash, outcome=outcome).info(
+            "Queued torrent processing session at FIFO tail"
+        )
+
+    async def _finish(
+        self,
+        torrent: Torrent,
+        state: str,
+        outcome: str,
+        error: str | None = None,
+        failure_count: int | None = None,
+    ) -> None:
+        values: dict[str, Any] = {
+            "processingState": state,
+            "processingPhase": None,
+            "processingAvailableAt": None,
+            "processingLeaseUntil": None,
+            "processingLastOutcome": outcome,
+            "processingLastError": error,
+            "processingUpdatedAt": datetime.now(UTC),
+        }
+        if failure_count is not None:
+            values["processingFailureCount"] = failure_count
+        await Torrent.get_pymongo_collection().update_one(
+            {"_id": torrent.id, "processingState": "running"},
+            {"$set": values},
+        )
+        logger.bind(job_id=torrent.id, info_hash=torrent.infoHash, outcome=outcome).info(
+            "Finished torrent processing session"
+        )
+
+
+def _is_permanent_preview_failure(result: PreviewResult) -> bool:
+    return result.status == "failed" and (
+        result.diagnostics.selected_file is None
+        or "no downloadable bytes" in result.status_reason.lower()
+    )
+
+
+def _is_external_preview_failure(result: PreviewResult) -> bool:
+    return result.status == "failed" and any(
+        warning.startswith("Preview decode/ranking failed:")
+        for warning in result.diagnostics.warnings
+    )
 
 
 class PreviewWorker:
@@ -1347,13 +1229,6 @@ class PreviewWorker:
         settings: PreviewWorkerSettings,
     ) -> None:
         self._settings = settings
-        self._max_concurrency = max(1, settings.preview_worker_max_concurrency)
-        self._poll_interval_seconds = max(
-            0.5, settings.preview_worker_poll_interval_seconds
-        )
-        self._stale_processing_minutes = max(
-            1, settings.preview_repair_stale_processing_minutes
-        )
         self._client = AsyncMongoClient(
             settings.mongodb_uri,
             serverSelectionTimeoutMS=settings.mongodb_server_selection_timeout_ms,
@@ -1375,14 +1250,6 @@ class PreviewWorker:
             )
         else:
             self._actor_analysis_worker = None
-        self._metadata_worker = (
-            MetadataWorker(
-                settings=settings,
-                blob_store=self._blob_store,
-            )
-            if settings.metadata_worker_enabled
-            else None
-        )
         self._config = (
             PreviewEngineConfig(
                 target_frames=settings.preview_target_frames,
@@ -1390,51 +1257,38 @@ class PreviewWorker:
                 download_progress_timeout_seconds=(
                     settings.preview_download_progress_timeout_seconds
                 ),
-                warm_swarm_max_handles=settings.preview_warm_swarm_max_handles,
-                warm_swarm_idle_seconds=settings.preview_warm_swarm_idle_seconds,
-                warm_swarm_download_limit_bytes_per_second=(
-                    settings.preview_warm_swarm_download_limit_bytes_per_second
-                ),
+                torrent_cache_dir=settings.preview_cache_dir,
+                torrent_cache_max_mb=settings.preview_cache_max_mb,
             )
             if settings.preview_worker_enabled
             else None
         )
         self._engine = PreviewEngine(config=self._config) if self._config else None
-        self._harness: PreviewWorkerHarness | None = None
+        self._torrent_processing_scheduler = (
+            TorrentProcessingScheduler(
+                settings=settings,
+                blob_store=self._blob_store,
+                engine=self._engine,
+            )
+            if self._engine is not None
+            else None
+        )
 
     async def run(self) -> None:
         await init_beanie(database=self._database, document_models=[Torrent])
         logger.info(
-            "VM worker started with metadata_enabled={} preview_enabled={} actor_analysis_enabled={}",
-            self._metadata_worker is not None,
-            self._engine is not None,
+            "VM worker started with torrent_processing_enabled={} actor_analysis_enabled={}",
+            self._torrent_processing_scheduler is not None,
             self._actor_analysis_worker is not None,
         )
         tasks: list[asyncio.Task[None]] = []
-        if self._metadata_worker is not None:
-            tasks.append(asyncio.create_task(self._metadata_worker.run()))
-        if self._engine is not None:
-            job_source = MongoPreviewJobSource(
-                blob_store=self._blob_store,
-                stale_processing_minutes=self._stale_processing_minutes,
-                retry_delays_seconds=self._settings.preview_retry_delays_seconds,
-                warm_ready_info_hashes=self._engine.warm_ready_info_hashes,
-            )
-            self._harness = PreviewWorkerHarness(
-                engine=self._engine,
-                job_source=job_source,
-                config=PreviewHarnessConfig(
-                    max_concurrency=self._max_concurrency,
-                    poll_interval_seconds=self._poll_interval_seconds,
-                ),
-            )
+        if self._torrent_processing_scheduler is not None:
             logger.info(
-                "Preview worker started with preview_max_concurrency={} artifact_version={} artifact_fingerprint={}",
-                self._max_concurrency,
-                self._engine.artifact_version,
-                self._engine.artifact_fingerprint,
+                "Torrent processing worker started with artifact_version={} artifact_fingerprint={}",
+                self._engine.artifact_version if self._engine else None,
+                self._engine.artifact_fingerprint if self._engine else None,
             )
-            tasks.append(asyncio.create_task(self._harness.run()))
+            tasks.append(asyncio.create_task(self._torrent_processing_scheduler.run()))
         if self._actor_analysis_worker is not None:
             tasks.append(asyncio.create_task(self._actor_analysis_worker.run()))
         try:
@@ -1448,20 +1302,17 @@ class PreviewWorker:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
         finally:
-            if self._metadata_worker is not None:
-                self._metadata_worker.stop()
+            if self._torrent_processing_scheduler is not None:
+                self._torrent_processing_scheduler.stop()
             if self._actor_analysis_worker is not None:
                 self._actor_analysis_worker.stop()
             await self._client.close()
-            self._harness = None
 
     def stop(self) -> None:
-        if self._metadata_worker is not None:
-            self._metadata_worker.stop()
+        if self._torrent_processing_scheduler is not None:
+            self._torrent_processing_scheduler.stop()
         if self._actor_analysis_worker is not None:
             self._actor_analysis_worker.stop()
-        if self._harness is not None:
-            self._harness.stop()
 
 
 def _success_update(
@@ -1472,7 +1323,6 @@ def _success_update(
     artifact_version: str,
     artifact_fingerprint: str,
     replace_artifacts: bool = True,
-    next_attempt_at: datetime | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     selected_file = result.diagnostics.selected_file
@@ -1488,9 +1338,8 @@ def _success_update(
         "details": _to_plain_dict(result.diagnostics),
     }
     values: dict[str, Any] = {
-        "previewStatus": result.status,
-        "previewUpdatedAt": now,
-        "previewNextAttemptAt": next_attempt_at,
+        "processingState": "running",
+        "processingUpdatedAt": now,
         "previewDiagnostics": diagnostics,
     }
     if replace_artifacts:
@@ -1501,26 +1350,6 @@ def _success_update(
         values["actorAnalysisLeaseUntil"] = None
         values["actorAnalysisError"] = None
     return {"$set": values}
-
-
-def _preview_next_attempt_at(
-    *,
-    status: str,
-    attempts: int,
-    max_attempts: int,
-    retry_delays_seconds: list[int],
-    now: datetime | None = None,
-) -> datetime | None:
-    if status not in {"failed", "partial"}:
-        return None
-    if attempts >= max_attempts:
-        return None
-    if not retry_delays_seconds:
-        return None
-    delay_index = min(max(0, attempts - 1), len(retry_delays_seconds) - 1)
-    return (now or datetime.now(UTC)) + timedelta(
-        seconds=retry_delays_seconds[delay_index]
-    )
 
 
 def _preview_keys(torrent: Torrent) -> set[str]:
@@ -1609,16 +1438,6 @@ def _is_sensitive_log_key(key: str) -> bool:
 def _redact_text(value: str) -> str:
     redacted = OPENAI_KEY_PATTERN.sub("sk-[redacted]", value)
     return MONGODB_CREDENTIAL_PATTERN.sub(r"\1[redacted]\3", redacted)
-
-
-def _parse_preview_retry_delay(value: str) -> int:
-    match = PREVIEW_RETRY_DELAY_PATTERN.fullmatch(value)
-    if match is None:
-        msg = "MMV_PREVIEW_RETRY_DELAYS values must be positive integer durations using m, h, or d"
-        raise ValueError(msg)
-    amount = int(match.group(1))
-    seconds_per_unit = {"m": 60, "h": 60 * 60, "d": 24 * 60 * 60}
-    return amount * seconds_per_unit[match.group(2)]
 
 
 def main() -> None:

@@ -20,7 +20,7 @@ export function VideoPreviewCarousel({
   if (images.length === 0) {
     return (
       <div className={`video-preview-empty preview-${preview.status}`}>
-        <span>{preview.status === "processing" ? "Generating preview" : "No preview available"}</span>
+        <span>{preview.status === "running" ? "Generating preview" : "No preview available"}</span>
       </div>
     );
   }

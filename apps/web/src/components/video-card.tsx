@@ -14,7 +14,7 @@ export function VideoCard({ video }: { video: VideoSummary }) {
           <h2>{video.displayTitle ?? video.infoHash}</h2>
           <p className="muted-copy">{video.torrentName ?? video.infoHash}</p>
         </div>
-        <MetadataStatusBadge status={video.metadataStatus} />
+        <MetadataStatusBadge status={video.processingState} />
       </div>
       <dl className="meta-grid">
         <div>

@@ -5,10 +5,12 @@ import { VideoPreviewGallery } from "@/components/video-preview-gallery";
 import type { PreviewRead } from "@/lib/types";
 
 const preview: PreviewRead = {
-  status: "succeeded",
-  attempts: 1,
-  lastAttemptAt: null,
-  nextAttemptAt: null,
+  status: "complete",
+  phase: null,
+  failureCount: 0,
+  lastOutcome: "completed",
+  lastError: null,
+  queuedAt: null,
   updatedAt: "2024-01-01T00:00:00.000Z",
   sheet: {
     key: "previews/sheet.jpg",

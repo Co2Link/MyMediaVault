@@ -60,8 +60,8 @@ class PreviewRangeDownload:
 
 
 @dataclass
-class _WarmTorrent:
-    """A stalled torrent retained for bounded background range downloading."""
+class _ActiveTorrent:
+    """A torrent handle retained only while its scheduler session owns a slot."""
 
     info_hash: str
     handle: Any
@@ -72,7 +72,6 @@ class _WarmTorrent:
     config: PreviewEngineConfig
     downloaded_bytes: int
     complete_piece_count: int
-    last_progress_at: float
 
 
 class TorrentClient(ABC):
@@ -93,14 +92,8 @@ class TorrentClient(ABC):
 
         return _cache_diagnostics(metadata, config)
 
-    async def maintain(self, config: PreviewEngineConfig) -> set[str]:
-        """Return warm torrents that made useful background progress."""
-
-        del config
-        return set()
-
-    async def release_warm(self, info_hash: str, config: PreviewEngineConfig) -> None:
-        """Release any retained warm torrent after preview completion."""
+    async def release(self, info_hash: str, config: PreviewEngineConfig) -> None:
+        """Save and release a torrent handle when its scheduler slot is yielded."""
 
         del info_hash, config
 
@@ -126,8 +119,8 @@ class LibtorrentTorrentClient(TorrentClient):
         self._session: Any | None = None
         self._default_trackers: tuple[str, ...] = ()
         self._default_trackers_fetched_at = 0.0
-        self._warm_torrents: dict[str, _WarmTorrent] = {}
-        self._warm_torrents_lock = threading.Lock()
+        self._active_torrents: dict[str, _ActiveTorrent] = {}
+        self._active_torrents_lock = threading.Lock()
 
     async def start(self) -> None:
         if self._session is not None:
@@ -150,11 +143,8 @@ class LibtorrentTorrentClient(TorrentClient):
         await asyncio.to_thread(self._close_sync)
         self._session = None
 
-    async def maintain(self, config: PreviewEngineConfig) -> set[str]:
-        return await asyncio.to_thread(self._maintain_warm_torrents, config)
-
-    async def release_warm(self, info_hash: str, config: PreviewEngineConfig) -> None:
-        await asyncio.to_thread(self._release_warm_torrent, info_hash, config)
+    async def release(self, info_hash: str, config: PreviewEngineConfig) -> None:
+        await asyncio.to_thread(self._release_active_torrent, info_hash, config)
 
     async def download(
         self,
@@ -208,25 +198,24 @@ class LibtorrentTorrentClient(TorrentClient):
             lt, torrent_bytes, metadata, output_dir, config
         )
         tracker_count = _tracker_count(base_params)
-        warm = self._take_warm_torrent(metadata.info_hash)
-        if warm is None:
+        active = self._get_active_torrent(metadata.info_hash)
+        if active is None:
             params = _load_resume_data(lt, base_params, output_dir, config)
             handle = _add_torrent_with_resume_fallback(
                 session, params, base_params, output_dir, metadata
             )
         else:
-            handle = warm.handle
-            _set_download_limit(handle, None)
+            handle = active.handle
             bind_log(
                 info_hash=metadata.info_hash,
-                downloaded_bytes=warm.downloaded_bytes,
-                complete_piece_count=warm.complete_piece_count,
-                warm_pool_size=self._warm_torrent_count(),
-            ).debug("Promoted warm torrent to active preview")
+                downloaded_bytes=active.downloaded_bytes,
+                complete_piece_count=active.complete_piece_count,
+                active_session_count=self._active_torrent_count(),
+            ).debug("Reused active torrent session")
         _register_active_cache_entry(output_dir)
         _request_dht_peers(lt, session, metadata.info_hash)
         start_time = time.monotonic()
-        retain_warm = False
+        media_path = _expected_media_path(output_dir, metadata, selected_file)
         requested_piece_indexes: set[int] = set()
         downloaded = 0
         complete_piece_count = 0
@@ -247,7 +236,6 @@ class LibtorrentTorrentClient(TorrentClient):
             requested_piece_indexes = self._prioritize_selected_ranges(
                 handle, metadata, selected_file, layout, download_logger
             )
-            media_path = _expected_media_path(output_dir, metadata, selected_file)
             progress_step_bytes = min(
                 max(1, layout.total_bytes), _DOWNLOAD_PROGRESS_STEP_BYTES
             )
@@ -380,11 +368,9 @@ class LibtorrentTorrentClient(TorrentClient):
                 dht_alerts=dht_alerts,
             )
             if downloaded < 1:
-                retain_warm = True
                 msg = f"No media bytes were downloaded for {selected_file.path}"
                 raise TorrentDownloadError(msg, diagnostics=last_diagnostics)
             if not pieces_complete:
-                retain_warm = True
                 download_logger.bind(
                     downloaded_bytes=downloaded,
                     complete_piece_count=complete_piece_count,
@@ -422,103 +408,38 @@ class LibtorrentTorrentClient(TorrentClient):
             _save_resume_data(lt, session, handle, output_dir, config)
             _touch_cache_entry(output_dir, config)
             _prune_torrent_cache(config, preserve=output_dir)
-            if retain_warm and config.warm_swarm_max_handles:
-                self._retain_warm_torrent(
-                    _WarmTorrent(
-                        info_hash=metadata.info_hash,
-                        handle=handle,
-                        output_dir=output_dir,
-                        media_path=media_path,
-                        selected_file=selected_file,
-                        requested_piece_indexes=requested_piece_indexes,
-                        config=config,
-                        downloaded_bytes=downloaded,
-                        complete_piece_count=complete_piece_count,
-                        last_progress_at=time.monotonic(),
-                    ),
-                    config,
-                )
-            else:
-                _remove_torrent(session, handle)
-                _unregister_active_cache_entry(output_dir)
-
-    def _close_sync(self) -> None:
-        for warm in self._take_all_warm_torrents():
-            self._evict_warm_torrent(warm, reason="shutdown", config=None)
-
-    def _release_warm_torrent(
-        self, info_hash: str, config: PreviewEngineConfig
-    ) -> None:
-        warm = self._take_warm_torrent(info_hash)
-        if warm is not None:
-            self._evict_warm_torrent(warm, reason="completed", config=config)
-
-    def _maintain_warm_torrents(self, config: PreviewEngineConfig) -> set[str]:
-        now = time.monotonic()
-        ready: set[str] = set()
-        for warm in self._warm_torrent_snapshot():
-            downloaded = _safe_selected_file_progress(
-                warm.handle,
-                warm.selected_file,
-                warm.media_path,
-            )
-            complete_piece_count = _completed_piece_count(
-                warm.handle, warm.requested_piece_indexes
-            )
-            if (
-                downloaded > warm.downloaded_bytes
-                or complete_piece_count > warm.complete_piece_count
-            ):
-                warm.downloaded_bytes = downloaded
-                warm.complete_piece_count = complete_piece_count
-                warm.last_progress_at = now
-                ready.add(warm.info_hash)
-                bind_log(
-                    info_hash=warm.info_hash,
+            self._retain_active_torrent(
+                _ActiveTorrent(
+                    info_hash=metadata.info_hash,
+                    handle=handle,
+                    output_dir=output_dir,
+                    media_path=media_path,
+                    selected_file=selected_file,
+                    requested_piece_indexes=requested_piece_indexes,
+                    config=config,
                     downloaded_bytes=downloaded,
                     complete_piece_count=complete_piece_count,
-                    requested_piece_count=len(warm.requested_piece_indexes),
-                    warm_pool_size=self._warm_torrent_count(),
-                    **_torrent_status_fields(warm.handle),
-                ).debug("Warm torrent made useful progress")
-                continue
-            if now - warm.last_progress_at >= config.warm_swarm_idle_seconds:
-                removed = self._take_warm_torrent(warm.info_hash)
-                if removed is not None:
-                    self._evict_warm_torrent(removed, reason="idle", config=config)
-        return ready
-
-    def _retain_warm_torrent(
-        self, warm: _WarmTorrent, config: PreviewEngineConfig
-    ) -> None:
-        _set_download_limit(
-            warm.handle, config.warm_swarm_download_limit_bytes_per_second
-        )
-        replaced: _WarmTorrent | None = None
-        with self._warm_torrents_lock:
-            replaced = self._warm_torrents.pop(warm.info_hash, None)
-            self._warm_torrents[warm.info_hash] = warm
-        if replaced is not None and replaced.handle is not warm.handle:
-            self._evict_warm_torrent(replaced, reason="replaced", config=config)
-        while self._warm_torrent_count() > config.warm_swarm_max_handles:
-            oldest = min(
-                self._warm_torrent_snapshot(), key=lambda item: item.last_progress_at
+                ),
             )
-            removed = self._take_warm_torrent(oldest.info_hash)
-            if removed is not None:
-                self._evict_warm_torrent(removed, reason="capacity", config=config)
-        bind_log(
-            info_hash=warm.info_hash,
-            downloaded_bytes=warm.downloaded_bytes,
-            complete_piece_count=warm.complete_piece_count,
-            requested_piece_count=len(warm.requested_piece_indexes),
-            warm_pool_size=self._warm_torrent_count(),
-            **_torrent_status_fields(warm.handle),
-        ).debug("Retained stalled torrent in warm pool")
 
-    def _evict_warm_torrent(
+    def _close_sync(self) -> None:
+        for active in self._take_all_active_torrents():
+            self._release_torrent(active, reason="shutdown", config=None)
+
+    def _release_active_torrent(
+        self, info_hash: str, config: PreviewEngineConfig
+    ) -> None:
+        active = self._take_active_torrent(info_hash)
+        if active is not None:
+            self._release_torrent(active, reason="slot_released", config=config)
+
+    def _retain_active_torrent(self, active: _ActiveTorrent) -> None:
+        with self._active_torrents_lock:
+            self._active_torrents[active.info_hash] = active
+
+    def _release_torrent(
         self,
-        warm: _WarmTorrent,
+        active: _ActiveTorrent,
         *,
         reason: str,
         config: PreviewEngineConfig | None,
@@ -527,37 +448,37 @@ class LibtorrentTorrentClient(TorrentClient):
         session = self._session
         if lt is not None and session is not None:
             _save_resume_data(
-                lt, session, warm.handle, warm.output_dir, config or warm.config
+                lt, session, active.handle, active.output_dir, config or active.config
             )
         if session is not None:
-            _remove_torrent(session, warm.handle)
-        _unregister_active_cache_entry(warm.output_dir)
+            _remove_torrent(session, active.handle)
+        _unregister_active_cache_entry(active.output_dir)
         bind_log(
-            info_hash=warm.info_hash,
+            info_hash=active.info_hash,
             reason=reason,
-            downloaded_bytes=warm.downloaded_bytes,
-            complete_piece_count=warm.complete_piece_count,
-            requested_piece_count=len(warm.requested_piece_indexes),
-            warm_pool_size=self._warm_torrent_count(),
-        ).debug("Evicted torrent from warm pool")
+            downloaded_bytes=active.downloaded_bytes,
+            complete_piece_count=active.complete_piece_count,
+            requested_piece_count=len(active.requested_piece_indexes),
+            active_session_count=self._active_torrent_count(),
+        ).debug("Released torrent session")
 
-    def _take_warm_torrent(self, info_hash: str) -> _WarmTorrent | None:
-        with self._warm_torrents_lock:
-            return self._warm_torrents.pop(info_hash, None)
+    def _get_active_torrent(self, info_hash: str) -> _ActiveTorrent | None:
+        with self._active_torrents_lock:
+            return self._active_torrents.get(info_hash)
 
-    def _take_all_warm_torrents(self) -> list[_WarmTorrent]:
-        with self._warm_torrents_lock:
-            items = list(self._warm_torrents.values())
-            self._warm_torrents.clear()
+    def _take_active_torrent(self, info_hash: str) -> _ActiveTorrent | None:
+        with self._active_torrents_lock:
+            return self._active_torrents.pop(info_hash, None)
+
+    def _take_all_active_torrents(self) -> list[_ActiveTorrent]:
+        with self._active_torrents_lock:
+            items = list(self._active_torrents.values())
+            self._active_torrents.clear()
             return items
 
-    def _warm_torrent_snapshot(self) -> list[_WarmTorrent]:
-        with self._warm_torrents_lock:
-            return list(self._warm_torrents.values())
-
-    def _warm_torrent_count(self) -> int:
-        with self._warm_torrents_lock:
-            return len(self._warm_torrents)
+    def _active_torrent_count(self) -> int:
+        with self._active_torrents_lock:
+            return len(self._active_torrents)
 
     def _build_add_torrent_params(
         self,

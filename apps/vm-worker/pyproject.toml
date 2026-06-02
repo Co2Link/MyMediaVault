@@ -1,6 +1,6 @@
 [project]
 name = "mymediavault-vm-worker"
-version = "0.3.0"
+version = "1.0.0"
 description = "VM-hosted torrent metadata and preview worker for MyMediaVault"
 readme = "README.md"
 authors = [
