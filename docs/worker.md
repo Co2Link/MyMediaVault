@@ -64,7 +64,10 @@ VM worker environment:
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
 | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
-| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `600`. |
+| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before demoting a stalled sparse swarm or decoding available data. Defaults to `120`. |
+| `MMV_PREVIEW_WARM_SWARM_MAX_HANDLES` | Maximum stalled sparse-swarm handles retained for low-rate background downloads. Defaults to `40`; set `0` to disable warming. |
+| `MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS` | Seconds without useful warm-swarm progress before eviction. Defaults to `7200`. |
+| `MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND` | Per-torrent warm-swarm download-rate limit. Defaults to `65536`. |
 | `MMV_PREVIEW_RETRY_DELAYS` | JSON list of retry delays using positive integer `m`, `h`, or `d` durations. Total attempts equal one initial attempt plus the number of delays. Defaults to `["15m","1h","2h","4h","8h","12h","1d","1d","1d"]`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
@@ -121,7 +124,10 @@ does not require Auth.js or Entra variables.
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Stale preview processing threshold. |
 | `MMV_PREVIEW_TARGET_FRAMES` | Target preview frame count. |
 | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | JSON list of widened MiB-sized anchor retry ranges for sparse preview downloads. Defaults to `[64,128,256,384,512,768]`. |
-| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before decoding available data or failing zero-byte downloads. Defaults to `600`. |
+| `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` | Seconds to wait for useful preview download progress before demoting a stalled sparse swarm or decoding available data. Defaults to `120`. |
+| `MMV_PREVIEW_WARM_SWARM_MAX_HANDLES` | Maximum stalled sparse-swarm handles retained for low-rate background downloads. Defaults to `40`; set `0` to disable warming. |
+| `MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS` | Seconds without useful warm-swarm progress before eviction. Defaults to `7200`. |
+| `MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND` | Per-torrent warm-swarm download-rate limit. Defaults to `65536`. |
 | `MMV_PREVIEW_RETRY_DELAYS` | JSON list of retry delays using positive integer `m`, `h`, or `d` durations. Total attempts equal one initial attempt plus the number of delays. Defaults to `["15m","1h","2h","4h","8h","12h","1d","1d","1d"]`. |
 | `MMV_VM_WORKER_DEBUG_LOG_PATH` | Rotated JSON Lines debug log path. Defaults to `.local/logs/vm-worker-debug.log` for native runs; the Docker image sets `/var/log/mymediavault/vm-worker/debug.log`. |
 | `MMV_VM_WORKER_DEBUG_LOG_ROTATION` | Debug log rotation size. Defaults to `100 MB`. |
@@ -133,26 +139,29 @@ app when running the VM worker locally.
 ## Preview Pipeline
 
 `apps/vm-worker` uses Beanie document models that mirror the Mongoose torrent
-preview fields, then supplies a MongoDB job source to the
-`torrent-preview` worker harness. The app-owned source continuously polls the
+preview fields, then supplies a MongoDB job source to the internal preview
+worker harness. The app-owned source continuously polls the
 `torrents` collection for torrents whose metadata has succeeded and whose raw
 torrent blob is available. It claims eligible torrents atomically by setting
-`previewStatus = "processing"`, increments `previewAttempts`, runs the pinned
-`torrent-preview` version, uploads the generated contact sheet and frames to R2,
+`previewStatus = "processing"`, increments `previewAttempts`, runs the internal
+preview engine, uploads the generated contact sheet and frames to R2,
 and writes status, artifact keys, dimensions, warnings, status reason, and
 diagnostics back to the torrent document. While previews are running, the
 harness replenishes unused concurrency slots on its polling interval so newly
 eligible torrents do not wait for an earlier batch to drain.
 
-The pinned `torrent-preview` engine uses bounded in-attempt anchor retry to
+The internal preview engine uses bounded in-attempt anchor retry to
 fill missing LLM-visible timeline anchors before ranking. The VM worker defaults
 the retry ladder to `64`, `128`, `256`, `384`, `512`, and `768` MiB windows because real sparse
 MP4 torrents can map timestamps later than proportional byte planning. Retry
 diagnostics are stored in the existing preview diagnostics details payload.
 `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` controls the per-attempt stall
-timer. Keep the default short enough for zero-peer torrents to release worker
-capacity; use a larger value only when tracker diagnostics show peers appear
-slowly in the target environment.
+timer. When a sparse download stalls, the engine releases its active preview
+slot but retains the libtorrent handle in a bounded low-rate warm pool. Useful
+background byte or piece progress promotes the delayed retry immediately.
+Warm-pool membership is process-local and is evicted after prolonged inactivity
+or capacity pressure. Rotated DEBUG logs record retention, progress, promotion,
+and eviction events with peer, seed, byte, piece, and pool-size diagnostics.
 
 The worker prioritizes torrents with no generated preview (`pending` or missing
 preview status). It automatically retries `failed` and `partial` previews using
@@ -161,7 +170,7 @@ preview status). It automatically retries `failed` and `partial` previews using
 attempt plus the number of configured delays, so zero-peer torrents sample
 availability over time without occupying worker capacity continuously. An empty
 list disables automatic retries. It also regenerates `succeeded`, `partial`, and
-`failed` previews when the recorded `torrent-preview` artifact contract version
+`failed` previews when the recorded preview artifact contract version
 or fingerprint is missing or stale for the current worker, resetting the attempt
 count for that new artifact recipe. If a regeneration run produces no
 replacement frame or sheet artifacts, the worker keeps any existing preview

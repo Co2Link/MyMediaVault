@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Internalize preview generation so the VM worker no longer depends on a
+  separately published `torrent-preview` package.
+- Retain stalled sparse-swarm downloads in a bounded low-rate warm pool and
+  promote delayed retries as soon as retained handles make useful progress.
+- Add structured warm-pool transition logs and operator tuning settings.
+
 ## 0.2.1
 
 - Pin `torrent-preview` 5.3.3 so the preview harness continuously fills unused

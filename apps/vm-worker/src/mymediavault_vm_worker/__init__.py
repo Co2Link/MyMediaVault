@@ -11,7 +11,7 @@ import urllib.request
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import boto3
 from beanie import Document, init_beanie
@@ -20,7 +20,7 @@ from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import AsyncMongoClient, ReturnDocument
-from torrent_preview import (
+from mymediavault_vm_worker.preview import (
     GeneratedFrame,
     GeneratedSheet,
     PreviewHarnessConfig,
@@ -46,7 +46,10 @@ DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
 DEFAULT_TARGET_FRAMES = 9
 DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
-DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 600.0
+DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 120.0
+DEFAULT_WARM_SWARM_MAX_HANDLES = 40
+DEFAULT_WARM_SWARM_IDLE_SECONDS = 7200.0
+DEFAULT_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND = 64 * 1024
 DEFAULT_PREVIEW_RETRY_DELAYS = (
     "15m",
     "1h",
@@ -156,6 +159,18 @@ class PreviewWorkerSettings(BaseSettings):
         default_factory=lambda: list(DEFAULT_PREVIEW_RETRY_DELAYS),
         alias="MMV_PREVIEW_RETRY_DELAYS",
     )
+    preview_warm_swarm_max_handles: int = Field(
+        default=DEFAULT_WARM_SWARM_MAX_HANDLES,
+        alias="MMV_PREVIEW_WARM_SWARM_MAX_HANDLES",
+    )
+    preview_warm_swarm_idle_seconds: float = Field(
+        default=DEFAULT_WARM_SWARM_IDLE_SECONDS,
+        alias="MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS",
+    )
+    preview_warm_swarm_download_limit_bytes_per_second: int = Field(
+        default=DEFAULT_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND,
+        alias="MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND",
+    )
     vm_worker_debug_log_path: Path = Field(
         default=DEFAULT_DEBUG_LOG_PATH, alias="MMV_VM_WORKER_DEBUG_LOG_PATH"
     )
@@ -236,6 +251,18 @@ class PreviewWorkerSettings(BaseSettings):
             previous_retry_range = value
         if self.preview_download_progress_timeout_seconds <= 0:
             msg = "MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS must be greater than 0"
+            raise ValueError(msg)
+        if self.preview_warm_swarm_max_handles < 0:
+            msg = "MMV_PREVIEW_WARM_SWARM_MAX_HANDLES must be non-negative"
+            raise ValueError(msg)
+        if self.preview_warm_swarm_idle_seconds <= 0:
+            msg = "MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS must be greater than 0"
+            raise ValueError(msg)
+        if self.preview_warm_swarm_download_limit_bytes_per_second <= 0:
+            msg = (
+                "MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND "
+                "must be greater than 0"
+            )
             raise ValueError(msg)
         for delay in self.preview_retry_delays:
             _parse_preview_retry_delay(delay)
@@ -1099,6 +1126,7 @@ class MongoPreviewJobSource(PreviewJobSource):
         blob_store: BlobStore,
         stale_processing_minutes: int,
         retry_delays_seconds: list[int] | None = None,
+        warm_ready_info_hashes: Callable[[], Awaitable[set[str]]] | None = None,
     ) -> None:
         self._blob_store = blob_store
         self._stale_processing_minutes = max(1, stale_processing_minutes)
@@ -1111,6 +1139,7 @@ class MongoPreviewJobSource(PreviewJobSource):
             else list(retry_delays_seconds)
         )
         self._max_attempts = len(self._retry_delays_seconds) + 1
+        self._warm_ready_info_hashes = warm_ready_info_hashes
 
     async def claim_batch(
         self,
@@ -1121,9 +1150,15 @@ class MongoPreviewJobSource(PreviewJobSource):
     ) -> list[MongoPreviewJobLease]:
         await self._repair_stale_processing()
         claimed: list[MongoPreviewJobLease] = []
+        warm_ready_info_hashes = (
+            await self._warm_ready_info_hashes()
+            if self._warm_ready_info_hashes is not None
+            else set()
+        )
         for query, reset_attempts, claim_reason in self._claim_plans(
             artifact_version=artifact_version,
             artifact_fingerprint=artifact_fingerprint,
+            warm_ready_info_hashes=warm_ready_info_hashes,
         ):
             while len(claimed) < limit:
                 torrent = await self._claim_one(query, reset_attempts=reset_attempts)
@@ -1171,10 +1206,12 @@ class MongoPreviewJobSource(PreviewJobSource):
         *,
         artifact_version: str,
         artifact_fingerprint: str,
+        warm_ready_info_hashes: set[str] | None = None,
     ) -> list[tuple[dict[str, Any], bool, str]]:
         pending_query, retry_query = self._claim_queries(
             artifact_version=artifact_version,
             artifact_fingerprint=artifact_fingerprint,
+            warm_ready_info_hashes=warm_ready_info_hashes,
         )
         return [
             (pending_query, False, "pending"),
@@ -1194,19 +1231,20 @@ class MongoPreviewJobSource(PreviewJobSource):
         *,
         artifact_version: str,
         artifact_fingerprint: str,
+        warm_ready_info_hashes: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         base = {
             "metadataStatus": "succeeded",
             "rawBlobKey": {"$type": "string", "$ne": ""},
         }
         now = datetime.now(UTC)
-        retry_schedule = {
-            "$or": [
-                {"previewNextAttemptAt": None},
-                {"previewNextAttemptAt": {"$lte": now}},
-                {"previewNextAttemptAt": {"$exists": False}},
-            ]
-        }
+        retry_schedule = [
+            {"previewNextAttemptAt": None},
+            {"previewNextAttemptAt": {"$lte": now}},
+            {"previewNextAttemptAt": {"$exists": False}},
+        ]
+        if warm_ready_info_hashes:
+            retry_schedule.append({"infoHash": {"$in": sorted(warm_ready_info_hashes)}})
         retryable = {**base, "previewAttempts": {"$lt": self._max_attempts}}
         return [
             {
@@ -1219,7 +1257,7 @@ class MongoPreviewJobSource(PreviewJobSource):
             {
                 **retryable,
                 "previewStatus": {"$in": ["failed", "partial"]},
-                **retry_schedule,
+                "$or": retry_schedule,
             },
         ]
 
@@ -1352,6 +1390,11 @@ class PreviewWorker:
                 download_progress_timeout_seconds=(
                     settings.preview_download_progress_timeout_seconds
                 ),
+                warm_swarm_max_handles=settings.preview_warm_swarm_max_handles,
+                warm_swarm_idle_seconds=settings.preview_warm_swarm_idle_seconds,
+                warm_swarm_download_limit_bytes_per_second=(
+                    settings.preview_warm_swarm_download_limit_bytes_per_second
+                ),
             )
             if settings.preview_worker_enabled
             else None
@@ -1375,6 +1418,7 @@ class PreviewWorker:
                 blob_store=self._blob_store,
                 stale_processing_minutes=self._stale_processing_minutes,
                 retry_delays_seconds=self._settings.preview_retry_delays_seconds,
+                warm_ready_info_hashes=self._engine.warm_ready_info_hashes,
             )
             self._harness = PreviewWorkerHarness(
                 engine=self._engine,

@@ -8,8 +8,8 @@
 MyMediaVault stores a canonical torrent once and shares its metadata across all
 user-owned videos that reference it. The VM worker already generates durable
 preview frames for each torrent. Those frames are selected to be useful for
-actor identification, but `torrent-preview` intentionally does not perform
-identity recognition or own application state.
+actor identification, but the internal preview module intentionally does not
+perform identity recognition or own actor application state.
 
 The application should identify the main actors visible in a torrent's preview
 frames, reuse an actor identity across future torrents, and allow admins to
@@ -25,10 +25,10 @@ multiple torrents to one identity.
 
 ### Application Boundary
 
-Actor identification belongs in MyMediaVault, not in `torrent-preview`.
-`torrent-preview` remains responsible for producing actor-identification-friendly
-frames and its temporary artifact lifecycle. MyMediaVault consumes the durable
-frame blobs after upload.
+Actor identification belongs in its own VM-worker pipeline, not in the internal
+preview module. The preview module remains responsible for producing
+actor-identification-friendly frames and its temporary artifact lifecycle. The
+actor pipeline consumes the durable frame blobs after upload.
 
 Add a third bounded pipeline to the existing VM-worker process:
 

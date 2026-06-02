@@ -4,9 +4,9 @@ VM-hosted Python worker that polls MongoDB for torrent metadata, preview, and
 actor-identification work. Metadata processing uses torrent documents as the queue, resolves
 `.torrent` payloads through configured HTTP resolvers, uploads raw torrents to
 R2-compatible storage, and writes parsed metadata back to the canonical torrent
-document. Preview processing delegates concurrent media preview generation to
-the `torrent-preview` worker harness and stores generated sheets and frames in
-the same blob store. Sequential actor analysis consumes durable frames, uses
+document. Preview processing uses the worker's internal torrent-preview engine,
+retains stalled sparse swarms in a bounded low-rate warm pool, and stores
+generated sheets and frames in the same blob store. Sequential actor analysis consumes durable frames, uses
 OpenCV YuNet and SFace to identify main actors, and stores reusable UUID
 identities plus system-managed torrent assignments.
 
@@ -47,6 +47,20 @@ uv run python scripts/evaluate_actor_identification.py \
 
 The gate requires zero false merges, 100 percent recall, and zero unnecessary
 identity splits.
+
+Run the manual strict real-torrent preview gate from `apps/vm-worker` before a
+preview-engine release:
+
+```bash
+uv run python tests/preview/scripts/run_test_torrents.py \
+  --torrent-dir ../../tmp/test-torrents \
+  --target-frames 9 \
+  --clear-cache
+```
+
+Each root-level or `strict/` fixture must produce a successful sheet with
+exactly nine accepted preview frames. Keep unstable sparse-swarm fixtures under
+`../../tmp/test-torrents/truthful-partial` for diagnostic runs.
 
 ## Deploy
 

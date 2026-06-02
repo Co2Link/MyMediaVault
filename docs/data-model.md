@@ -94,7 +94,7 @@ stores a contact sheet in `previewSheet` and up to nine frame records in
 preview output is retained for diagnostics but is presented as degraded to
 users.
 
-`previewDiagnostics` stores the `torrent-preview` artifact contract version and
+`previewDiagnostics` stores the preview artifact contract version and
 fingerprint, selected file, downloaded bytes, elapsed time, status reason,
 warnings, and low-level torrent diagnostics. Engine-specific diagnostic details,
 including bounded anchor retry summaries, live in the mixed `details` payload.
@@ -104,11 +104,13 @@ whenever it claims a torrent.
 The VM worker automatically retries `failed` and `partial` previews using its
 configured retry-delay schedule. Total attempts equal one initial attempt plus
 the number of configured delays. `previewNextAttemptAt` stores the next
-scheduled retry timestamp. Admins can reset a torrent preview attempt count from
+scheduled retry timestamp. Sparse stalled downloads may retain a process-local
+low-rate libtorrent handle so useful background progress can promote a delayed
+retry early without adding durable queue state. Admins can reset a torrent preview attempt count from
 torrent management, which sets the preview status back to `pending`, clears the
 scheduled retry timestamp, and keeps existing artifacts. The worker regenerates
 `succeeded`, `partial`, and `failed`
-previews when their recorded `torrent-preview` artifact contract version or
+previews when their recorded preview artifact contract version or
 fingerprint is missing or differs from the worker's current library recipe.
 Artifact-stale claims reset `previewAttempts` for the new recipe.
 

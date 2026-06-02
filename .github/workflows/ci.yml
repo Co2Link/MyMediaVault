@@ -91,9 +91,6 @@ jobs:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --locked
-        env:
-          UV_INDEX_LINGXT_USERNAME: az
-          UV_INDEX_LINGXT_PASSWORD: ${{ secrets.uv_index_lingxt_password }}
       - run: uv run pytest
 
   terraform:

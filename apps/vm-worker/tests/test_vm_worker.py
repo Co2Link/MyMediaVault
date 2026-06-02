@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 from loguru import logger
 from pydantic import ValidationError
-from torrent_preview import (
+from mymediavault_vm_worker.preview import (
     AnchorRetryAttemptDiagnostics,
     AnchorRetryDiagnostics,
     GeneratedFrame,
@@ -85,6 +85,10 @@ def test_settings_allow_metadata_only_without_openai_api_key(
     assert settings.preview_worker_enabled is False
     assert settings.metadata_worker_max_concurrency == 10
     assert settings.metadata_dht_timeout_seconds == 600
+    assert settings.preview_download_progress_timeout_seconds == 120
+    assert settings.preview_warm_swarm_max_handles == 40
+    assert settings.preview_warm_swarm_idle_seconds == 7200
+    assert settings.preview_warm_swarm_download_limit_bytes_per_second == 65536
 
 
 def test_fake_metadata_resolver_returns_valid_torrent_payload() -> None:
@@ -401,6 +405,27 @@ def test_settings_reject_non_positive_preview_progress_timeout() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("preview_warm_swarm_max_handles", "MMV_PREVIEW_WARM_SWARM_MAX_HANDLES"),
+        ("preview_warm_swarm_idle_seconds", "MMV_PREVIEW_WARM_SWARM_IDLE_SECONDS"),
+        (
+            "preview_warm_swarm_download_limit_bytes_per_second",
+            "MMV_PREVIEW_WARM_SWARM_DOWNLOAD_LIMIT_BYTES_PER_SECOND",
+        ),
+    ],
+)
+def test_settings_reject_invalid_warm_swarm_tuning(field: str, message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        PreviewWorkerSettings(
+            mongodb_uri="mongodb://127.0.0.1:27017/mymediavault",
+            openai_api_key="test-key",
+            _env_file=None,
+            **{field: -1},
+        )
+
+
 def test_parse_torrent_reads_single_file_payload() -> None:
     raw = b"d4:infod6:lengthi123e4:name9:movie.mkv6:pieces0:ee"
 
@@ -428,6 +453,22 @@ def test_claim_queries_retry_partial_and_failed_until_max_attempts() -> None:
     assert queries[1]["previewStatus"] == {"$in": ["failed", "partial"]}
     assert queries[1]["previewAttempts"] == {"$lt": 3}
     assert {"previewNextAttemptAt": {"$exists": False}} in queries[1]["$or"]
+
+
+def test_claim_queries_promote_warm_retry_progress_before_scheduled_delay() -> None:
+    source = MongoPreviewJobSource(
+        blob_store=object(),
+        stale_processing_minutes=120,
+        retry_delays_seconds=[900, 3600],
+    )  # type: ignore[arg-type]
+
+    queries = source._claim_queries(
+        artifact_version="preview-v5",
+        artifact_fingerprint="sha256:current",
+        warm_ready_info_hashes={"abc123"},
+    )
+
+    assert {"infoHash": {"$in": ["abc123"]}} in queries[1]["$or"]
 
 
 def test_claim_queries_allow_one_attempt_when_retry_schedule_is_empty() -> None:

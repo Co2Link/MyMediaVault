@@ -153,8 +153,6 @@ jobs:
           file: apps/vm-worker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          secrets: |
-            uv_index_lingxt_password=${{ secrets.uv_index_lingxt_password }}
           tags: ${{ steps.meta.outputs.image }}
 
   terraform:

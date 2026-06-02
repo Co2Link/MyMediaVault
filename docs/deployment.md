@@ -101,10 +101,8 @@ exceptions
 ## Required Secrets and Variables
 
 GitHub Actions expects Docker Hub credentials, Azure credentials, `AUTH_SECRET`,
-Entra client credentials, optional admin object/group IDs, and
-`uv_index_lingxt_password` for installing the `torrent-preview` package from the
-Azure Artifacts `lingxt` feed. The Azure Artifacts username is the dummy value
-`az`. The VM worker VM also needs its own root-owned environment file with
+Entra client credentials, and optional admin object/group IDs. The VM worker VM
+also needs its own root-owned environment file with
 MongoDB, R2, OpenAI, and image reference settings. Keep all secrets in GitHub,
 VM-local secret files, or local `.env` files; never commit them.
 
