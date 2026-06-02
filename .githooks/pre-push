@@ -85,7 +85,7 @@ else
 fi
 
 if has_changes_in "^(\\.dockerignore|apps/vm-worker/Dockerfile|apps/vm-worker/)"; then
-  run_at_root docker build -f apps/vm-worker/Dockerfile --secret id=uv_index_lingxt_password,env=UV_INDEX_LINGXT_PASSWORD .
+  run_at_root docker build -f apps/vm-worker/Dockerfile .
 else
   skip_section "VM worker Docker build"
 fi
