@@ -56,25 +56,25 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
     );
     torrentId = torrent._id;
 
-    expect(["pending", "processing", "succeeded"]).toContain(torrent.metadataStatus);
+    expect(["queued", "running", "partial", "complete"]).toContain(torrent.processingState);
 
     const finishedTorrent = await waitForDocument(
       async () => {
         const current = await TorrentModel.findById(torrent._id).lean().exec();
-        if (current?.metadataStatus === "failed") {
-          throw new Error(`Torrent metadata failed for ${torrent._id}: ${current.metadataError ?? "unknown error"}`);
+        if (current?.processingState === "exhausted" || current?.processingState === "cancelled") {
+          throw new Error(
+            `Torrent processing stopped for ${torrent._id}: ${current.processingState} ${current.processingLastError ?? ""}`,
+          );
         }
-        return current?.metadataStatus === "succeeded" ? current : null;
+        return current?.rawBlobKey && current.files.length > 0 ? current : null;
       },
-      `torrent ${torrent._id} to finish processing`,
+      `torrent ${torrent._id} to resolve metadata`,
       { timeoutMs: 150_000 },
     );
 
     expect(finishedTorrent.rawBlobKey).toBeTruthy();
     expect(finishedTorrent.files.length).toBeGreaterThan(0);
-    expect(finishedTorrent.metadataAttempts).toBeGreaterThan(0);
-    expect(finishedTorrent.metadataLastAttemptAt).not.toBeNull();
-    expect(finishedTorrent.metadataFinishedAt).not.toBeNull();
+    expect(finishedTorrent.processingUpdatedAt).not.toBeNull();
 
     const rawTorrentBytes = await buildBlobStore().getBytes(finishedTorrent.rawBlobKey!);
     expect(rawTorrentBytes.byteLength).toBeGreaterThan(0);
@@ -82,13 +82,13 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
     const previewedTorrent = await waitForDocument(
       async () => {
         const current = await TorrentModel.findById(torrent._id).lean().exec();
-        if (current?.previewStatus === "failed") {
+        if (current?.processingState === "exhausted" || current?.processingState === "cancelled") {
           throw new Error(
-            `Torrent preview degraded for ${torrent._id}: ${current.previewStatus} ${current.previewDiagnostics?.statusReason ?? ""}`,
+            `Torrent preview stopped for ${torrent._id}: ${current.processingState} ${current.processingLastError ?? ""}`,
           );
         }
         if (
-          (current?.previewStatus === "succeeded" || current?.previewStatus === "partial") &&
+          (current?.processingState === "complete" || current?.processingState === "partial") &&
           (current.previewSheet || (current.previewFrames ?? []).length > 0)
         ) {
           return current;
@@ -111,7 +111,7 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
     expect(firstFrameBytes.byteLength).toBeGreaterThan(0);
 
     await page.reload();
-    await expect(page.getByRole("status")).toContainText("Metadata ready");
+    await expect(page.getByRole("status")).toContainText(/Preview (ready|improving)/);
     const previewDisclosure = page.getByText("Torrent preview");
     await expect(previewDisclosure).toBeVisible();
     const previewSheet = page.getByAltText("Torrent preview sheet");
@@ -125,8 +125,14 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
 
     await page.getByRole("link", { name: "Collection" }).click();
     await page.getByLabel("Search videos").fill(title);
-    await page.getByLabel("Search videos").press("Enter");
-    const card = page.locator("section.content-grid > article").first();
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === "/" && url.searchParams.get("q") === title),
+      page.getByLabel("Search videos").press("Enter"),
+    ]);
+    const card = page.locator("section.content-grid > article").filter({
+      has: page.getByRole("heading", { name: title }),
+    });
+    await expect(card).toHaveCount(1);
     const previewImageTotal = 1 + previewedTorrent.previewFrames.length;
     await expect(card.getByAltText("Torrent preview sheet")).toBeVisible();
     await expect(card.getByText(`1/${previewImageTotal}`)).toBeVisible();
@@ -161,7 +167,7 @@ async function resetSmokeTorrentForUser(userEmail: string, userName: string, inf
 
   const remainingVideos = await VideoModel.countDocuments({ torrentId: torrent._id }).exec();
   if (remainingVideos > 0) {
-    await requeuePreviewIfNeeded(torrent._id);
+    await requeueProcessingIfNeeded(torrent._id);
     return;
   }
 
@@ -194,34 +200,39 @@ async function cleanupSmokeTorrent(userId: string | null, torrentId: string | nu
     await TorrentModel.deleteOne({ _id: torrentId }).exec();
     await deleteBlobKeys(keys);
   } else {
-    await requeuePreviewIfNeeded(torrentId);
+    await requeueProcessingIfNeeded(torrentId);
   }
 }
 
-async function requeuePreviewIfNeeded(torrentId: string) {
+async function requeueProcessingIfNeeded(torrentId: string) {
   const torrent = await TorrentModel.findById(torrentId).lean().exec();
   if (!torrent) {
     return;
   }
 
-  const needsPreview =
-    torrent.previewStatus === "processing" ||
-    torrent.previewStatus === "failed" ||
-    torrent.previewStatus === "partial" ||
+  const needsProcessing =
+    torrent.processingState !== "complete" ||
     !torrent.previewSheet ||
     (torrent.previewFrames ?? []).length === 0;
 
-  if (!needsPreview) {
+  if (!needsProcessing) {
     return;
   }
 
+  const now = new Date();
   await TorrentModel.updateOne(
     { _id: torrentId },
     {
       $set: {
-        previewStatus: "pending",
-        previewAttempts: 0,
-        previewDiagnostics: {},
+        processingState: "queued",
+        processingPhase: null,
+        processingQueuedAt: now,
+        processingAvailableAt: null,
+        processingLeaseUntil: null,
+        processingFailureCount: 0,
+        processingLastOutcome: "queued_by_dev_smoke",
+        processingLastError: null,
+        processingUpdatedAt: now,
       },
     },
   ).exec();

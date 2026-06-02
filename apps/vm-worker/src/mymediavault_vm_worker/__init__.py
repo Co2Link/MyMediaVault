@@ -1014,6 +1014,9 @@ class TorrentProcessingScheduler:
                 if result.status == "succeeded":
                     await self._finish(torrent, "complete", "completed")
                     return
+                if _is_best_effort_preview_complete(result):
+                    await self._finish(torrent, "complete", "completed_best_effort")
+                    return
                 if _is_permanent_preview_failure(result):
                     await self._finish(
                         torrent,
@@ -1212,6 +1215,16 @@ def _is_permanent_preview_failure(result: PreviewResult) -> bool:
     return result.status == "failed" and (
         result.diagnostics.selected_file is None
         or "no downloadable bytes" in result.status_reason.lower()
+    )
+
+
+def _is_best_effort_preview_complete(result: PreviewResult) -> bool:
+    selected_file = result.diagnostics.selected_file
+    return (
+        result.status == "partial"
+        and bool(result.artifact.frames)
+        and selected_file is not None
+        and result.diagnostics.downloaded_bytes >= selected_file.length
     )
 
 

@@ -81,7 +81,10 @@ this lifecycle. Successful metadata acquisition stores `name`, `sizeBytes`,
 `rawBlobKey`, and ordered files. Preview output stores a contact sheet in
 `previewSheet` and up to nine frame records in `previewFrames`; both store
 private R2 object keys and dimensions. Partial artifacts stay visible while the
-torrent remains eligible for improvement.
+torrent remains eligible for improvement. When the selected media file is fully
+downloaded but fewer than nine frames pass selection, the worker stores the
+usable artifact as `complete` with `processingLastOutcome` set to
+`completed_best_effort`.
 
 `processingQueuedAt` preserves FIFO order. `processingAvailableAt` is null for
 normal download work and records one fixed cooldown after resolver or external

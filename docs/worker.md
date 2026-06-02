@@ -13,6 +13,10 @@ collection and no durable preview retry ladder. Each active torrent owns one of
 `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` slots. An active session resolves metadata
 when needed, downloads useful ranges, asks the OpenAI-backed ranker to select
 frames, and continues downloading when the result is not yet good enough.
+If the selected media file is fully downloaded but the ranker still accepts
+fewer than the target number of frames, the session stores the usable artifact
+as `complete` with the `completed_best_effort` outcome. More download passes
+cannot improve that file.
 
 With no queue pressure, a sparse swarm may retain its slot indefinitely. Under
 queue pressure, an incomplete session yields at an engine checkpoint, stores
@@ -27,7 +31,7 @@ loops. Permanent metadata or media failures become `exhausted`.
 | `queued` | Waiting in FIFO order. |
 | `running` | Owns a worker slot. `processingPhase` identifies the current stage. |
 | `partial` | Has usable frames and remains queued for improvement. |
-| `complete` | Has the current nine-frame preview artifact. |
+| `complete` | Has the current preview artifact, including a best-effort artifact when the selected file is fully downloaded. |
 | `exhausted` | Needs admin attention after a permanent or bounded external failure. |
 | `cancelled` | Removed from scheduling by an admin. |
 

@@ -20,6 +20,7 @@ from mymediavault_vm_worker import (
     TorrentProcessingScheduler,
     _configure_vm_worker_logging,
     _fake_torrent_payload,
+    _is_best_effort_preview_complete,
     _is_external_preview_failure,
     _is_permanent_preview_failure,
     _success_update,
@@ -194,6 +195,30 @@ def test_failure_classification_keeps_sparse_downloads_eligible() -> None:
         _result(status="failed", reason="quota", warnings=["Preview decode/ranking failed: quota"])
     )
     assert _is_permanent_preview_failure(_result(status="failed", reason="No video file was found"))
+
+
+def test_best_effort_preview_completes_once_selected_file_is_fully_downloaded() -> None:
+    selected_file = SelectedFile(index=0, path="movie.mkv", length=123)
+    result = PreviewResult(
+        info_hash="abc",
+        status="partial",
+        status_reason="Only 1 frame",
+        artifact=PreviewArtifact(
+            frames=[GeneratedFrame(path=Path("frame.jpg"), width=10, height=10, timestamp_seconds=1)],
+            sheet=GeneratedSheet(path=Path("sheet.jpg"), width=10, height=10),
+        ),
+        diagnostics=_diagnostics(selected_file=selected_file, downloaded_bytes=123),
+    )
+    assert _is_best_effort_preview_complete(result)
+    assert not _is_best_effort_preview_complete(
+        PreviewResult(
+            info_hash="abc",
+            status="partial",
+            status_reason="Only 1 frame",
+            artifact=result.artifact,
+            diagnostics=_diagnostics(selected_file=selected_file, downloaded_bytes=122),
+        )
+    )
 
 
 def test_success_update_preserves_partial_artifacts_for_scheduler() -> None:
