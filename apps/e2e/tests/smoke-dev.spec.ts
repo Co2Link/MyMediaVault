@@ -34,7 +34,7 @@ test("dev smoke verifies web, Cosmos DB, VM worker, R2 storage, preview, and cle
     await page.getByLabel("Info hash").fill(infoHash);
     await page.getByLabel("Title").fill(title);
     await page.locator("form").getByRole("button", { name: "Add video" }).click();
-    await expect(page.getByText("Video added. Metadata processing has been queued.")).toBeVisible();
+    await expect(page.getByText("Video added. Preview processing has been queued.")).toBeVisible();
 
     const user = await waitForDocument(
       async () => {
