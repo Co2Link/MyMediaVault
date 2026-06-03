@@ -437,7 +437,7 @@ async def _communicate_with_timeout(
             timeout=timeout_seconds,
         )
     except TimeoutError as exc:
-        await _kill_process(process)
+        _kill_process(process)
         try:
             await asyncio.wait_for(
                 asyncio.shield(communicate_task),
@@ -447,14 +447,20 @@ async def _communicate_with_timeout(
             communicate_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await communicate_task
+            await _wait_for_process_exit(process)
         msg = f"{label} timed out after {timeout_seconds:.1f}s"
         raise _SubprocessTimeoutError(msg) from exc
 
 
-async def _kill_process(process: asyncio.subprocess.Process) -> None:
+def _kill_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
     process.kill()
+
+
+async def _wait_for_process_exit(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is not None:
+        return
     try:
         await asyncio.wait_for(
             process.wait(),

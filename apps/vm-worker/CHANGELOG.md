@@ -10,6 +10,9 @@
   unified admin controls, and a one-way migration script.
 - Complete usable artifacts as `completed_best_effort` when the selected media
   file is fully downloaded but frame selection cannot fill every target anchor.
+- Throttle sparse no-progress continuation logs, yield no-progress sessions
+  under queue pressure, bound metadata failures, and harden ffmpeg timeout
+  cleanup.
 
 ## 0.3.0
 

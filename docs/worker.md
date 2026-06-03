@@ -18,11 +18,15 @@ fewer than the target number of frames, the session stores the usable artifact
 as `complete` with the `completed_best_effort` outcome. More download passes
 cannot improve that file.
 
-With no queue pressure, a sparse swarm may retain its slot indefinitely. Under
-queue pressure, an incomplete session yields at an engine checkpoint, stores
-libtorrent resume data, releases its handle, and rejoins the FIFO tail. HTTP,
-DHT, or external service failures use one fixed cooldown timestamp to avoid hot
-loops. Permanent metadata or media failures become `exhausted`.
+With no queue pressure, a sparse swarm may retain its slot indefinitely. Repeated
+no-progress checkpoints wait quietly before retrying preview generation and are
+throttled in the debug log, while the retained libtorrent handle can continue
+downloading. Under queue pressure, an incomplete session that made no useful
+byte or piece progress yields at the next engine checkpoint, stores libtorrent
+resume data, releases its handle, and rejoins the FIFO tail. HTTP, DHT, or
+external service failures use one fixed cooldown timestamp to avoid hot loops.
+Bounded metadata, permanent media, or bounded external service failures become
+`exhausted`.
 
 ## Torrent States
 
@@ -73,7 +77,7 @@ Important variables:
 | `MMV_PREVIEW_WORKER_POLL_INTERVAL_SECONDS` | Idle FIFO poll interval. Defaults to `5`. |
 | `MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES` | Crash-recovery lease threshold. Defaults to `120`. |
 | `MMV_PREVIEW_SESSION_FAIRNESS_SECONDS` | Queue-pressure fairness lifetime. Defaults to `7200`. |
-| `MMV_PREVIEW_FAILURE_LIMIT` | External processing failure limit. Defaults to `3`. |
+| `MMV_PREVIEW_FAILURE_LIMIT` | Metadata and external processing failure limit. Defaults to `3`. |
 | `MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS` | Fixed resolver/service cooldown. Defaults to `300`. |
 | `MMV_PREVIEW_CACHE_DIR` | Persistent libtorrent cache path. |
 | `MMV_PREVIEW_CACHE_MAX_MB` | Bounded cache budget. Defaults to `32768`. |

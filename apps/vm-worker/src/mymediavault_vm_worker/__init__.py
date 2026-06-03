@@ -53,6 +53,8 @@ DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
 DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
 DEFAULT_METADATA_DHT_TIMEOUT_SECONDS = 600
+SPARSE_CONTINUATION_LOG_INTERVAL_SECONDS = 10 * 60
+SPARSE_NO_PROGRESS_CHECKPOINT_DELAY_SECONDS = 10 * 60
 REDACTED_LOG_VALUE = "[redacted]"
 SENSITIVE_LOG_KEYS = {
     "authorization",
@@ -858,6 +860,7 @@ class TorrentProcessingScheduler:
             else None
         )
         self._stopping = False
+        self._last_sparse_continuation_log_at: dict[str, float] = {}
 
     def stop(self) -> None:
         self._stopping = True
@@ -990,6 +993,8 @@ class TorrentProcessingScheduler:
 
     async def _run_session(self, torrent: Torrent) -> None:
         started_at = time.monotonic()
+        last_downloaded_bytes = 0
+        last_complete_piece_count = 0
         lease = MongoPreviewJobLease(
             torrent=torrent,
             blob_store=self._blob_store,
@@ -1011,6 +1016,19 @@ class TorrentProcessingScheduler:
                     PreviewRequest(torrent_bytes=torrent_bytes)
                 ) as result:
                     await lease.complete(result)
+                made_useful_progress = _made_useful_progress(
+                    result,
+                    last_downloaded_bytes=last_downloaded_bytes,
+                    last_complete_piece_count=last_complete_piece_count,
+                )
+                last_downloaded_bytes = max(
+                    last_downloaded_bytes,
+                    result.diagnostics.downloaded_bytes,
+                )
+                last_complete_piece_count = max(
+                    last_complete_piece_count,
+                    result.diagnostics.last_complete_piece_count or 0,
+                )
                 if result.status == "succeeded":
                     await self._finish(torrent, "complete", "completed")
                     return
@@ -1030,29 +1048,28 @@ class TorrentProcessingScheduler:
                     return
                 queue_pressure = await self._has_queued_work(exclude_id=torrent.id)
                 fairness_elapsed = time.monotonic() - started_at >= self._fairness_seconds
-                if queue_pressure:
+                if queue_pressure and (fairness_elapsed or not made_useful_progress):
                     outcome = (
                         "yielded_fairness" if fairness_elapsed else "yielded_inactive"
                     )
                     await self._yield(torrent, result, outcome)
                     return
-                logger.bind(
-                    job_id=torrent.id,
-                    info_hash=torrent.infoHash,
-                    status=result.status,
-                    downloaded_bytes=result.diagnostics.downloaded_bytes,
-                ).debug("Continuing torrent session without queue pressure")
+                self._log_sparse_continuation(
+                    torrent,
+                    result,
+                    made_useful_progress=made_useful_progress,
+                    queue_pressure=queue_pressure,
+                )
+                if not queue_pressure and not made_useful_progress:
+                    await self._sleep_while_running(
+                        SPARSE_NO_PROGRESS_CHECKPOINT_DELAY_SECONDS
+                    )
             await self._requeue(torrent, "worker_stopped")
         except MetadataResolutionError as error:
             if error.failure_kind == "permanent":
                 await self._finish(torrent, "exhausted", "invalid_metadata", str(error))
             else:
-                await self._requeue(
-                    torrent,
-                    "metadata_unavailable",
-                    str(error),
-                    cooldown_seconds=self._external_failure_cooldown_seconds,
-                )
+                await self._fail_or_requeue(torrent, str(error), outcome="metadata_unavailable")
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -1130,11 +1147,25 @@ class TorrentProcessingScheduler:
             is not None
         )
 
+    async def _sleep_while_running(self, seconds: float) -> None:
+        deadline = time.monotonic() + seconds
+        while not self._stopping:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(5.0, remaining))
+
     async def _yield(self, torrent: Torrent, result: PreviewResult, outcome: str) -> None:
         state = "partial" if result.artifact.frames or torrent.previewFrames else "queued"
         await self._requeue(torrent, outcome, state=state)
 
-    async def _fail_or_requeue(self, torrent: Torrent, error: str) -> None:
+    async def _fail_or_requeue(
+        self,
+        torrent: Torrent,
+        error: str,
+        *,
+        outcome: str = "transient_failure",
+    ) -> None:
         failure_count = torrent.processingFailureCount + 1
         if failure_count >= self._failure_limit:
             await self._finish(torrent, "exhausted", "failure_limit_reached", error, failure_count)
@@ -1142,11 +1173,41 @@ class TorrentProcessingScheduler:
         torrent.processingFailureCount = failure_count
         await self._requeue(
             torrent,
-            "transient_failure",
+            outcome,
             error,
             failure_count=failure_count,
             cooldown_seconds=self._external_failure_cooldown_seconds,
         )
+
+    def _log_sparse_continuation(
+        self,
+        torrent: Torrent,
+        result: PreviewResult,
+        *,
+        made_useful_progress: bool,
+        queue_pressure: bool,
+    ) -> None:
+        now = time.monotonic()
+        last_logged_at = self._last_sparse_continuation_log_at.get(torrent.id)
+        should_log = (
+            made_useful_progress
+            or last_logged_at is None
+            or now - last_logged_at >= SPARSE_CONTINUATION_LOG_INTERVAL_SECONDS
+        )
+        if not should_log:
+            return
+        self._last_sparse_continuation_log_at[torrent.id] = now
+        logger.bind(
+            job_id=torrent.id,
+            info_hash=torrent.infoHash,
+            status=result.status,
+            downloaded_bytes=result.diagnostics.downloaded_bytes,
+            complete_piece_count=result.diagnostics.last_complete_piece_count,
+            peer_count=result.diagnostics.last_num_peers,
+            seed_count=result.diagnostics.last_num_seeds,
+            made_useful_progress=made_useful_progress,
+            queue_pressure=queue_pressure,
+        ).debug("Continuing torrent session without yielding")
 
     async def _requeue(
         self,
@@ -1215,6 +1276,19 @@ def _is_permanent_preview_failure(result: PreviewResult) -> bool:
     return result.status == "failed" and (
         result.diagnostics.selected_file is None
         or "no downloadable bytes" in result.status_reason.lower()
+    )
+
+
+def _made_useful_progress(
+    result: PreviewResult,
+    *,
+    last_downloaded_bytes: int,
+    last_complete_piece_count: int,
+) -> bool:
+    return (
+        result.diagnostics.downloaded_bytes > last_downloaded_bytes
+        or (result.diagnostics.last_complete_piece_count or 0)
+        > last_complete_piece_count
     )
 
 

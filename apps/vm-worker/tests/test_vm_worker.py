@@ -23,6 +23,7 @@ from mymediavault_vm_worker import (
     _is_best_effort_preview_complete,
     _is_external_preview_failure,
     _is_permanent_preview_failure,
+    _made_useful_progress,
     _success_update,
     parse_torrent,
 )
@@ -189,12 +190,45 @@ def test_scheduler_requeues_external_failure_with_cooldown(monkeypatch: pytest.M
     assert isinstance(values["processingAvailableAt"], datetime)
 
 
+def test_scheduler_requeues_metadata_failure_with_metadata_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Collection:
+        update: dict[str, object] | None = None
+
+        async def update_one(self, query: dict[str, object], update: dict[str, object]) -> None:
+            assert query == {"_id": "torrent-1", "processingState": "running"}
+            self.update = update
+
+    collection = Collection()
+    monkeypatch.setattr(Torrent, "get_pymongo_collection", lambda: collection)
+    scheduler = TorrentProcessingScheduler(settings=_settings(), blob_store=object(), engine=object())  # type: ignore[arg-type]
+    torrent = SimpleNamespace(id="torrent-1", infoHash="abc", processingFailureCount=0)
+    asyncio.run(scheduler._fail_or_requeue(torrent, "metadata unavailable", outcome="metadata_unavailable"))
+    values = collection.update["$set"]  # type: ignore[index]
+    assert values["processingState"] == "queued"
+    assert values["processingLastOutcome"] == "metadata_unavailable"
+    assert values["processingFailureCount"] == 1
+    assert isinstance(values["processingAvailableAt"], datetime)
+
+
 def test_failure_classification_keeps_sparse_downloads_eligible() -> None:
     assert not _is_external_preview_failure(_result(status="failed", reason="No media bytes were downloaded"))
     assert _is_external_preview_failure(
         _result(status="failed", reason="quota", warnings=["Preview decode/ranking failed: quota"])
     )
     assert _is_permanent_preview_failure(_result(status="failed", reason="No video file was found"))
+
+
+def test_useful_progress_tracks_bytes_and_completed_pieces() -> None:
+    no_progress = _result(status="failed", reason="No media bytes were downloaded")
+    assert not _made_useful_progress(no_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
+
+    byte_progress = _result(status="failed", reason="No accepted frames")
+    object.__setattr__(byte_progress.diagnostics, "downloaded_bytes", 1)
+    assert _made_useful_progress(byte_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
+
+    piece_progress = _result(status="failed", reason="No accepted frames")
+    object.__setattr__(piece_progress.diagnostics, "last_complete_piece_count", 1)
+    assert _made_useful_progress(piece_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
 
 
 def test_best_effort_preview_completes_once_selected_file_is_fully_downloaded() -> None:
