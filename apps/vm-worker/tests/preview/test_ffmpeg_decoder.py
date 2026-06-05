@@ -101,7 +101,7 @@ def test_ffmpeg_decoder_returns_only_verified_anchor_frames(
         output = Path(sys.argv[-1])
         if "candidate_anchor_000" in output.name:
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.with_name("candidate_anchor_000_0001.jpg").write_bytes(b"anchor")
+            output.write_bytes(b"anchor")
             sys.stderr.write("[Parsed_showinfo_1] n:0 pts:0 pts_time:0 pos:1\\n")
         """,
     )
@@ -122,7 +122,7 @@ def test_ffmpeg_decoder_returns_only_verified_anchor_frames(
         )
     )
 
-    assert [frame.decode_method for frame in frames] == ["anchor-window"]
+    assert [frame.decode_method for frame in frames] == ["anchor-seek"]
     assert [frame.timestamp_seconds for frame in frames] == [15.0]
 
 
@@ -174,9 +174,13 @@ def test_ffmpeg_decoder_generates_multiple_spaced_anchor_candidates(
     )
 
     calls = json.loads(calls_path.read_text())
-    assert len(calls) == 1
-    assert calls[0][calls[0].index("-ss") + 1] == "47.000"
-    assert calls[0][calls[0].index("-vf") + 1] == "fps=1/3.000000,showinfo"
+    assert len(calls) == 3
+    assert [call[call.index("-ss") + 1] for call in calls] == [
+        "47.000",
+        "50.000",
+        "53.000",
+    ]
+    assert all(call[call.index("-vf") + 1] == "showinfo" for call in calls)
     assert [frame.timestamp_seconds for frame in frames] == [47.0, 50.0, 53.0]
     assert [frame.anchor_index for frame in frames] == [0, 0, 0]
 
@@ -194,7 +198,7 @@ def test_ffmpeg_decoder_removes_stale_anchor_candidates_before_retry(tmp_path) -
         if not calls_path.exists():
             calls_path.write_text("called")
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.with_name("candidate_anchor_000_0001.jpg").write_bytes(b"anchor")
+            output.write_bytes(b"anchor")
             sys.stderr.write("[Parsed_showinfo_1] n:0 pts:0 pts_time:0 pos:1\\n")
         """,
     )
@@ -230,7 +234,7 @@ def test_ffmpeg_decoder_removes_stale_anchor_candidates_before_retry(tmp_path) -
 def test_ffmpeg_decoder_scales_anchor_timeout_for_multiple_candidates(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(ffmpeg_decoder, "_ANCHOR_TIMEOUT_CAP_SECONDS", 0.1)
+    monkeypatch.setattr(ffmpeg_decoder, "_ANCHOR_TIMEOUT_CAP_SECONDS", 0.5)
     ffmpeg_path = _write_fake_ffmpeg(
         tmp_path,
         """
@@ -238,18 +242,11 @@ def test_ffmpeg_decoder_scales_anchor_timeout_for_multiple_candidates(
         import time
         from pathlib import Path
 
-        time.sleep(0.1)
+        time.sleep(0.01)
         output = Path(sys.argv[-1])
         output.parent.mkdir(parents=True, exist_ok=True)
-        for index, timestamp in enumerate((0, 3, 6), start=1):
-            output.with_name(
-                output.name.replace("%04d", f"{index:04d}")
-            ).write_bytes(f"anchor-{index}".encode())
-            sys.stderr.write(
-                "[Parsed_showinfo_1] "
-                f"n:{index - 1} pts:{timestamp} "
-                f"pts_time:{timestamp} pos:1\\n"
-            )
+        output.write_bytes(b"anchor")
+        sys.stderr.write("[Parsed_showinfo_1] n:0 pts:0 pts_time:0 pos:1\\n")
         """,
     )
     ffprobe_path = _write_fake_ffprobe(tmp_path)

@@ -115,6 +115,11 @@ information and can guide retries, but it is not the decode gate. FFmpeg clean
 extraction is the practical proof that enough source bytes exist for an anchor
 candidate.
 
+FFmpeg extracts anchor candidates with bounded single-frame input seeks. This
+avoids long post-seek scans on high-bitrate or slow-to-decode files while still
+requiring each JPEG candidate to have a decoded timestamp inside the anchor
+window.
+
 `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS` should stay short enough to
 avoid wasting a worker slot on an inactive range. The default is `300` seconds.
 Increasing it should be treated as swarm tuning, not as the fix for missing

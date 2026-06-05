@@ -141,9 +141,56 @@ class FFmpegFrameDecoder(FrameDecoder):
                 _ANCHOR_TIMEOUT_CAP_SECONDS * len(timestamps),
                 max(0.1, remaining / remaining_anchors),
             )
-            seek_start = timestamps[0]
             pattern = output_dir / f"candidate_anchor_{anchor_index:03d}_%04d.jpg"
             _remove_existing_anchor_candidates(pattern)
+            frame_candidates.extend(
+                await self._extract_anchor_frames_by_seek(
+                    media_path,
+                    output_dir,
+                    anchor_index=anchor_index,
+                    anchor_ratio=anchor_ratio,
+                    timestamps=timestamps,
+                    window_start=window_start,
+                    window_seconds=anchor_window_seconds,
+                    duration=duration,
+                    timeout_seconds=anchor_timeout,
+                )
+            )
+        bind_log(
+            media_path=str(media_path),
+            anchor_count=len(anchors),
+            extracted_frame_count=len(frame_candidates),
+        ).debug("Finished ffmpeg anchor frame extraction")
+        return frame_candidates
+
+    async def _extract_anchor_frames_by_seek(
+        self,
+        media_path: Path,
+        output_dir: Path,
+        *,
+        anchor_index: int,
+        anchor_ratio: float,
+        timestamps: list[float],
+        window_start: float,
+        window_seconds: float,
+        duration: float,
+        timeout_seconds: float,
+    ) -> list[_FrameCandidate]:
+        frame_candidates: list[_FrameCandidate] = []
+        if timeout_seconds <= 0:
+            return frame_candidates
+        deadline = time.monotonic() + timeout_seconds
+        for candidate_index, timestamp in enumerate(timestamps, start=1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return frame_candidates
+            per_candidate_timeout = min(
+                _ANCHOR_TIMEOUT_CAP_SECONDS,
+                max(0.1, remaining),
+            )
+            path = output_dir / (
+                f"candidate_anchor_{anchor_index:03d}_seek_{candidate_index:04d}.jpg"
+            )
             command = [
                 self._ffmpeg_path,
                 "-hide_banner",
@@ -151,7 +198,7 @@ class FFmpegFrameDecoder(FrameDecoder):
                 "info",
                 "-y",
                 "-ss",
-                f"{seek_start:.3f}",
+                f"{timestamp:.3f}",
                 "-fflags",
                 "+genpts+discardcorrupt",
                 "-err_detect",
@@ -162,13 +209,10 @@ class FFmpegFrameDecoder(FrameDecoder):
                 "0:v:0",
                 "-an",
                 "-vf",
-                _filter_chain(
-                    _anchor_filter(len(timestamps), _candidate_interval(timestamps)),
-                    self._max_frame_width,
-                ),
+                _filter_chain("showinfo", self._max_frame_width),
                 "-frames:v",
-                str(len(timestamps)),
-                str(pattern),
+                "1",
+                str(path),
             ]
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -178,16 +222,17 @@ class FFmpegFrameDecoder(FrameDecoder):
             try:
                 _, stderr = await _communicate_with_timeout(
                     process,
-                    anchor_timeout,
-                    label="ffmpeg anchor extraction",
+                    per_candidate_timeout,
+                    label="ffmpeg single-frame anchor extraction",
                 )
             except _SubprocessTimeoutError:
                 bind_log(
                     media_path=str(media_path),
                     anchor_index=anchor_index,
                     anchor_ratio=anchor_ratio,
-                    timeout_seconds=round(anchor_timeout, 2),
-                ).debug("ffmpeg anchor extraction timed out")
+                    timestamp=round(timestamp, 3),
+                    timeout_seconds=round(per_candidate_timeout, 2),
+                ).debug("ffmpeg single-frame anchor extraction timed out")
                 continue
             matched_decode_error = _matched_decode_error(stderr)
             if process.returncode != 0 or matched_decode_error is not None:
@@ -195,62 +240,52 @@ class FFmpegFrameDecoder(FrameDecoder):
                     media_path=str(media_path),
                     anchor_index=anchor_index,
                     anchor_ratio=anchor_ratio,
+                    timestamp=round(timestamp, 3),
                     returncode=process.returncode,
                     decode_error_pattern=matched_decode_error,
                     stderr_excerpt=_stderr_excerpt(stderr),
-                ).debug("Skipping anchor candidates after ffmpeg decode error")
+                ).debug("Skipping single-frame anchor candidate after ffmpeg decode error")
+                continue
+            if not path.exists() or path.stat().st_size < 1:
                 continue
             decoded_timestamps = _parse_showinfo_timestamps(
                 stderr,
-                window_start=seek_start,
-                window_seconds=anchor_window_seconds,
+                window_start=timestamp,
+                window_seconds=window_seconds,
             )
-            for candidate_index, path in enumerate(
-                sorted(output_dir.glob(f"candidate_anchor_{anchor_index:03d}_*.jpg"))
+            decoded_timestamp = _decoded_timestamp_for_candidate(decoded_timestamps, 0)
+            if decoded_timestamp is None:
+                bind_log(
+                    media_path=str(media_path),
+                    anchor_index=anchor_index,
+                    anchor_ratio=anchor_ratio,
+                    candidate=str(path),
+                ).debug("Skipping single-frame anchor candidate without decoded timestamp")
+                continue
+            if not _timestamp_in_anchor_window(
+                decoded_timestamp,
+                window_start=window_start,
+                window_seconds=window_seconds,
             ):
-                if not path.exists() or path.stat().st_size < 1:
-                    continue
-                decoded_timestamp = _decoded_timestamp_for_candidate(
-                    decoded_timestamps,
-                    candidate_index,
+                bind_log(
+                    media_path=str(media_path),
+                    anchor_index=anchor_index,
+                    anchor_ratio=anchor_ratio,
+                    expected_start=round(window_start, 3),
+                    expected_end=round(window_start + window_seconds, 3),
+                    decoded_timestamp=round(decoded_timestamp, 3),
+                    candidate=str(path),
+                ).debug("Skipping single-frame anchor candidate outside requested timestamp window")
+                continue
+            frame_candidates.append(
+                _FrameCandidate(
+                    path=path,
+                    timestamp_seconds=min(duration, decoded_timestamp),
+                    anchor_index=anchor_index,
+                    anchor_ratio=anchor_ratio,
+                    decode_method="anchor-seek",
                 )
-                if decoded_timestamp is None:
-                    bind_log(
-                        media_path=str(media_path),
-                        anchor_index=anchor_index,
-                        anchor_ratio=anchor_ratio,
-                        candidate=str(path),
-                    ).debug("Skipping anchor frame without decoded timestamp")
-                    continue
-                if not _timestamp_in_anchor_window(
-                    decoded_timestamp,
-                    window_start=window_start,
-                    window_seconds=anchor_window_seconds,
-                ):
-                    bind_log(
-                        media_path=str(media_path),
-                        anchor_index=anchor_index,
-                        anchor_ratio=anchor_ratio,
-                        expected_start=round(window_start, 3),
-                        expected_end=round(window_start + anchor_window_seconds, 3),
-                        decoded_timestamp=round(decoded_timestamp, 3),
-                        candidate=str(path),
-                    ).debug("Skipping anchor frame outside requested timestamp window")
-                    continue
-                frame_candidates.append(
-                    _FrameCandidate(
-                        path=path,
-                        timestamp_seconds=min(duration, decoded_timestamp),
-                        anchor_index=anchor_index,
-                        anchor_ratio=anchor_ratio,
-                        decode_method="anchor-window",
-                    )
-                )
-        bind_log(
-            media_path=str(media_path),
-            anchor_count=len(anchors),
-            extracted_frame_count=len(frame_candidates),
-        ).debug("Finished ffmpeg anchor frame extraction")
+            )
         return frame_candidates
 
     async def _candidates_to_frames(
@@ -381,18 +416,6 @@ def _anchor_window_start(
 ) -> float:
     target = max(0.0, min(duration, duration * anchor_ratio))
     return max(0.0, target - (window_seconds / 2))
-
-
-def _candidate_interval(timestamps: list[float]) -> float:
-    if len(timestamps) < 2:
-        return 1.0
-    return max(0.001, timestamps[1] - timestamps[0])
-
-
-def _anchor_filter(candidate_count: int, interval_seconds: float) -> str:
-    if candidate_count <= 1:
-        return "showinfo"
-    return f"fps=1/{interval_seconds:.6f},showinfo"
 
 
 def _scale_filter(max_frame_width: int | None) -> str | None:
