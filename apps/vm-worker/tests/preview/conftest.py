@@ -147,13 +147,13 @@ class FakeDecoder(FrameDecoder):
         timeout_seconds: float,
         anchors: tuple[TimelineAnchor | float, ...],
         anchor_window_seconds: float = 30.0,
-        anchor_candidates_per_anchor: int = 1,
+        extract_frames_per_anchor: int = 1,
     ) -> list[ExtractedFrame]:
         _ = (
             media_path,
             target_frames,
             anchor_window_seconds,
-            anchor_candidates_per_anchor,
+            extract_frames_per_anchor,
         )
         self.timeout_seconds.append(timeout_seconds)
         self.anchors.append(
@@ -225,7 +225,7 @@ class FlakyDecoder(FakeDecoder):
         timeout_seconds: float,
         anchors: tuple[TimelineAnchor | float, ...],
         anchor_window_seconds: float = 30.0,
-        anchor_candidates_per_anchor: int = 1,
+        extract_frames_per_anchor: int = 1,
     ) -> list[ExtractedFrame]:
         self.calls += 1
         if self.calls == 1:
@@ -238,7 +238,7 @@ class FlakyDecoder(FakeDecoder):
             timeout_seconds,
             anchors,
             anchor_window_seconds,
-            anchor_candidates_per_anchor,
+            extract_frames_per_anchor,
         )
 
 
@@ -249,12 +249,20 @@ class AcceptAllRanker:
         *,
         target_frames: int,
         context: PreviewContext,
+        eligible_anchor_indexes: list[int] | None = None,
     ) -> FrameRankingResult:
         del context
+        eligible = (
+            set(range(target_frames))
+            if eligible_anchor_indexes is None
+            else set(eligible_anchor_indexes)
+        )
         accepted = [
             frame
             for frame in frames
-            if frame.anchor_index is not None and frame.anchor_index < target_frames
+            if frame.anchor_index is not None
+            and frame.anchor_index < target_frames
+            and frame.anchor_index in eligible
         ]
         selected = [
             frame if frame.accepted_by_llm else _accepted(frame) for frame in accepted

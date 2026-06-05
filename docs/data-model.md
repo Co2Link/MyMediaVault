@@ -81,10 +81,11 @@ this lifecycle. Successful metadata acquisition stores `name`, `sizeBytes`,
 `rawBlobKey`, and ordered files. Preview output stores a contact sheet in
 `previewSheet` and up to nine frame records in `previewFrames`; both store
 private R2 object keys and dimensions. Partial artifacts stay visible while the
-torrent remains eligible for improvement. When the selected media file is fully
-downloaded but fewer than nine frames pass selection, the worker stores the
-usable artifact as `complete` with `processingLastOutcome` set to
-`completed_best_effort`.
+torrent remains eligible for improvement. A complete artifact means every
+target anchor has one selected frame. When the selected media file is fully
+downloaded but fewer than the target frames can be selected, the worker marks
+the torrent `exhausted` with `processingLastOutcome` set to
+`insufficient_preview_frames` while preserving any current artifact.
 
 `processingQueuedAt` preserves FIFO order. `processingAvailableAt` is null for
 normal download work and records one fixed cooldown after resolver or external
@@ -95,8 +96,10 @@ debug without introducing a second state machine.
 
 `previewDiagnostics` stores the preview artifact contract version and
 fingerprint, selected file, downloaded bytes, elapsed time, status reason,
-warnings, and low-level torrent diagnostics. Engine-specific diagnostic details,
-including bounded anchor retry summaries, live in the mixed `details` payload.
+warnings, decoded candidate counts, clean selector candidate counts, eligible
+and missing anchor indexes, and low-level torrent diagnostics. Engine-specific
+diagnostic details, including bounded anchor retry summaries, live in the mixed
+`details` payload.
 Sparse downloads retain their active libtorrent handle only while they own a
 slot. Under queue pressure they save resume data, release the handle, and join
 the FIFO tail. Admin `Queue again` preserves artifacts while clearing cooldown
@@ -106,10 +109,10 @@ version or fingerprint differs from the worker recipe.
 ## Actor Analysis State
 
 `Torrent.actorAnalysisStatus` tracks `pending`, `processing`, `succeeded`, or
-`failed`. The sequential VM-worker actor pipeline claims durable preview frames,
-stores detected assignments in `systemActorIds`, and leaves `userActorIds`
-untouched. A successful analysis with no qualifying main actor stores an empty
-system list.
+`failed`. The sequential VM-worker actor pipeline claims complete durable
+preview frames, stores detected assignments in `systemActorIds`, and leaves
+`userActorIds` untouched. A successful analysis with no qualifying main actor
+stores an empty system list.
 
 `actorAnalysisAttempts`, attempt/update timestamps, `actorAnalysisLeaseUntil`,
 `actorAnalysisFingerprint`, `actorAnalysisError`, and compact diagnostics record

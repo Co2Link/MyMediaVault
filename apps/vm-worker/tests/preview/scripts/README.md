@@ -1,7 +1,7 @@
 # Integration Test Scripts
 
 These scripts are manual integration checks. They are not part of normal pytest because they use real torrent networking, libtorrent, and ffmpeg.
-Set `OPENAI_API_KEY` before running the default acceptance script; accepted frame-bearing results require the Pydantic AI judge.
+Set `OPENAI_API_KEY` before running the default acceptance script; selected frame-bearing results require the Pydantic AI judge.
 
 Run all local test torrents with the configured cache:
 
@@ -32,15 +32,18 @@ order. Per-torrent `RESULT` lines print as each torrent finishes only when
 Use `--target-frames` to select the frame count. Supported values are `3`, `9`,
 and `16`; the engine derives evenly spaced anchors from that count.
 `--anchor-window-seconds` controls how wide each verified decode window may be.
-`--anchor-candidates-per-anchor` controls how many timestamp-spaced candidates
-the decoder may generate inside each anchor window before ranking.
+`--extract-frames-per-anchor` controls how many timestamp-spaced frames the
+decoder may attempt inside each anchor window. `--min-selector-candidates-per-anchor`
+controls how many clean candidates are required before an anchor is eligible for
+selection, and `--max-selector-candidates-per-anchor` controls how many clean
+candidates per anchor are sent to OpenAI.
 `--anchor-range-mb` controls the MiB-sized byte window planned around each
 timeline anchor. `--edge-range-mb` controls the MiB-sized byte windows planned
 at the selected file head and tail.
 
 Fixtures are split into strict-success and truthful-partial sets. Root-level
 fixtures and fixtures under `tmp/test-torrents/strict/` must produce one
-selected LLM-accepted frame for every target anchor.
+selected frame for every target anchor.
 Truthful-partial fixtures live under `tmp/test-torrents/truthful-partial/` and
 may pass with a partial result when the returned frames and sheet pass local
 checks. The default LLM judge is required only when planned pieces completed;

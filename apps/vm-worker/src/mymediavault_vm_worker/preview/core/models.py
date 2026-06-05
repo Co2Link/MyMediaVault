@@ -29,7 +29,7 @@ DEFAULT_ANCHOR_RANGE_MB = 32
 DEFAULT_EDGE_RANGE_MB = 32
 DEFAULT_MAX_TIME_SECONDS = 3600.0
 DEFAULT_MAX_DOWNLOAD_TIME_SECONDS = 1800.0
-DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 600.0
+DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 300.0
 DEFAULT_MAX_DECODE_TIME_SECONDS = 90.0
 DEFAULT_TARGET_FRAMES = 9
 SUPPORTED_TARGET_FRAMES = frozenset({3, 9, 16})
@@ -40,7 +40,9 @@ DEFAULT_TRACKER_FETCH_TIMEOUT_SECONDS = 3.0
 DEFAULT_TRACKER_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_LLM_MODEL = "gpt-5.4-mini"
 DEFAULT_LLM_TIMEOUT_SECONDS = 8.0
-DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR = 5
+DEFAULT_EXTRACT_FRAMES_PER_ANCHOR = 7
+DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR = 2
+DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR = 4
 DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
 
 
@@ -96,7 +98,13 @@ class PreviewEngineConfig:
     default_tracker_ttl_seconds: float = DEFAULT_TRACKER_TTL_SECONDS
     llm_model: str = DEFAULT_LLM_MODEL
     llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
-    anchor_candidates_per_anchor: int = DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR
+    extract_frames_per_anchor: int = DEFAULT_EXTRACT_FRAMES_PER_ANCHOR
+    min_selector_candidates_per_anchor: int = (
+        DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR
+    )
+    max_selector_candidates_per_anchor: int = (
+        DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR
+    )
     anchor_retry_range_mb: tuple[float, ...] = DEFAULT_ANCHOR_RETRY_RANGE_MB
 
     def __post_init__(self) -> None:
@@ -104,7 +112,9 @@ class PreviewEngineConfig:
             "max_concurrent_downloads": self.max_concurrent_downloads,
             "max_concurrent_decodes": self.max_concurrent_decodes,
             "target_frames": self.target_frames,
-            "anchor_candidates_per_anchor": self.anchor_candidates_per_anchor,
+            "extract_frames_per_anchor": self.extract_frames_per_anchor,
+            "min_selector_candidates_per_anchor": self.min_selector_candidates_per_anchor,
+            "max_selector_candidates_per_anchor": self.max_selector_candidates_per_anchor,
         }
         for name, value in positive_ints.items():
             if value < 1:
@@ -157,6 +167,21 @@ class PreviewEngineConfig:
         if self.llm_timeout_seconds <= 0:
             msg = "PreviewEngineConfig.llm_timeout_seconds must be greater than 0"
             raise ValueError(msg)
+        if (
+            self.min_selector_candidates_per_anchor
+            > self.max_selector_candidates_per_anchor
+        ):
+            msg = (
+                "PreviewEngineConfig.min_selector_candidates_per_anchor must be "
+                "less than or equal to max_selector_candidates_per_anchor"
+            )
+            raise ValueError(msg)
+        if self.max_selector_candidates_per_anchor > self.extract_frames_per_anchor:
+            msg = (
+                "PreviewEngineConfig.max_selector_candidates_per_anchor must be "
+                "less than or equal to extract_frames_per_anchor"
+            )
+            raise ValueError(msg)
         if self.upload_rate_limit is not None and self.upload_rate_limit < 1:
             msg = "PreviewEngineConfig.upload_rate_limit must be at least 1 when set"
             raise ValueError(msg)
@@ -204,18 +229,20 @@ class PreviewEngineConfig:
                 "edge_range_mb": self.edge_range_mb,
             },
             "decode": {
-                "decoder": "ffmpeg-anchor-v3",
+                "decoder": "ffmpeg-anchor-clean-v1",
                 "target_frames": self.target_frames,
                 "anchor_window_seconds": self.anchor_window_seconds,
-                "anchor_candidates_per_anchor": self.anchor_candidates_per_anchor,
+                "extract_frames_per_anchor": self.extract_frames_per_anchor,
             },
             "planning": {
                 "layout": "planned-preview-ranges-v1",
             },
             "ranking": {
                 "scorer": "quality-v1",
-                "ranker": "pydantic-ai-anchor-acceptance-v1",
+                "ranker": "pydantic-ai-anchor-chooser-v1",
                 "llm_model": self.llm_model,
+                "min_selector_candidates_per_anchor": self.min_selector_candidates_per_anchor,
+                "max_selector_candidates_per_anchor": self.max_selector_candidates_per_anchor,
             },
             "sheet": dict(sheet_recipe or DEFAULT_SHEET_RECIPE),
         }
@@ -295,6 +322,9 @@ class LLMSelectionDiagnostics:
     selected_frame_count: int
     target_frame_count: int
     reason: str | None = None
+    eligible_anchor_indexes: list[int] = field(default_factory=list)
+    selected_anchor_indexes: list[int] = field(default_factory=list)
+    repaired_anchor_indexes: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -304,7 +334,7 @@ class AnchorRetryAttemptDiagnostics:
     range_mb: float
     target_anchor_indexes: list[int]
     decoded_candidate_counts_by_anchor: dict[int, int]
-    llm_visible_candidate_counts_by_anchor: dict[int, int]
+    clean_candidate_counts_by_anchor: dict[int, int]
     remaining_missing_anchor_indexes: list[int]
     downloaded_bytes: int
     planned_pieces_complete: bool | None = None
@@ -351,6 +381,10 @@ class PreviewDiagnostics:
     dht_alerts: list[str] = field(default_factory=list)
     llm: LLMSelectionDiagnostics | None = None
     anchor_retry: AnchorRetryDiagnostics | None = None
+    decoded_candidate_counts_by_anchor: dict[int, int] = field(default_factory=dict)
+    clean_candidate_counts_by_anchor: dict[int, int] = field(default_factory=dict)
+    eligible_anchor_indexes: list[int] = field(default_factory=list)
+    missing_anchor_indexes: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

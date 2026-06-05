@@ -25,6 +25,17 @@ _ANCHOR_SEEK_PADDING_SECONDS = 2.0
 _ANCHOR_TIMESTAMP_TOLERANCE_SECONDS = 1.0
 _ANCHOR_TIMEOUT_CAP_SECONDS = 5.0
 _ANCHOR_CANDIDATE_SPACING_SECONDS = 3.0
+_STDERR_EXCERPT_MAX_CHARS = 500
+_DECODE_ERROR_PATTERNS = (
+    "error while decoding",
+    "corrupt",
+    "invalid data found",
+    "concealing",
+    "decode_slice_header error",
+    "reference picture missing",
+    "missing picture in access unit",
+    "bytestream overread",
+)
 
 
 @dataclass(frozen=True)
@@ -64,13 +75,13 @@ class FFmpegFrameDecoder(FrameDecoder):
         timeout_seconds: float,
         anchors: tuple[TimelineAnchor | float, ...],
         anchor_window_seconds: float = 30.0,
-        anchor_candidates_per_anchor: int = 1,
+        extract_frames_per_anchor: int = 1,
     ) -> list[ExtractedFrame]:
         if shutil.which(self._ffmpeg_path) is None:
             msg = f"ffmpeg executable not found: {self._ffmpeg_path}"
             raise FrameDecodeError(msg)
-        if anchor_candidates_per_anchor < 1:
-            msg = "anchor_candidates_per_anchor must be at least 1"
+        if extract_frames_per_anchor < 1:
+            msg = "extract_frames_per_anchor must be at least 1"
             raise ValueError(msg)
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -86,7 +97,7 @@ class FFmpegFrameDecoder(FrameDecoder):
             duration,
             timeout_seconds,
             anchor_window_seconds,
-            anchor_candidates_per_anchor,
+            extract_frames_per_anchor,
         )
         return await self._candidates_to_frames(frame_candidates)
 
@@ -98,7 +109,7 @@ class FFmpegFrameDecoder(FrameDecoder):
         duration: float,
         timeout_seconds: float,
         anchor_window_seconds: float,
-        anchor_candidates_per_anchor: int,
+        extract_frames_per_anchor: int,
     ) -> list[_FrameCandidate]:
         frame_candidates: list[_FrameCandidate] = []
         deadline = time.monotonic() + timeout_seconds
@@ -122,7 +133,7 @@ class FFmpegFrameDecoder(FrameDecoder):
                 duration,
                 anchor_ratio,
                 anchor_window_seconds,
-                anchor_candidates_per_anchor,
+                extract_frames_per_anchor,
             )
             if not timestamps:
                 continue
@@ -144,7 +155,7 @@ class FFmpegFrameDecoder(FrameDecoder):
                 "-fflags",
                 "+genpts+discardcorrupt",
                 "-err_detect",
-                "ignore_err",
+                "explode",
                 "-i",
                 str(media_path),
                 "-map",
@@ -177,6 +188,17 @@ class FFmpegFrameDecoder(FrameDecoder):
                     anchor_ratio=anchor_ratio,
                     timeout_seconds=round(anchor_timeout, 2),
                 ).debug("ffmpeg anchor extraction timed out")
+                continue
+            matched_decode_error = _matched_decode_error(stderr)
+            if process.returncode != 0 or matched_decode_error is not None:
+                bind_log(
+                    media_path=str(media_path),
+                    anchor_index=anchor_index,
+                    anchor_ratio=anchor_ratio,
+                    returncode=process.returncode,
+                    decode_error_pattern=matched_decode_error,
+                    stderr_excerpt=_stderr_excerpt(stderr),
+                ).debug("Skipping anchor candidates after ffmpeg decode error")
                 continue
             decoded_timestamps = _parse_showinfo_timestamps(
                 stderr,
@@ -412,6 +434,22 @@ def _decoded_timestamp_for_candidate(
 def _remove_existing_anchor_candidates(pattern: Path) -> None:
     for path in pattern.parent.glob(pattern.name.replace("%04d", "*")):
         path.unlink()
+
+
+def _matched_decode_error(stderr: bytes) -> str | None:
+    text = stderr.decode("utf-8", errors="replace").lower()
+    for pattern in _DECODE_ERROR_PATTERNS:
+        if pattern in text:
+            return pattern
+    return None
+
+
+def _stderr_excerpt(stderr: bytes) -> str:
+    text = stderr.decode("utf-8", errors="replace")
+    compact = " ".join(text.split())
+    if len(compact) <= _STDERR_EXCERPT_MAX_CHARS:
+        return compact
+    return compact[: _STDERR_EXCERPT_MAX_CHARS - 3] + "..."
 
 
 def _timestamp_in_anchor_window(

@@ -205,16 +205,8 @@ class ActorAnalysisWorker:
 
     def _eligible_query(self) -> dict[str, Any]:
         return {
-            "$or": [
-                {
-                    "processingState": "complete",
-                    "previewFrames.0": {"$exists": True},
-                },
-                {
-                    "processingState": "partial",
-                    "previewFrames.1": {"$exists": True},
-                },
-            ]
+            "processingState": "complete",
+            "previewFrames.0": {"$exists": True},
         }
 
     @staticmethod

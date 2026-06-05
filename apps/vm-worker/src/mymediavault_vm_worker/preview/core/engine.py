@@ -47,7 +47,6 @@ from mymediavault_vm_worker.preview.planning.layout import PreviewLayoutBuilder
 from mymediavault_vm_worker.preview.ranking.base import FrameRanker, FrameRankingResult
 from mymediavault_vm_worker.preview.ranking.pydantic_ai import (
     PydanticAIFrameRanker,
-    llm_visible_candidate_counts_by_anchor,
 )
 from mymediavault_vm_worker.preview.scoring.base import FrameScorer
 from mymediavault_vm_worker.preview.scoring.quality import QualityFrameScorer
@@ -310,8 +309,6 @@ class PreviewEngine:
                     )
                 downloaded_bytes = partial.downloaded_bytes
                 diagnostics = partial.diagnostics
-                if _requested_pieces_incomplete(diagnostics):
-                    warnings.append("Requested torrent pieces remained incomplete")
                 anchors = _indexed_anchors(layout.anchors)
                 decode_budget_remaining = self.config.max_decode_time_seconds
                 download_budget_remaining = max(
@@ -362,9 +359,17 @@ class PreviewEngine:
                     scored_frames = retry_diagnostics.frames
                     diagnostics = retry_diagnostics.diagnostics
                     downloaded_bytes = retry_diagnostics.downloaded_bytes
+                    diagnostics = _with_candidate_diagnostics(
+                        diagnostics,
+                        retry_diagnostics.frames,
+                        target_frames=len(layout.anchors),
+                        min_candidates_per_anchor=self.config.min_selector_candidates_per_anchor,
+                    )
+                    eligible_anchor_indexes = list(diagnostics.eligible_anchor_indexes)
                     ranking = await self._rank(
                         scored_frames,
                         target_frames=len(layout.anchors),
+                        eligible_anchor_indexes=eligible_anchor_indexes,
                         context=context,
                     )
                 except Exception as exc:
@@ -437,7 +442,7 @@ class PreviewEngine:
                 timeout_seconds,
                 anchors,
                 self.config.anchor_window_seconds,
-                self.config.anchor_candidates_per_anchor,
+                self.config.extract_frames_per_anchor,
             )
         scored = self._scorer.score(candidates)
         elapsed_seconds = time.monotonic() - started_at
@@ -454,10 +459,12 @@ class PreviewEngine:
         *,
         target_frames: int,
         context: PreviewContext,
+        eligible_anchor_indexes: list[int],
     ) -> FrameRankingResult:
         ranking = await self._frame_ranker.rank(
             frames,
             target_frames=target_frames,
+            eligible_anchor_indexes=eligible_anchor_indexes,
             context=context,
         )
         selected = ranking.frames
@@ -489,7 +496,8 @@ class PreviewEngine:
         missing = _missing_llm_visible_anchor_indexes(
             scored_frames,
             target_frames=target_frames,
-            candidates_per_anchor=self.config.anchor_candidates_per_anchor,
+            candidates_per_anchor=self.config.max_selector_candidates_per_anchor,
+            min_candidates_per_anchor=self.config.min_selector_candidates_per_anchor,
         )
         if not missing or not self.config.anchor_retry_range_mb:
             return _AnchorRetryResult(
@@ -568,12 +576,17 @@ class PreviewEngine:
             )
             decode_budget_remaining -= retry_decode.elapsed_seconds
             current_frames.extend(retry_decode.frames)
-            visible_counts = llm_visible_candidate_counts_by_anchor(
+            clean_counts = _clean_candidate_counts_by_anchor(
                 current_frames,
                 target_frames=target_frames,
-                candidates_per_anchor=self.config.anchor_candidates_per_anchor,
+                candidates_per_anchor=self.config.max_selector_candidates_per_anchor,
             )
-            missing = [index for index in missing if visible_counts.get(index, 0) < 1]
+            missing = [
+                index
+                for index in missing
+                if clean_counts.get(index, 0)
+                < self.config.min_selector_candidates_per_anchor
+            ]
             attempts.append(
                 AnchorRetryAttemptDiagnostics(
                     range_mb=range_mb,
@@ -582,8 +595,8 @@ class PreviewEngine:
                         retry_decode.frames,
                         target_frames=target_frames,
                     ),
-                    llm_visible_candidate_counts_by_anchor={
-                        index: visible_counts.get(index, 0)
+                    clean_candidate_counts_by_anchor={
+                        index: clean_counts.get(index, 0)
                         for index in [anchor.index for anchor in retry_anchors]
                     },
                     remaining_missing_anchor_indexes=list(missing),
@@ -611,7 +624,7 @@ class PreviewEngine:
         return PydanticAIFrameRanker(
             model=self.config.llm_model,
             timeout_seconds=self.config.llm_timeout_seconds,
-            candidates_per_anchor=self.config.anchor_candidates_per_anchor,
+            candidates_per_anchor=self.config.max_selector_candidates_per_anchor,
         )
 
     async def _render_sheet(
@@ -767,7 +780,7 @@ def _preview_status(
     target_frames: int,
 ) -> tuple[PreviewStatus, str | None]:
     required_anchor_indexes = set(range(target_frames))
-    accepted_anchor_indexes = {
+    selected_anchor_indexes = {
         frame.anchor_index
         for frame in frames
         if (
@@ -776,23 +789,17 @@ def _preview_status(
             and 0 <= frame.anchor_index < target_frames
         )
     }
-    if accepted_anchor_indexes >= required_anchor_indexes:
+    if selected_anchor_indexes >= required_anchor_indexes:
         return "succeeded", None
-    if accepted_anchor_indexes:
+    if selected_anchor_indexes:
         return (
             "partial",
             (
-                f"Only {len(accepted_anchor_indexes)} of {target_frames} "
-                "target anchors produced LLM-accepted frames"
+                f"Only {len(selected_anchor_indexes)} of {target_frames} "
+                "target anchors produced selected frames"
             ),
         )
-    return "failed", "No target anchors produced LLM-accepted frames"
-
-
-def _requested_pieces_incomplete(diagnostics: PreviewDiagnostics) -> bool:
-    complete = diagnostics.last_complete_piece_count
-    requested = diagnostics.last_requested_piece_count
-    return complete is not None and requested is not None and complete < requested
+    return "failed", "No target anchors produced selected frames"
 
 
 def _indexed_anchors(anchors: tuple[float, ...]) -> tuple[TimelineAnchor, ...]:
@@ -806,13 +813,65 @@ def _missing_llm_visible_anchor_indexes(
     *,
     target_frames: int,
     candidates_per_anchor: int,
+    min_candidates_per_anchor: int,
 ) -> list[int]:
-    counts = llm_visible_candidate_counts_by_anchor(
+    counts = _clean_candidate_counts_by_anchor(
         frames,
         target_frames=target_frames,
         candidates_per_anchor=candidates_per_anchor,
     )
-    return [index for index in range(target_frames) if counts.get(index, 0) < 1]
+    return [
+        index
+        for index in range(target_frames)
+        if counts.get(index, 0) < min_candidates_per_anchor
+    ]
+
+
+def _clean_candidate_counts_by_anchor(
+    frames: list[ExtractedFrame],
+    *,
+    target_frames: int,
+    candidates_per_anchor: int,
+) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for anchor_index in range(target_frames):
+        anchor_frames = sorted(
+            (
+                frame
+                for frame in frames
+                if frame.anchor_index == anchor_index and frame.score > 0
+            ),
+            key=lambda frame: frame.score,
+            reverse=True,
+        )
+        counts[anchor_index] = len(anchor_frames[:candidates_per_anchor])
+    return counts
+
+
+def _with_candidate_diagnostics(
+    diagnostics: PreviewDiagnostics,
+    frames: list[ExtractedFrame],
+    *,
+    target_frames: int,
+    min_candidates_per_anchor: int,
+) -> PreviewDiagnostics:
+    decoded_counts = _candidate_counts_by_anchor(frames, target_frames=target_frames)
+    clean_counts = _positive_candidate_counts_by_anchor(
+        frames, target_frames=target_frames
+    )
+    eligible = [
+        index
+        for index in range(target_frames)
+        if clean_counts.get(index, 0) >= min_candidates_per_anchor
+    ]
+    missing = [index for index in range(target_frames) if index not in eligible]
+    return replace(
+        diagnostics,
+        decoded_candidate_counts_by_anchor=decoded_counts,
+        clean_candidate_counts_by_anchor=clean_counts,
+        eligible_anchor_indexes=eligible,
+        missing_anchor_indexes=missing,
+    )
 
 
 def _candidate_counts_by_anchor(
@@ -824,6 +883,24 @@ def _candidate_counts_by_anchor(
     for frame in frames:
         anchor_index = frame.anchor_index
         if anchor_index is None or not 0 <= anchor_index < target_frames:
+            continue
+        counts[anchor_index] = counts.get(anchor_index, 0) + 1
+    return counts
+
+
+def _positive_candidate_counts_by_anchor(
+    frames: list[ExtractedFrame],
+    *,
+    target_frames: int,
+) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for frame in frames:
+        anchor_index = frame.anchor_index
+        if (
+            anchor_index is None
+            or not 0 <= anchor_index < target_frames
+            or frame.score <= 0
+        ):
             continue
         counts[anchor_index] = counts.get(anchor_index, 0) + 1
     return counts
@@ -884,4 +961,12 @@ def _result_diagnostics(
         anchor_retry=anchor_retry
         if anchor_retry is not None
         else diagnostics.anchor_retry,
+        decoded_candidate_counts_by_anchor=dict(
+            diagnostics.decoded_candidate_counts_by_anchor
+        ),
+        clean_candidate_counts_by_anchor=dict(
+            diagnostics.clean_candidate_counts_by_anchor
+        ),
+        eligible_anchor_indexes=list(diagnostics.eligible_anchor_indexes),
+        missing_anchor_indexes=list(diagnostics.missing_anchor_indexes),
     )

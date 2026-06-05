@@ -20,9 +20,9 @@ from mymediavault_vm_worker import (
     TorrentProcessingScheduler,
     _configure_vm_worker_logging,
     _fake_torrent_payload,
-    _is_best_effort_preview_complete,
     _is_external_preview_failure,
     _is_permanent_preview_failure,
+    _is_terminal_under_target_preview,
     _made_useful_progress,
     _success_update,
     parse_torrent,
@@ -32,6 +32,7 @@ from mymediavault_vm_worker.preview import (
     GeneratedSheet,
     PreviewArtifact,
     PreviewDiagnostics,
+    PreviewEngineConfig,
     PreviewResult,
     SelectedFile,
 )
@@ -89,6 +90,27 @@ def test_settings_expose_single_scheduler_tuning() -> None:
     assert settings.preview_failure_limit == 3
     assert settings.preview_external_failure_cooldown_seconds == 300
     assert settings.preview_cache_dir == Path("/var/cache/mymediavault/vm-worker")
+
+
+def test_settings_preview_defaults_match_engine_defaults() -> None:
+    settings = _settings()
+    config = PreviewEngineConfig()
+    assert settings.preview_target_frames == config.target_frames
+    assert settings.preview_extract_frames_per_anchor == config.extract_frames_per_anchor
+    assert (
+        settings.preview_min_selector_candidates_per_anchor
+        == config.min_selector_candidates_per_anchor
+    )
+    assert (
+        settings.preview_max_selector_candidates_per_anchor
+        == config.max_selector_candidates_per_anchor
+    )
+    assert settings.preview_anchor_retry_range_mb == config.anchor_retry_range_mb
+    assert (
+        settings.preview_download_progress_timeout_seconds
+        == config.download_progress_timeout_seconds
+    )
+    assert settings.preview_cache_max_mb == config.torrent_cache_max_mb
 
 
 def test_fake_metadata_resolver_returns_valid_torrent_payload() -> None:
@@ -231,7 +253,7 @@ def test_useful_progress_tracks_bytes_and_completed_pieces() -> None:
     assert _made_useful_progress(piece_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
 
 
-def test_best_effort_preview_completes_once_selected_file_is_fully_downloaded() -> None:
+def test_under_target_preview_is_terminal_once_selected_file_is_fully_downloaded() -> None:
     selected_file = SelectedFile(index=0, path="movie.mkv", length=123)
     result = PreviewResult(
         info_hash="abc",
@@ -243,8 +265,8 @@ def test_best_effort_preview_completes_once_selected_file_is_fully_downloaded() 
         ),
         diagnostics=_diagnostics(selected_file=selected_file, downloaded_bytes=123),
     )
-    assert _is_best_effort_preview_complete(result)
-    assert not _is_best_effort_preview_complete(
+    assert _is_terminal_under_target_preview(result)
+    assert not _is_terminal_under_target_preview(
         PreviewResult(
             info_hash="abc",
             status="partial",

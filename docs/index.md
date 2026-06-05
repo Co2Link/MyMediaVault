@@ -32,3 +32,6 @@ testing, or workflow behavior changes.
 - [ADR 001: Asynchronous Actor Identification](decisions/001-asynchronous-actor-identification.md):
   accepted design for durable global actor identities, biometric evidence, and
   the downstream VM-worker pipeline.
+- [ADR 002: Preview Selection And Actor Analysis Semantics](decisions/002-preview-selection-and-actor-analysis-semantics.md):
+  accepted refinement for OpenAI chooser semantics, preview completion states,
+  and complete-only actor analysis.

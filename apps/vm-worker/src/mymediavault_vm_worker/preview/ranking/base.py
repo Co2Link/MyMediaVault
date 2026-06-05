@@ -29,5 +29,6 @@ class FrameRanker(Protocol):
         *,
         target_frames: int,
         context: PreviewContext,
+        eligible_anchor_indexes: list[int] | None = None,
     ) -> FrameRankingResult:
         """Return selected preview frames in display order."""

@@ -37,16 +37,18 @@ from mymediavault_vm_worker.preview import (
     configure_default_logging,
 )
 from mymediavault_vm_worker.preview.core.models import (
-    DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_ANCHOR_RANGE_MB,
     DEFAULT_ANCHOR_WINDOW_SECONDS,
     DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_EDGE_RANGE_MB,
+    DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT_SECONDS,
+    DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_MAX_DECODE_TIME_SECONDS,
     DEFAULT_MAX_DOWNLOAD_TIME_SECONDS,
     DEFAULT_MAX_TIME_SECONDS,
+    DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_TARGET_FRAMES,
     DEFAULT_TORRENT_CACHE_MAX_MB,
     GeneratedFrame,
@@ -149,10 +151,22 @@ def main() -> None:
         default=DEFAULT_LLM_TIMEOUT_SECONDS,
     )
     parser.add_argument(
-        "--anchor-candidates-per-anchor",
+        "--extract-frames-per-anchor",
         type=int,
-        default=DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR,
-        help="Maximum decoded candidates to generate per preview anchor.",
+        default=DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
+        help="Maximum decoded frame extraction attempts per preview anchor.",
+    )
+    parser.add_argument(
+        "--min-selector-candidates-per-anchor",
+        type=int,
+        default=DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
+        help="Minimum clean candidates per anchor required before selection.",
+    )
+    parser.add_argument(
+        "--max-selector-candidates-per-anchor",
+        type=int,
+        default=DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
+        help="Maximum clean candidates per anchor sent to the selector.",
     )
     parser.add_argument("--llm-judge-model", default="gpt-5.4")
     parser.add_argument("--llm-judge-timeout-seconds", type=float, default=12.0)
@@ -249,7 +263,9 @@ async def _run(args: argparse.Namespace) -> list[dict[str, Any]]:
         anchor_window_seconds=args.anchor_window_seconds,
         llm_model=args.llm_model,
         llm_timeout_seconds=args.llm_timeout_seconds,
-        anchor_candidates_per_anchor=args.anchor_candidates_per_anchor,
+        extract_frames_per_anchor=args.extract_frames_per_anchor,
+        min_selector_candidates_per_anchor=args.min_selector_candidates_per_anchor,
+        max_selector_candidates_per_anchor=args.max_selector_candidates_per_anchor,
         torrent_cache_dir=args.torrent_cache_dir,
         torrent_cache_max_mb=args.torrent_cache_max_mb,
         trackers=tuple(args.tracker),
@@ -494,7 +510,7 @@ def _status_check(
         return {
             "ok": True,
             "mode": "strict",
-            "reason": "succeeded with one accepted frame for every anchor",
+            "reason": "succeeded with one selected frame for every anchor",
         }
     truthful_partial_allowed = args.allow_truthful_partial or (
         data["fixture_mode"] == "truthful-partial"
@@ -546,7 +562,7 @@ def _accepted_anchor_coverage_check(
         "expected_frame_count": target_frames,
         "actual_frame_count": len(data["frames"]),
         "reason": (
-            "succeeded result has one LLM-accepted frame per expected anchor"
+            "succeeded result has one selected frame per expected anchor"
             if ok
             else "succeeded result has the wrong frame count"
         ),

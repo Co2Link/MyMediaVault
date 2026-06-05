@@ -194,10 +194,8 @@ def test_claim_plans_prioritize_pending_then_stale_then_failed_retry() -> None:
 
 def test_eligible_query_requires_durable_preview_frames() -> None:
     assert _worker()._eligible_query() == {
-        "$or": [
-            {"processingState": "complete", "previewFrames.0": {"$exists": True}},
-            {"processingState": "partial", "previewFrames.1": {"$exists": True}},
-        ]
+        "processingState": "complete",
+        "previewFrames.0": {"$exists": True},
     }
 
 

@@ -2,10 +2,11 @@
 
 VM-hosted Python worker that polls MongoDB for torrent processing and
 actor-identification work. A single FIFO torrent lifecycle resolves `.torrent`
-payloads, downloads useful byte ranges, selects preview frames with the
-OpenAI-backed ranker, and stores generated sheets and frames. Sparse downloads
-retain their slot while capacity is available, then save resume data and yield
-to the FIFO tail under queue pressure. Sequential actor analysis consumes durable frames, uses
+payloads, downloads useful byte ranges, extracts clean anchor candidates,
+selects preview frames with the OpenAI-backed chooser, and stores generated
+sheets and frames. Sparse downloads retain their slot while capacity is
+available, then save resume data and yield to the FIFO tail under queue
+pressure. Sequential actor analysis consumes complete durable previews, uses
 OpenCV YuNet and SFace to identify main actors, and stores reusable UUID
 identities plus system-managed torrent assignments.
 
@@ -58,7 +59,7 @@ uv run python tests/preview/scripts/run_test_torrents.py \
 ```
 
 Each root-level or `strict/` fixture must produce a successful sheet with
-exactly nine accepted preview frames. Keep unstable sparse-swarm fixtures under
+exactly nine selected preview frames. Keep unstable sparse-swarm fixtures under
 `../../tmp/test-torrents/truthful-partial` for diagnostic runs.
 
 ## Deploy

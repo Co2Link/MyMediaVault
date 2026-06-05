@@ -17,16 +17,18 @@ from mymediavault_vm_worker.preview import (
     PreviewResult,
 )
 from mymediavault_vm_worker.preview.core.models import (
-    DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_ANCHOR_RANGE_MB,
     DEFAULT_ANCHOR_WINDOW_SECONDS,
     DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
     DEFAULT_EDGE_RANGE_MB,
+    DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT_SECONDS,
+    DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_MAX_DECODE_TIME_SECONDS,
     DEFAULT_MAX_DOWNLOAD_TIME_SECONDS,
     DEFAULT_MAX_TIME_SECONDS,
+    DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_TARGET_FRAMES,
     DEFAULT_TORRENT_CACHE_MAX_MB,
     _default_torrent_cache_dir,
@@ -87,10 +89,22 @@ def main() -> None:
         default=DEFAULT_LLM_TIMEOUT_SECONDS,
     )
     parser.add_argument(
-        "--anchor-candidates-per-anchor",
+        "--extract-frames-per-anchor",
         type=int,
-        default=DEFAULT_ANCHOR_CANDIDATES_PER_ANCHOR,
-        help="Maximum decoded candidates to generate per preview anchor.",
+        default=DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
+        help="Maximum decoded frame extraction attempts per preview anchor.",
+    )
+    parser.add_argument(
+        "--min-selector-candidates-per-anchor",
+        type=int,
+        default=DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
+        help="Minimum clean candidates per anchor required before selection.",
+    )
+    parser.add_argument(
+        "--max-selector-candidates-per-anchor",
+        type=int,
+        default=DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
+        help="Maximum clean candidates per anchor sent to the selector.",
     )
     parser.add_argument(
         "--torrent-cache-dir",
@@ -133,7 +147,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         anchor_window_seconds=args.anchor_window_seconds,
         llm_model=args.llm_model,
         llm_timeout_seconds=args.llm_timeout_seconds,
-        anchor_candidates_per_anchor=args.anchor_candidates_per_anchor,
+        extract_frames_per_anchor=args.extract_frames_per_anchor,
+        min_selector_candidates_per_anchor=args.min_selector_candidates_per_anchor,
+        max_selector_candidates_per_anchor=args.max_selector_candidates_per_anchor,
         torrent_cache_dir=args.torrent_cache_dir,
         torrent_cache_max_mb=args.torrent_cache_max_mb,
         trackers=tuple(args.tracker),

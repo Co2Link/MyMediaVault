@@ -29,6 +29,15 @@ from mymediavault_vm_worker.preview import (
     PreviewResult,
     configure_default_logging,
 )
+from mymediavault_vm_worker.preview.core.models import (
+    DEFAULT_ANCHOR_RETRY_RANGE_MB,
+    DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS,
+    DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
+    DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
+    DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
+    DEFAULT_TARGET_FRAMES,
+    DEFAULT_TORRENT_CACHE_MAX_MB,
+)
 
 from .actor_analysis import DEFAULT_MODELS_DIR, FaceModels, YuNetSFaceAnalyzer
 from .actor_worker import (
@@ -41,20 +50,15 @@ from .actor_worker import (
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_MAX_CONCURRENCY = 20
 DEFAULT_STALE_PROCESSING_MINUTES = 120
-DEFAULT_TARGET_FRAMES = 9
-DEFAULT_ANCHOR_RETRY_RANGE_MB = (64.0, 128.0, 256.0, 384.0, 512.0, 768.0)
-DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 120.0
 DEFAULT_PREVIEW_SESSION_FAIRNESS_SECONDS = 2 * 60 * 60
 DEFAULT_PREVIEW_FAILURE_LIMIT = 3
 DEFAULT_EXTERNAL_FAILURE_COOLDOWN_SECONDS = 300
 DEFAULT_PREVIEW_CACHE_DIR = Path("/var/cache/mymediavault/vm-worker")
-DEFAULT_PREVIEW_CACHE_MAX_MB = 32768.0
 DEFAULT_DEBUG_LOG_PATH = Path(".local/logs/vm-worker-debug.log")
 DEFAULT_DEBUG_LOG_ROTATION = "100 MB"
 DEFAULT_DEBUG_LOG_RETENTION = "7 days"
 DEFAULT_METADATA_DHT_TIMEOUT_SECONDS = 600
 SPARSE_CONTINUATION_LOG_INTERVAL_SECONDS = 10 * 60
-SPARSE_NO_PROGRESS_CHECKPOINT_DELAY_SECONDS = 10 * 60
 REDACTED_LOG_VALUE = "[redacted]"
 SENSITIVE_LOG_KEYS = {
     "authorization",
@@ -130,6 +134,18 @@ class PreviewWorkerSettings(BaseSettings):
     preview_target_frames: int = Field(
         default=DEFAULT_TARGET_FRAMES, alias="MMV_PREVIEW_TARGET_FRAMES"
     )
+    preview_extract_frames_per_anchor: int = Field(
+        default=DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
+        alias="MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR",
+    )
+    preview_min_selector_candidates_per_anchor: int = Field(
+        default=DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
+        alias="MMV_PREVIEW_MIN_SELECTOR_CANDIDATES_PER_ANCHOR",
+    )
+    preview_max_selector_candidates_per_anchor: int = Field(
+        default=DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
+        alias="MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR",
+    )
     preview_anchor_retry_range_mb: tuple[float, ...] = Field(
         default=DEFAULT_ANCHOR_RETRY_RANGE_MB,
         alias="MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB",
@@ -155,7 +171,7 @@ class PreviewWorkerSettings(BaseSettings):
         alias="MMV_PREVIEW_CACHE_DIR",
     )
     preview_cache_max_mb: float = Field(
-        default=DEFAULT_PREVIEW_CACHE_MAX_MB,
+        default=DEFAULT_TORRENT_CACHE_MAX_MB,
         alias="MMV_PREVIEW_CACHE_MAX_MB",
     )
     vm_worker_debug_log_path: Path = Field(
@@ -210,6 +226,30 @@ class PreviewWorkerSettings(BaseSettings):
             raise ValueError(msg)
         if self.preview_target_frames not in {3, 9, 16}:
             msg = "MMV_PREVIEW_TARGET_FRAMES must be one of 3, 9, or 16"
+            raise ValueError(msg)
+        if self.preview_extract_frames_per_anchor < 1:
+            msg = "MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR must be at least 1"
+            raise ValueError(msg)
+        if self.preview_min_selector_candidates_per_anchor < 1:
+            msg = "MMV_PREVIEW_MIN_SELECTOR_CANDIDATES_PER_ANCHOR must be at least 1"
+            raise ValueError(msg)
+        if (
+            self.preview_min_selector_candidates_per_anchor
+            > self.preview_max_selector_candidates_per_anchor
+        ):
+            msg = (
+                "MMV_PREVIEW_MIN_SELECTOR_CANDIDATES_PER_ANCHOR must be less than "
+                "or equal to MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR"
+            )
+            raise ValueError(msg)
+        if (
+            self.preview_max_selector_candidates_per_anchor
+            > self.preview_extract_frames_per_anchor
+        ):
+            msg = (
+                "MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR must be less than "
+                "or equal to MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR"
+            )
             raise ValueError(msg)
         previous_retry_range = 32.0
         for value in self.preview_anchor_retry_range_mb:
@@ -1032,9 +1072,6 @@ class TorrentProcessingScheduler:
                 if result.status == "succeeded":
                     await self._finish(torrent, "complete", "completed")
                     return
-                if _is_best_effort_preview_complete(result):
-                    await self._finish(torrent, "complete", "completed_best_effort")
-                    return
                 if _is_permanent_preview_failure(result):
                     await self._finish(
                         torrent,
@@ -1045,6 +1082,14 @@ class TorrentProcessingScheduler:
                     return
                 if _is_external_preview_failure(result):
                     await self._fail_or_requeue(torrent, result.status_reason)
+                    return
+                if _is_terminal_under_target_preview(result):
+                    await self._finish(
+                        torrent,
+                        "exhausted",
+                        "insufficient_preview_frames",
+                        result.status_reason,
+                    )
                     return
                 queue_pressure = await self._has_queued_work(exclude_id=torrent.id)
                 fairness_elapsed = time.monotonic() - started_at >= self._fairness_seconds
@@ -1060,10 +1105,6 @@ class TorrentProcessingScheduler:
                     made_useful_progress=made_useful_progress,
                     queue_pressure=queue_pressure,
                 )
-                if not queue_pressure and not made_useful_progress:
-                    await self._sleep_while_running(
-                        SPARSE_NO_PROGRESS_CHECKPOINT_DELAY_SECONDS
-                    )
             await self._requeue(torrent, "worker_stopped")
         except MetadataResolutionError as error:
             if error.failure_kind == "permanent":
@@ -1146,14 +1187,6 @@ class TorrentProcessingScheduler:
             )
             is not None
         )
-
-    async def _sleep_while_running(self, seconds: float) -> None:
-        deadline = time.monotonic() + seconds
-        while not self._stopping:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            await asyncio.sleep(min(5.0, remaining))
 
     async def _yield(self, torrent: Torrent, result: PreviewResult, outcome: str) -> None:
         state = "partial" if result.artifact.frames or torrent.previewFrames else "queued"
@@ -1292,11 +1325,10 @@ def _made_useful_progress(
     )
 
 
-def _is_best_effort_preview_complete(result: PreviewResult) -> bool:
+def _is_terminal_under_target_preview(result: PreviewResult) -> bool:
     selected_file = result.diagnostics.selected_file
     return (
-        result.status == "partial"
-        and bool(result.artifact.frames)
+        result.status in {"partial", "failed"}
         and selected_file is not None
         and result.diagnostics.downloaded_bytes >= selected_file.length
     )
@@ -1340,6 +1372,13 @@ class PreviewWorker:
         self._config = (
             PreviewEngineConfig(
                 target_frames=settings.preview_target_frames,
+                extract_frames_per_anchor=settings.preview_extract_frames_per_anchor,
+                min_selector_candidates_per_anchor=(
+                    settings.preview_min_selector_candidates_per_anchor
+                ),
+                max_selector_candidates_per_anchor=(
+                    settings.preview_max_selector_candidates_per_anchor
+                ),
                 anchor_retry_range_mb=settings.preview_anchor_retry_range_mb,
                 download_progress_timeout_seconds=(
                     settings.preview_download_progress_timeout_seconds

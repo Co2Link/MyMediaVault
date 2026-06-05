@@ -8,8 +8,8 @@
   release the handle, and queue the torrent at the FIFO tail under pressure.
 - Add persistent bounded cache configuration, fixed external-failure cooldowns,
   unified admin controls, and a one-way migration script.
-- Complete usable artifacts as `completed_best_effort` when the selected media
-  file is fully downloaded but frame selection cannot fill every target anchor.
+- Treat OpenAI frame selection as a chooser over clean local candidates, and
+  exhaust fully downloaded media that cannot fill every target anchor.
 - Throttle sparse no-progress continuation logs, yield no-progress sessions
   under queue pressure, bound metadata failures, and harden ffmpeg timeout
   cleanup.

@@ -85,7 +85,7 @@ def test_engine_returns_partial_when_some_anchors_are_accepted(tmp_path) -> None
             assert len(result.artifact.frames) == 1
             assert result.artifact.sheet is not None
             assert result.status_reason == (
-                "Only 1 of 3 target anchors produced LLM-accepted frames"
+                "Only 1 of 3 target anchors produced selected frames"
             )
 
     asyncio.run(run())
@@ -149,7 +149,7 @@ def test_engine_returns_failed_when_no_anchors_are_accepted(tmp_path) -> None:
             assert result.artifact.frames == []
             assert result.artifact.sheet is None
             assert (
-                result.status_reason == "No target anchors produced LLM-accepted frames"
+                result.status_reason == "No target anchors produced selected frames"
             )
 
     asyncio.run(run())
@@ -211,7 +211,7 @@ def test_engine_uses_separate_download_and_decode_timeouts(tmp_path) -> None:
     asyncio.run(run())
 
 
-def test_engine_warns_but_decodes_when_requested_pieces_are_incomplete(
+def test_engine_decodes_when_requested_pieces_are_incomplete(
     tmp_path,
 ) -> None:
     class IncompletePieceClient(FakeTorrentClient):
@@ -260,9 +260,7 @@ def test_engine_warns_but_decodes_when_requested_pieces_are_incomplete(
             assert result.status == "succeeded"
             assert decoder.anchors == [(0.25, 0.5, 0.75)]
             assert result.status_reason is None
-            assert result.diagnostics.warnings == [
-                "Requested torrent pieces remained incomplete"
-            ]
+            assert result.diagnostics.warnings == []
             assert result.diagnostics.planned_pieces_complete is False
 
     asyncio.run(run())
@@ -306,8 +304,9 @@ def test_engine_uses_injected_frame_ranker(tmp_path) -> None:
             *,
             target_frames: int,
             context: PreviewContext,
+            eligible_anchor_indexes: list[int] | None = None,
         ) -> FrameRankingResult:
-            del target_frames
+            del target_frames, eligible_anchor_indexes
             self.contexts.append(context)
             selected = [replace(frames[0], accepted_by_llm=True)]
             return FrameRankingResult(
@@ -339,7 +338,7 @@ def test_engine_uses_injected_frame_ranker(tmp_path) -> None:
                 25.0
             ]
             assert result.status_reason == (
-                "Only 1 of 3 target anchors produced LLM-accepted frames"
+                "Only 1 of 3 target anchors produced selected frames"
             )
             assert [context.selected_file.path for context in ranker.contexts] == [
                 "movie.mp4"
@@ -373,4 +372,5 @@ def test_engine_returns_failed_result_for_valid_torrent_without_video(tmp_path) 
 
 
 def _engine_config(**kwargs: Any) -> PreviewEngineConfig:
+    kwargs.setdefault("min_selector_candidates_per_anchor", 1)
     return PreviewEngineConfig(**kwargs)

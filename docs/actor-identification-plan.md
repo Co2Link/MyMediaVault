@@ -97,7 +97,7 @@ Tasks:
 2. Add actor-analysis settings, including enablement, model paths, thresholds,
    algorithm version, lease duration, and maximum attempts.
 3. Claim one qualifying torrent at a time after durable preview upload.
-4. Analyze `succeeded` previews and `partial` previews with at least two frames.
+4. Analyze only complete previews with durable frames.
 5. Lazily claim rows with no fingerprint or a stale fingerprint.
 6. Repair expired processing leases back to `pending`.
 7. Retry unexpected transient failures immediately up to three attempts.
@@ -117,7 +117,7 @@ Tasks:
 Verification gate:
 
 - Worker unit tests cover claims, stale-lease repair, immediate bounded retries,
-  lazy backfill, fingerprint staleness, partial-preview eligibility, successful
+  lazy backfill, fingerprint staleness, complete-preview eligibility, successful
   empty results, conservative ambiguity handling, and preservation of previous
   assignments on failure.
 - Offline evaluator still passes unchanged.

@@ -35,7 +35,7 @@ def test_engine_config_defaults_match_sheet_preview_acceptance() -> None:
     assert config.edge_range_bytes == 32 * 1024 * 1024
     assert config.max_time_seconds == 3600.0
     assert config.max_download_time_seconds == 1800.0
-    assert config.download_progress_timeout_seconds == 600.0
+    assert config.download_progress_timeout_seconds == 300.0
     assert config.max_decode_time_seconds == 90.0
     assert config.torrent_cache_dir == _default_torrent_cache_dir()
     assert config.torrent_cache_max_mb == 32768
@@ -43,7 +43,9 @@ def test_engine_config_defaults_match_sheet_preview_acceptance() -> None:
     assert config.use_default_trackers is True
     assert config.default_tracker_fetch_timeout_seconds == 3.0
     assert config.target_frames == 9
-    assert config.anchor_candidates_per_anchor == 5
+    assert config.extract_frames_per_anchor == 7
+    assert config.min_selector_candidates_per_anchor == 2
+    assert config.max_selector_candidates_per_anchor == 4
     assert config.anchor_window_seconds == 30.0
     assert config.artifact_fingerprint().startswith("sha256:")
 
@@ -63,6 +65,19 @@ def test_engine_config_artifact_fingerprint_tracks_preview_recipe() -> None:
 def test_engine_config_restricts_target_frames() -> None:
     with pytest.raises(ValueError, match="target_frames"):
         PreviewEngineConfig(target_frames=5)
+
+
+def test_engine_config_validates_selector_candidate_thresholds() -> None:
+    with pytest.raises(ValueError, match="min_selector_candidates_per_anchor"):
+        PreviewEngineConfig(
+            min_selector_candidates_per_anchor=5,
+            max_selector_candidates_per_anchor=4,
+        )
+    with pytest.raises(ValueError, match="max_selector_candidates_per_anchor"):
+        PreviewEngineConfig(
+            extract_frames_per_anchor=3,
+            max_selector_candidates_per_anchor=4,
+        )
 
 
 def test_engine_config_rejects_non_widening_anchor_retry_ranges() -> None:

@@ -169,7 +169,7 @@ def test_ffmpeg_decoder_generates_multiple_spaced_anchor_candidates(
             timeout_seconds=5,
             anchors=(0.5,),
             anchor_window_seconds=30.0,
-            anchor_candidates_per_anchor=3,
+            extract_frames_per_anchor=3,
         )
     )
 
@@ -266,7 +266,7 @@ def test_ffmpeg_decoder_scales_anchor_timeout_for_multiple_candidates(
             timeout_seconds=1.0,
             anchors=(0.5,),
             anchor_window_seconds=30.0,
-            anchor_candidates_per_anchor=3,
+            extract_frames_per_anchor=3,
         )
     )
 

@@ -21,6 +21,6 @@ class FrameDecoder(ABC):
         timeout_seconds: float,
         anchors: tuple[TimelineAnchor | float, ...],
         anchor_window_seconds: float = 30.0,
-        anchor_candidates_per_anchor: int = 1,
+        extract_frames_per_anchor: int = 1,
     ) -> list[ExtractedFrame]:
         """Extract timestamp-verified anchor candidate frames into output_dir."""
