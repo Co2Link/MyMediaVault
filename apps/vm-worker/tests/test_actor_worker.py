@@ -7,16 +7,16 @@ from typing import Any
 
 import numpy as np
 
-from mymediavault_vm_worker.actor_analysis import (
-    ActorAnalysisConfig,
+from mymediavault_vm_worker.actor.config import ActorAnalysisConfig
+from mymediavault_vm_worker.actor.math import normalized_mean
+from mymediavault_vm_worker.actor.models import (
     ActorExemplar,
     ActorIdentity,
     FaceCluster,
     FaceObservation,
     ProfileCandidate,
-    normalized_mean,
 )
-from mymediavault_vm_worker.actor_worker import ActorAnalysisWorker, FrameAnalysis
+from mymediavault_vm_worker.actor.worker import ActorAnalysisWorker, FrameAnalysis
 
 
 def _observation(

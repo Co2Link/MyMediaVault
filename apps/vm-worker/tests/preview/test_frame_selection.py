@@ -9,7 +9,6 @@ import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
-from pydantic_ai import AgentRunResult
 from pydantic_ai.messages import ImageUrl
 
 from mymediavault_vm_worker.preview.core.models import (
@@ -31,28 +30,30 @@ from mymediavault_vm_worker.preview.frame_selection.pydantic_ai import (
 )
 
 
-class _FakeAgent:
+class _FakeRunner:
     def __init__(self, choices: list[AnchorChoice] | None = None) -> None:
         self.choices = _default_choices() if choices is None else choices
         self.calls: list[dict[str, Any]] = []
 
-    async def run(
-        self, user_prompt: Any, **kwargs: Any
-    ) -> AgentRunResult[FrameSelectionOutput]:
-        self.calls.append({"user_prompt": user_prompt, **kwargs})
-        return AgentRunResult(
-            FrameSelectionOutput(choices=self.choices, reason="fake selection")
+    async def __call__(
+        self, user_prompt: Any, model_settings: dict[str, object]
+    ) -> FrameSelectionOutput:
+        self.calls.append(
+            {"user_prompt": user_prompt, "model_settings": model_settings}
         )
+        return FrameSelectionOutput(choices=self.choices, reason="fake selection")
 
 
-class _FailingAgent:
+class _FailingRunner:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    async def run(
-        self, user_prompt: Any, **kwargs: Any
-    ) -> AgentRunResult[FrameSelectionOutput]:
-        self.calls.append({"user_prompt": user_prompt, **kwargs})
+    async def __call__(
+        self, user_prompt: Any, model_settings: dict[str, object]
+    ) -> FrameSelectionOutput:
+        self.calls.append(
+            {"user_prompt": user_prompt, "model_settings": model_settings}
+        )
         msg = "api unavailable"
         raise RuntimeError(msg)
 
@@ -67,8 +68,11 @@ def test_frame_selection_output_requires_target_frame_count() -> None:
 
 def test_pydantic_ai_selector_uses_vision_request(tmp_path) -> None:
     async def run() -> None:
-        agent = _FakeAgent()
-        selector = PydanticAIFrameSelector(agent=agent, candidates_per_anchor=2)
+        runner = _FakeRunner()
+        selector = PydanticAIFrameSelector(
+            selection_runner=runner,
+            candidates_per_anchor=2,
+        )
 
         result = await selector.select(_frames(tmp_path), context=_context())
 
@@ -82,8 +86,8 @@ def test_pydantic_ai_selector_uses_vision_request(tmp_path) -> None:
         assert result.diagnostics.reason == "fake selection"
         assert result.diagnostics.eligible_anchor_indexes == list(range(TARGET_FRAMES))
         assert result.diagnostics.selected_anchor_indexes == list(range(TARGET_FRAMES))
-        assert len(agent.calls) == 1
-        call = agent.calls[0]
+        assert len(runner.calls) == 1
+        call = runner.calls[0]
         assert call["model_settings"] == {"timeout": 30.0}
         content = call["user_prompt"]
         assert any(isinstance(item, ImageUrl) for item in content)
@@ -98,12 +102,15 @@ def test_pydantic_ai_selector_returns_local_partial_without_all_anchors(
     tmp_path,
 ) -> None:
     async def run() -> None:
-        agent = _FakeAgent()
-        selector = PydanticAIFrameSelector(agent=agent, candidates_per_anchor=2)
+        runner = _FakeRunner()
+        selector = PydanticAIFrameSelector(
+            selection_runner=runner,
+            candidates_per_anchor=2,
+        )
 
         result = await selector.select(_frames(tmp_path, anchor_count=2), context=_context())
 
-        assert agent.calls == []
+        assert runner.calls == []
         assert result.diagnostics.selection_method == "local_partial"
         assert [frame.anchor_index for frame in result.frames] == [0, 1]
         assert result.diagnostics.selected_frame_count == 2
@@ -117,7 +124,7 @@ def test_pydantic_ai_selector_raises_on_wrong_anchor_choice(tmp_path) -> None:
         choices = _default_choices()
         choices[0] = AnchorChoice(anchor_index=0, candidate_id="frame_003")
         selector = PydanticAIFrameSelector(
-            agent=_FakeAgent(choices=choices),
+            selection_runner=_FakeRunner(choices=choices),
             candidates_per_anchor=2,
         )
 
@@ -129,12 +136,12 @@ def test_pydantic_ai_selector_raises_on_wrong_anchor_choice(tmp_path) -> None:
 
 def test_pydantic_ai_selector_raises_when_api_fails(tmp_path) -> None:
     async def run() -> None:
-        agent = _FailingAgent()
-        selector = PydanticAIFrameSelector(agent=agent)
+        runner = _FailingRunner()
+        selector = PydanticAIFrameSelector(selection_runner=runner)
 
         with pytest.raises(FrameSelectionError, match="Pydantic AI frame selection failed"):
             await selector.select(_frames(tmp_path), context=_context())
-        assert len(agent.calls) == 1
+        assert len(runner.calls) == 1
 
     asyncio.run(run())
 

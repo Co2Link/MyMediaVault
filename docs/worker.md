@@ -8,6 +8,24 @@ one FIFO lifecycle because both are stages of obtaining enough torrent data to
 produce useful preview frames. Actor analysis remains a separate sequential
 downstream pipeline.
 
+## Source Layout
+
+The worker source uses explicit workflow modules instead of package-root
+exports:
+
+- `mymediavault_vm_worker.main`: process composition and CLI entry point.
+- `mymediavault_vm_worker.settings`: environment-backed runtime settings.
+- `mymediavault_vm_worker.models`: Beanie persistence models for torrent queue
+  state and preview artifacts.
+- `mymediavault_vm_worker.storage`: local/R2 blob storage adapter.
+- `mymediavault_vm_worker.metadata`: HTTP, DHT, and fake torrent metadata
+  resolution plus torrent parsing.
+- `mymediavault_vm_worker.preview_pipeline`: FIFO torrent processing, preview
+  artifact persistence, retry/yield decisions, and preview state updates.
+- `mymediavault_vm_worker.actor.*`: actor model config, face analysis,
+  clustering, identity matching, evaluation helpers, and the sequential actor
+  analysis worker.
+
 The `torrents` collection is the durable queue. There is no separate job
 collection and no durable preview retry ladder. Each active torrent owns one of
 `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` slots. An active session resolves metadata

@@ -7,13 +7,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from mymediavault_vm_worker.actor_analysis import (
-    ActorAnalysisConfig,
-    FaceModels,
-    ProfileCandidate,
-    YuNetSFaceAnalyzer,
-    evaluate_fixture_partitions,
-)
+from mymediavault_vm_worker.actor.config import ActorAnalysisConfig, FaceModels
+from mymediavault_vm_worker.actor.evaluation import evaluate_fixture_partitions
+from mymediavault_vm_worker.actor.models import ProfileCandidate
+from mymediavault_vm_worker.actor.vision import YuNetSFaceAnalyzer
 
 
 def main() -> None:

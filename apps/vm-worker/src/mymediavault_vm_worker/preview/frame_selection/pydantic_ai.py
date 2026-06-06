@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Protocol, cast
 
 import logfire
 from loguru import logger
-from pydantic_ai import Agent, AgentRunResult
+from pydantic_ai import Agent
 from pydantic_ai.messages import UserContent
 
 from mymediavault_vm_worker.preview.core.models import (
@@ -42,10 +42,9 @@ from mymediavault_vm_worker.preview.llm.providers import (
 from mymediavault_vm_worker.preview.logging import bind_log
 
 
-class _SelectionAgent(Protocol):
-    async def run(
-        self, user_prompt: list[UserContent], **kwargs: object
-    ) -> AgentRunResult[FrameSelectionOutput]: ...
+FrameSelectionRunner = Callable[
+    [list[UserContent], dict[str, object]], Awaitable[FrameSelectionOutput]
+]
 
 
 class PydanticAIFrameSelector:
@@ -58,7 +57,7 @@ class PydanticAIFrameSelector:
         timeout_seconds: float = 30.0,
         candidates_per_anchor: int = 3,
         min_candidates_per_anchor: int = 2,
-        agent: _SelectionAgent | None = None,
+        selection_runner: FrameSelectionRunner | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             msg = "PydanticAIFrameSelector.timeout_seconds must be greater than 0"
@@ -81,7 +80,7 @@ class PydanticAIFrameSelector:
         self._timeout_seconds = timeout_seconds
         self._candidates_per_anchor = candidates_per_anchor
         self._min_candidates_per_anchor = min_candidates_per_anchor
-        self._agent = agent
+        self._selection_runner = selection_runner
 
     async def select(
         self,
@@ -120,12 +119,12 @@ class PydanticAIFrameSelector:
             )
 
         try:
-            agent = self._agent or self._default_agent()
+            runner = self._selection_runner or self._default_runner()
         except LLMConfigurationError:
             raise
 
         try:
-            output = await self._select(agent, candidates=candidates, context=context)
+            output = await self._select(runner, candidates=candidates, context=context)
             selected = _selected_frames_from_output(output, candidates=candidates)
         except FrameSelectionError:
             raise
@@ -167,29 +166,35 @@ class PydanticAIFrameSelector:
             ),
         )
 
-    def _default_agent(self) -> _SelectionAgent:
+    def _default_runner(self) -> FrameSelectionRunner:
         configure_llm_observability()
         model = openai_responses_model(self._model)
-        return cast(
-            "_SelectionAgent",
-            Agent(
-                model=model,
-                output_type=FrameSelectionOutput,
-                instructions=(
-                    "You choose video preview frames. Candidates have already "
-                    "passed local clean-decode and image sanity checks. Choose "
-                    "exactly one candidate id from each anchor group; do not reject "
-                    "an anchor group. Prefer frames that help downstream actor "
-                    "identification: clear, sharp, well-lit human faces first, "
-                    "clearly visible people next, and representative frames only "
-                    "when no usable person is visible for that anchor."
-                ),
+        agent = Agent(
+            model=model,
+            output_type=FrameSelectionOutput,
+            instructions=(
+                "You choose video preview frames. Candidates have already "
+                "passed local clean-decode and image sanity checks. Choose "
+                "exactly one candidate id from each anchor group; do not reject "
+                "an anchor group. Prefer frames that help downstream actor "
+                "identification: clear, sharp, well-lit human faces first, "
+                "clearly visible people next, and representative frames only "
+                "when no usable person is visible for that anchor."
             ),
         )
 
+        async def run(
+            user_prompt: list[UserContent],
+            model_settings: dict[str, object],
+        ) -> FrameSelectionOutput:
+            result = await agent.run(user_prompt, model_settings=model_settings)
+            return result.output
+
+        return run
+
     async def _select(
         self,
-        agent: _SelectionAgent,
+        runner: FrameSelectionRunner,
         *,
         candidates: list[FrameCandidate],
         context: PreviewContext,
@@ -202,11 +207,10 @@ class PydanticAIFrameSelector:
             target_frames=TARGET_FRAMES,
             selected_file=context.selected_file.path,
         ):
-            result = await agent.run(
+            return await runner(
                 input_content(candidates, context),
-                model_settings={"timeout": self._timeout_seconds},
+                {"timeout": self._timeout_seconds},
             )
-        return result.output
 
 
 def _candidate_inputs(frames: list[ExtractedFrame]) -> list[FrameCandidate]:

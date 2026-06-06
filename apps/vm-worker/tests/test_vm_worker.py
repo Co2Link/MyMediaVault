@@ -12,21 +12,23 @@ import pytest
 from loguru import logger
 from pydantic import ValidationError
 
-from mymediavault_vm_worker import (
+from mymediavault_vm_worker.logging import _configure_vm_worker_logging
+from mymediavault_vm_worker.metadata import (
     DhtTorrentMetadataResolver,
     FakeTorrentMetadataResolver,
-    PreviewWorkerSettings,
-    Torrent,
-    TorrentProcessingScheduler,
-    _configure_vm_worker_logging,
     _fake_torrent_payload,
+    parse_torrent,
+)
+from mymediavault_vm_worker.models import Torrent
+from mymediavault_vm_worker.preview_pipeline import (
+    TorrentProcessingScheduler,
     _is_external_preview_failure,
     _is_permanent_preview_failure,
     _made_useful_progress,
     _should_replace_preview_artifacts,
     _success_update,
-    parse_torrent,
 )
+from mymediavault_vm_worker.settings import PreviewWorkerSettings
 from mymediavault_vm_worker.preview import (
     GeneratedFrame,
     GeneratedSheet,
@@ -244,15 +246,15 @@ def test_failure_classification_keeps_sparse_downloads_eligible() -> None:
 
 def test_useful_progress_requires_completed_pieces() -> None:
     no_progress = _result(status="failed", reason="No media bytes were downloaded")
-    assert not _made_useful_progress(no_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
+    assert not _made_useful_progress(no_progress, last_complete_piece_count=0)
 
     byte_progress = _result(status="failed", reason="No accepted frames")
     object.__setattr__(byte_progress.diagnostics, "downloaded_bytes", 1)
-    assert not _made_useful_progress(byte_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
+    assert not _made_useful_progress(byte_progress, last_complete_piece_count=0)
 
     piece_progress = _result(status="failed", reason="No accepted frames")
     object.__setattr__(piece_progress.diagnostics, "last_complete_piece_count", 1)
-    assert _made_useful_progress(piece_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
+    assert _made_useful_progress(piece_progress, last_complete_piece_count=0)
 
 
 def test_success_update_preserves_partial_artifacts_for_scheduler() -> None:

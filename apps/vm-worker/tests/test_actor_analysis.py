@@ -6,22 +6,30 @@ from typing import Iterable
 import cv2
 import numpy as np
 
-from mymediavault_vm_worker.actor_analysis import (
+from mymediavault_vm_worker.actor.config import (
+    DEFAULT_MANIFEST_PATH,
     ActorAnalysisConfig,
+    FaceModels,
+)
+from mymediavault_vm_worker.actor.evaluation import evaluate_fixture_partitions
+from mymediavault_vm_worker.actor.identity import InMemoryActorIndex
+from mymediavault_vm_worker.actor.math import (
+    cosine_similarity,
+    normalize_embedding,
+    normalized_mean,
+)
+from mymediavault_vm_worker.actor.models import (
     FaceCluster,
     FaceObservation,
-    InMemoryActorIndex,
     ProfileCandidate,
     TorrentAssignment,
+)
+from mymediavault_vm_worker.actor.selection import select_main_clusters
+from mymediavault_vm_worker.actor.vision import (
     YuNetSFaceAnalyzer,
     _profile_crop,
     _profile_score,
-    cosine_similarity,
-    evaluate_fixture_partitions,
-    normalize_embedding,
-    normalized_mean,
     profile_candidate_sort_key,
-    select_main_clusters,
 )
 
 
@@ -47,6 +55,15 @@ def _cluster(*observations: FaceObservation) -> FaceCluster:
         quality_score=sum(value.quality_score for value in observations)
         / len(observations),
     )
+
+
+def test_face_model_manifest_path_points_to_worker_models() -> None:
+    models = FaceModels.from_manifest()
+
+    assert DEFAULT_MANIFEST_PATH.name == "face_models.json"
+    assert DEFAULT_MANIFEST_PATH.is_file()
+    assert models.yunet_path.name.endswith(".onnx")
+    assert models.sface_path.name.endswith(".onnx")
 
 
 def test_select_main_clusters_filters_weak_incidental_faces() -> None:

@@ -10,7 +10,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, cast
 
 import logfire
 from loguru import logger
@@ -66,16 +66,6 @@ from mymediavault_vm_worker.preview.torrent.metadata import (
 )
 from mymediavault_vm_worker.preview.torrent.session import TorrentSession
 from mymediavault_vm_worker.preview.core.workspace import PreviewWorkspace
-
-
-class _PreviewSpan(Protocol):
-    def set_attributes(self, attributes: dict[str, object]) -> None: ...
-
-
-class _PreviewSpanContext(Protocol):
-    def __enter__(self) -> _PreviewSpan: ...
-
-    def __exit__(self, exc_type: object, exc: object, traceback: object) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -207,7 +197,7 @@ class PreviewEngine:
             )
         configure_logfire()
         span_context = cast(
-            "_PreviewSpanContext",
+            "Any",
             logfire.span(
                 "preview torrent",
                 info_hash=metadata.info_hash,
@@ -819,8 +809,8 @@ class PreviewEngine:
 
 def _finish_preview_span(
     result: PreviewResult,
-    span: _PreviewSpan | None,
-    span_context: _PreviewSpanContext,
+    span: Any | None,
+    span_context: Any,
 ) -> PreviewResult:
     if span is not None:
         span.set_attributes(

@@ -15,16 +15,16 @@ import numpy as np
 from loguru import logger
 from pymongo import ReturnDocument
 
-from .actor_analysis import (
-    ActorAnalysisConfig,
+from mymediavault_vm_worker.actor.config import ActorAnalysisConfig
+from mymediavault_vm_worker.actor.identity import InMemoryActorIndex
+from mymediavault_vm_worker.actor.models import (
     ActorExemplar,
     ActorIdentity,
     FaceCluster,
     FaceObservation,
-    InMemoryActorIndex,
     ProfileCandidate,
-    profile_candidate_sort_key,
 )
+from mymediavault_vm_worker.actor.vision import profile_candidate_sort_key
 
 ACTOR_ANALYSIS_ALGORITHM_VERSION = "actor-analysis-v3"
 PROFILE_IMAGE_VERSION = "profile-v2"
