@@ -31,15 +31,14 @@ DEFAULT_MAX_TIME_SECONDS = 3600.0
 DEFAULT_MAX_DOWNLOAD_TIME_SECONDS = 1800.0
 DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS = 300.0
 DEFAULT_MAX_DECODE_TIME_SECONDS = 90.0
-DEFAULT_TARGET_FRAMES = 9
-SUPPORTED_TARGET_FRAMES = frozenset({3, 9, 16})
+TARGET_FRAMES = 9
 DEFAULT_ANCHOR_WINDOW_SECONDS = 30.0
 DEFAULT_TORRENT_CACHE_MAX_MB = 32768
 DEFAULT_USE_DEFAULT_TRACKERS = True
 DEFAULT_TRACKER_FETCH_TIMEOUT_SECONDS = 3.0
 DEFAULT_TRACKER_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_LLM_MODEL = "gpt-5.4-mini"
-DEFAULT_LLM_TIMEOUT_SECONDS = 8.0
+DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_EXTRACT_FRAMES_PER_ANCHOR = 7
 DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR = 2
 DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR = 4
@@ -67,10 +66,14 @@ class PreviewRequest:
     """A request to generate preview frames from raw .torrent bytes."""
 
     torrent_bytes: bytes
+    min_complete_piece_count: int | None = None
 
     def __post_init__(self) -> None:
         if not self.torrent_bytes:
             msg = "PreviewRequest.torrent_bytes must not be empty"
+            raise ValueError(msg)
+        if self.min_complete_piece_count is not None and self.min_complete_piece_count < 0:
+            msg = "PreviewRequest.min_complete_piece_count must be non-negative"
             raise ValueError(msg)
 
 
@@ -86,7 +89,6 @@ class PreviewEngineConfig:
     max_download_time_seconds: float = DEFAULT_MAX_DOWNLOAD_TIME_SECONDS
     download_progress_timeout_seconds: float = DEFAULT_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS
     max_decode_time_seconds: float = DEFAULT_MAX_DECODE_TIME_SECONDS
-    target_frames: int = DEFAULT_TARGET_FRAMES
     anchor_window_seconds: float = DEFAULT_ANCHOR_WINDOW_SECONDS
     trackers: tuple[str, ...] = ()
     upload_rate_limit: int | None = None
@@ -111,7 +113,6 @@ class PreviewEngineConfig:
         positive_ints = {
             "max_concurrent_downloads": self.max_concurrent_downloads,
             "max_concurrent_decodes": self.max_concurrent_decodes,
-            "target_frames": self.target_frames,
             "extract_frames_per_anchor": self.extract_frames_per_anchor,
             "min_selector_candidates_per_anchor": self.min_selector_candidates_per_anchor,
             "max_selector_candidates_per_anchor": self.max_selector_candidates_per_anchor,
@@ -120,12 +121,6 @@ class PreviewEngineConfig:
             if value < 1:
                 msg = f"PreviewEngineConfig.{name} must be at least 1"
                 raise ValueError(msg)
-        if self.target_frames not in SUPPORTED_TARGET_FRAMES:
-            supported = ", ".join(
-                str(value) for value in sorted(SUPPORTED_TARGET_FRAMES)
-            )
-            msg = f"PreviewEngineConfig.target_frames must be one of {supported}"
-            raise ValueError(msg)
         if self.anchor_range_mb <= 0:
             msg = "PreviewEngineConfig.anchor_range_mb must be greater than 0"
             raise ValueError(msg)
@@ -230,16 +225,16 @@ class PreviewEngineConfig:
             },
             "decode": {
                 "decoder": "ffmpeg-anchor-clean-v1",
-                "target_frames": self.target_frames,
+                "target_frames": TARGET_FRAMES,
                 "anchor_window_seconds": self.anchor_window_seconds,
                 "extract_frames_per_anchor": self.extract_frames_per_anchor,
             },
             "planning": {
                 "layout": "planned-preview-ranges-v1",
             },
-            "ranking": {
+            "frame_selection": {
                 "scorer": "quality-v1",
-                "ranker": "pydantic-ai-anchor-chooser-v1",
+                "selector": "pydantic-ai-anchor-chooser-v2",
                 "llm_model": self.llm_model,
                 "min_selector_candidates_per_anchor": self.min_selector_candidates_per_anchor,
                 "max_selector_candidates_per_anchor": self.max_selector_candidates_per_anchor,
@@ -282,7 +277,6 @@ class ExtractedFrame:
     anchor_index: int | None = None
     anchor_ratio: float | None = None
     decode_method: str = "unknown"
-    accepted_by_llm: bool = False
 
 
 @dataclass(frozen=True)
@@ -314,17 +308,17 @@ class PreviewArtifact:
 
 
 @dataclass(frozen=True)
-class LLMSelectionDiagnostics:
-    """Summary of one LLM frame acceptance call."""
+class FrameSelectionDiagnostics:
+    """Summary of selected preview frame decisions."""
 
-    model: str
+    selection_method: Literal["openai", "local_partial", "none"]
+    model: str | None
     candidate_frame_count: int
     selected_frame_count: int
     target_frame_count: int
     reason: str | None = None
     eligible_anchor_indexes: list[int] = field(default_factory=list)
     selected_anchor_indexes: list[int] = field(default_factory=list)
-    repaired_anchor_indexes: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -379,7 +373,7 @@ class PreviewDiagnostics:
     tracker_count: int | None = None
     tracker_alerts: list[str] = field(default_factory=list)
     dht_alerts: list[str] = field(default_factory=list)
-    llm: LLMSelectionDiagnostics | None = None
+    frame_selection: FrameSelectionDiagnostics | None = None
     anchor_retry: AnchorRetryDiagnostics | None = None
     decoded_candidate_counts_by_anchor: dict[int, int] = field(default_factory=dict)
     clean_candidate_counts_by_anchor: dict[int, int] = field(default_factory=dict)

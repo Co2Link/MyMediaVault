@@ -13,7 +13,7 @@ dependencies = [
     "libtorrent>=2.0.11",
     "loguru>=0.7.3",
     "opencv-python-headless>=4.13.0.92,<4.14",
-    "pydantic-ai-slim[logfire,openai]>=1.97.0",
+    "pydantic-ai-slim[logfire,openai,retries]>=1.97.0",
     "pydantic-settings>=2.14.1",
     "pymongo>=4.17.0",
 ]

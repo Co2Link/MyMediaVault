@@ -13,11 +13,12 @@ from mymediavault_vm_worker.preview import (
     PreviewJobLease,
     PreviewResult,
     PreviewWorkerHarness,
+    TARGET_FRAMES,
 )
 from mymediavault_vm_worker.preview.harness import cancel_preview_tasks
 
 from .conftest import (
-    AcceptAllRanker,
+    AcceptAllSelector,
     FakeDecoder,
     FakeTorrentClient,
     torrent_bytes,
@@ -72,8 +73,8 @@ def test_harness_runs_claimed_jobs_and_closes_engine(tmp_path) -> None:
         engine = PreviewEngine(
             config=_engine_config(target_frames=3),
             torrent_client=torrent_client,
-            decoder=FakeDecoder(frame_count=3),
-            _frame_ranker=AcceptAllRanker(),
+            decoder=FakeDecoder(frame_count=TARGET_FRAMES),
+            _frame_selector=AcceptAllSelector(),
             workspace_root=tmp_path / "workspace",
         )
         leases = [
@@ -124,8 +125,8 @@ def test_harness_reports_unexpected_job_failure(tmp_path) -> None:
         engine = PreviewEngine(
             config=_engine_config(target_frames=3),
             torrent_client=FakeTorrentClient(),
-            decoder=FakeDecoder(frame_count=3),
-            _frame_ranker=AcceptAllRanker(),
+            decoder=FakeDecoder(frame_count=TARGET_FRAMES),
+            _frame_selector=AcceptAllSelector(),
             workspace_root=tmp_path / "workspace",
         )
         lease = FailingLease("job-1", b"unused")
@@ -163,8 +164,8 @@ def test_harness_replenishes_available_capacity_while_jobs_are_running(
         engine = PreviewEngine(
             config=_engine_config(target_frames=3),
             torrent_client=FakeTorrentClient(),
-            decoder=FakeDecoder(frame_count=3),
-            _frame_ranker=AcceptAllRanker(),
+            decoder=FakeDecoder(frame_count=TARGET_FRAMES),
+            _frame_selector=AcceptAllSelector(),
             workspace_root=tmp_path / "workspace",
         )
         first_started = asyncio.Event()
@@ -227,8 +228,8 @@ def test_harness_can_clear_configured_torrent_cache(tmp_path) -> None:
         engine = PreviewEngine(
             config=_engine_config(target_frames=3, torrent_cache_dir=cache_dir),
             torrent_client=FakeTorrentClient(),
-            decoder=FakeDecoder(frame_count=3),
-            _frame_ranker=AcceptAllRanker(),
+            decoder=FakeDecoder(frame_count=TARGET_FRAMES),
+            _frame_selector=AcceptAllSelector(),
             workspace_root=tmp_path / "workspace",
         )
         lease = FakeLease("job-1", torrent_bytes([("one.mp4", 10_000)]))
@@ -253,8 +254,8 @@ def test_harness_rejects_file_cache_path_when_clearing(tmp_path) -> None:
         engine = PreviewEngine(
             config=_engine_config(target_frames=3, torrent_cache_dir=cache_path),
             torrent_client=FakeTorrentClient(),
-            decoder=FakeDecoder(frame_count=3),
-            _frame_ranker=AcceptAllRanker(),
+            decoder=FakeDecoder(frame_count=TARGET_FRAMES),
+            _frame_selector=AcceptAllSelector(),
             workspace_root=tmp_path / "workspace",
         )
         harness = PreviewWorkerHarness(

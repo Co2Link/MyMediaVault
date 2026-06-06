@@ -8,6 +8,7 @@ from mymediavault_vm_worker.preview import (
     PREVIEW_ARTIFACT_VERSION,
     PreviewEngineConfig,
     PreviewRequest,
+    TARGET_FRAMES,
 )
 from mymediavault_vm_worker.preview.core.models import _default_torrent_cache_dir
 from mymediavault_vm_worker.preview.core.exceptions import NoVideoFileError
@@ -17,10 +18,15 @@ from mymediavault_vm_worker.preview.torrent.metadata import parse_torrent_metada
 from .conftest import bencode, torrent_bytes
 
 
-def test_preview_request_only_requires_torrent_bytes() -> None:
-    assert [field.name for field in fields(PreviewRequest)] == ["torrent_bytes"]
+def test_preview_request_requires_torrent_bytes_and_allows_piece_checkpoint() -> None:
+    assert [field.name for field in fields(PreviewRequest)] == [
+        "torrent_bytes",
+        "min_complete_piece_count",
+    ]
     with pytest.raises(ValueError, match="torrent_bytes"):
         PreviewRequest(torrent_bytes=b"")
+    with pytest.raises(ValueError, match="min_complete_piece_count"):
+        PreviewRequest(torrent_bytes=b"torrent", min_complete_piece_count=-1)
 
 
 def test_engine_config_defaults_match_sheet_preview_acceptance() -> None:
@@ -42,7 +48,7 @@ def test_engine_config_defaults_match_sheet_preview_acceptance() -> None:
     assert config.torrent_cache_max_bytes == 32 * 1024 * 1024 * 1024
     assert config.use_default_trackers is True
     assert config.default_tracker_fetch_timeout_seconds == 3.0
-    assert config.target_frames == 9
+    assert config.llm_timeout_seconds == 30.0
     assert config.extract_frames_per_anchor == 7
     assert config.min_selector_candidates_per_anchor == 2
     assert config.max_selector_candidates_per_anchor == 4
@@ -51,20 +57,13 @@ def test_engine_config_defaults_match_sheet_preview_acceptance() -> None:
 
 
 def test_engine_config_artifact_fingerprint_tracks_preview_recipe() -> None:
-    config = PreviewEngineConfig(target_frames=9)
-    changed = PreviewEngineConfig(target_frames=3)
+    config = PreviewEngineConfig()
+    changed = PreviewEngineConfig(anchor_range_mb=48)
 
     assert config.artifact_recipe()["artifact_version"] == PREVIEW_ARTIFACT_VERSION
-    assert (
-        config.artifact_fingerprint()
-        == PreviewEngineConfig(target_frames=9).artifact_fingerprint()
-    )
+    assert config.artifact_recipe()["decode"]["target_frames"] == TARGET_FRAMES
+    assert config.artifact_fingerprint() == PreviewEngineConfig().artifact_fingerprint()
     assert config.artifact_fingerprint() != changed.artifact_fingerprint()
-
-
-def test_engine_config_restricts_target_frames() -> None:
-    with pytest.raises(ValueError, match="target_frames"):
-        PreviewEngineConfig(target_frames=5)
 
 
 def test_engine_config_validates_selector_candidate_thresholds() -> None:

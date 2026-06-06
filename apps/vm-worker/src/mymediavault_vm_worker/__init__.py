@@ -35,7 +35,6 @@ from mymediavault_vm_worker.preview.core.models import (
     DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
     DEFAULT_MAX_SELECTOR_CANDIDATES_PER_ANCHOR,
     DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
-    DEFAULT_TARGET_FRAMES,
     DEFAULT_TORRENT_CACHE_MAX_MB,
 )
 
@@ -131,9 +130,6 @@ class PreviewWorkerSettings(BaseSettings):
         default=DEFAULT_STALE_PROCESSING_MINUTES,
         alias="MMV_PREVIEW_REPAIR_STALE_PROCESSING_MINUTES",
     )
-    preview_target_frames: int = Field(
-        default=DEFAULT_TARGET_FRAMES, alias="MMV_PREVIEW_TARGET_FRAMES"
-    )
     preview_extract_frames_per_anchor: int = Field(
         default=DEFAULT_EXTRACT_FRAMES_PER_ANCHOR,
         alias="MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR",
@@ -222,10 +218,7 @@ class PreviewWorkerSettings(BaseSettings):
             msg = "At least one VM-worker pipeline must be enabled"
             raise ValueError(msg)
         if self.preview_worker_enabled and not (self.openai_api_key or "").strip():
-            msg = "OPENAI_API_KEY must be set for torrent-preview Pydantic AI ranking"
-            raise ValueError(msg)
-        if self.preview_target_frames not in {3, 9, 16}:
-            msg = "MMV_PREVIEW_TARGET_FRAMES must be one of 3, 9, or 16"
+            msg = "OPENAI_API_KEY must be set for torrent-preview Pydantic AI frame selection"
             raise ValueError(msg)
         if self.preview_extract_frames_per_anchor < 1:
             msg = "MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR must be at least 1"
@@ -779,11 +772,20 @@ class MongoPreviewJobLease:
             downloaded_bytes=result.diagnostics.downloaded_bytes,
             elapsed_seconds=round(result.diagnostics.elapsed_seconds, 2),
         ).debug("Completing preview job")
-        stored_frames = await self._store_frames(
-            result.info_hash, result.artifact.frames
+        should_replace_artifacts = (
+            _should_replace_preview_artifacts(self._torrent, result)
+            or result.status == "failed"
         )
-        stored_sheet = await self._store_sheet(result.info_hash, result.artifact.sheet)
-        has_replacement_artifacts = bool(stored_frames or stored_sheet)
+        stored_frames = (
+            await self._store_frames(result.info_hash, result.artifact.frames)
+            if should_replace_artifacts
+            else []
+        )
+        stored_sheet = (
+            await self._store_sheet(result.info_hash, result.artifact.sheet)
+            if should_replace_artifacts
+            else None
+        )
         update_result = await Torrent.get_pymongo_collection().update_one(
             {"_id": self._torrent.id, "processingState": "running"},
             _success_update(
@@ -792,10 +794,10 @@ class MongoPreviewJobLease:
                 stored_sheet=stored_sheet,
                 artifact_version=self._artifact_version,
                 artifact_fingerprint=self._artifact_fingerprint,
-                replace_artifacts=has_replacement_artifacts,
+                replace_artifacts=should_replace_artifacts,
             ),
         )
-        if has_replacement_artifacts and update_result.matched_count:
+        if should_replace_artifacts and update_result.matched_count:
             await self._delete_old_keys(
                 _preview_keys_from_stored(stored_frames, stored_sheet)
             )
@@ -959,6 +961,8 @@ class TorrentProcessingScheduler:
                     "processingState": "running",
                     "processingPhase": "resolving_metadata",
                     "processingLeaseUntil": now + timedelta(seconds=self._lease_seconds),
+                    "processingLastOutcome": "running",
+                    "processingLastError": None,
                     "processingUpdatedAt": now,
                     "processingAvailableAt": None,
                 }
@@ -1035,6 +1039,7 @@ class TorrentProcessingScheduler:
         started_at = time.monotonic()
         last_downloaded_bytes = 0
         last_complete_piece_count = 0
+        last_decode_complete_piece_count: int | None = None
         lease = MongoPreviewJobLease(
             torrent=torrent,
             blob_store=self._blob_store,
@@ -1053,7 +1058,10 @@ class TorrentProcessingScheduler:
                 await self._set_phase(torrent.id, "generating_preview")
                 torrent_bytes = await lease.load_torrent_bytes()
                 async with self._engine.preview_artifact(
-                    PreviewRequest(torrent_bytes=torrent_bytes)
+                    PreviewRequest(
+                        torrent_bytes=torrent_bytes,
+                        min_complete_piece_count=last_decode_complete_piece_count,
+                    )
                 ) as result:
                     await lease.complete(result)
                 made_useful_progress = _made_useful_progress(
@@ -1069,6 +1077,10 @@ class TorrentProcessingScheduler:
                     last_complete_piece_count,
                     result.diagnostics.last_complete_piece_count or 0,
                 )
+                if result.artifact.frames or result.status == "failed":
+                    last_decode_complete_piece_count = (
+                        result.diagnostics.last_complete_piece_count
+                    )
                 if result.status == "succeeded":
                     await self._finish(torrent, "complete", "completed")
                     return
@@ -1082,14 +1094,6 @@ class TorrentProcessingScheduler:
                     return
                 if _is_external_preview_failure(result):
                     await self._fail_or_requeue(torrent, result.status_reason)
-                    return
-                if _is_terminal_under_target_preview(result):
-                    await self._finish(
-                        torrent,
-                        "exhausted",
-                        "insufficient_preview_frames",
-                        result.status_reason,
-                    )
                     return
                 queue_pressure = await self._has_queued_work(exclude_id=torrent.id)
                 fairness_elapsed = time.monotonic() - started_at >= self._fairness_seconds
@@ -1318,25 +1322,13 @@ def _made_useful_progress(
     last_downloaded_bytes: int,
     last_complete_piece_count: int,
 ) -> bool:
-    return (
-        result.diagnostics.downloaded_bytes > last_downloaded_bytes
-        or (result.diagnostics.last_complete_piece_count or 0)
-        > last_complete_piece_count
-    )
-
-
-def _is_terminal_under_target_preview(result: PreviewResult) -> bool:
-    selected_file = result.diagnostics.selected_file
-    return (
-        result.status in {"partial", "failed"}
-        and selected_file is not None
-        and result.diagnostics.downloaded_bytes >= selected_file.length
-    )
+    del last_downloaded_bytes
+    return (result.diagnostics.last_complete_piece_count or 0) > last_complete_piece_count
 
 
 def _is_external_preview_failure(result: PreviewResult) -> bool:
     return result.status == "failed" and any(
-        warning.startswith("Preview decode/ranking failed:")
+        warning.startswith("Preview decode/selection failed:")
         for warning in result.diagnostics.warnings
     )
 
@@ -1371,7 +1363,6 @@ class PreviewWorker:
             self._actor_analysis_worker = None
         self._config = (
             PreviewEngineConfig(
-                target_frames=settings.preview_target_frames,
                 extract_frames_per_anchor=settings.preview_extract_frames_per_anchor,
                 min_selector_candidates_per_anchor=(
                     settings.preview_min_selector_candidates_per_anchor
@@ -1476,6 +1467,37 @@ def _success_update(
         values["actorAnalysisLeaseUntil"] = None
         values["actorAnalysisError"] = None
     return {"$set": values}
+
+
+def _should_replace_preview_artifacts(torrent: Torrent, result: PreviewResult) -> bool:
+    if result.status == "succeeded":
+        return True
+    if result.status != "partial" or not result.artifact.frames:
+        return False
+    current_count = len(torrent.previewFrames)
+    new_count = len(result.artifact.frames)
+    if new_count > current_count:
+        return True
+    if new_count < current_count:
+        return False
+    return _selected_anchor_count(result) > _stored_selected_anchor_count(torrent)
+
+
+def _selected_anchor_count(result: PreviewResult) -> int:
+    frame_selection = result.diagnostics.frame_selection
+    if frame_selection is None:
+        return 0
+    return len(set(frame_selection.selected_anchor_indexes))
+
+
+def _stored_selected_anchor_count(torrent: Torrent) -> int:
+    frame_selection = torrent.previewDiagnostics.details.get("frame_selection")
+    if not isinstance(frame_selection, dict):
+        return 0
+    selected = frame_selection.get("selected_anchor_indexes")
+    if not isinstance(selected, list):
+        return 0
+    return len({item for item in selected if isinstance(item, int)})
 
 
 def _preview_keys(torrent: Torrent) -> set[str]:

@@ -49,11 +49,11 @@ from mymediavault_vm_worker.preview.core.models import (
     DEFAULT_MAX_DOWNLOAD_TIME_SECONDS,
     DEFAULT_MAX_TIME_SECONDS,
     DEFAULT_MIN_SELECTOR_CANDIDATES_PER_ANCHOR,
-    DEFAULT_TARGET_FRAMES,
     DEFAULT_TORRENT_CACHE_MAX_MB,
     GeneratedFrame,
     GeneratedSheet,
     PreviewArtifact,
+    TARGET_FRAMES,
     _default_torrent_cache_dir,
 )
 from mymediavault_vm_worker.preview.llm.providers import (
@@ -61,7 +61,7 @@ from mymediavault_vm_worker.preview.llm.providers import (
     configure_llm_observability,
     openai_responses_model,
 )
-from mymediavault_vm_worker.preview.ranking import frame_thumbnail_data_url
+from mymediavault_vm_worker.preview.frame_selection import frame_thumbnail_data_url
 
 
 _MIN_MEAN_LUMA = 24.0
@@ -112,7 +112,6 @@ def main() -> None:
             "so per-torrent acceptance diagnostics are easy to read."
         ),
     )
-    parser.add_argument("--target-frames", type=int, default=DEFAULT_TARGET_FRAMES)
     parser.add_argument(
         "--anchor-range-mb",
         type=float,
@@ -259,7 +258,6 @@ async def _run(args: argparse.Namespace) -> list[dict[str, Any]]:
         max_download_time_seconds=args.max_download_time_seconds,
         download_progress_timeout_seconds=args.download_progress_timeout_seconds,
         max_decode_time_seconds=args.max_decode_time_seconds,
-        target_frames=args.target_frames,
         anchor_window_seconds=args.anchor_window_seconds,
         llm_model=args.llm_model,
         llm_timeout_seconds=args.llm_timeout_seconds,
@@ -409,7 +407,7 @@ async def _llm_judge(
         }
 
     configure_llm_observability()
-    content = _llm_judge_content(result, artifact, _expected_target_frames(args))
+    content = _llm_judge_content(result, artifact, TARGET_FRAMES)
     try:
         model = openai_responses_model(args.llm_judge_model)
         agent = Agent(
@@ -505,8 +503,7 @@ def _status_check(
     data: dict[str, Any],
     args: argparse.Namespace,
 ) -> dict[str, Any]:
-    target_frames = _expected_target_frames(args)
-    if data["status"] == "succeeded" and len(data["frames"]) == target_frames:
+    if data["status"] == "succeeded" and len(data["frames"]) == TARGET_FRAMES:
         return {
             "ok": True,
             "mode": "strict",
@@ -541,7 +538,7 @@ def _status_check(
         "mode": "strict",
         "reason": (
             f"status={data['status']} frames={len(data['frames'])} "
-            f"target_frames={target_frames}"
+            f"target_frames={TARGET_FRAMES}"
         ),
     }
 
@@ -555,11 +552,10 @@ def _accepted_anchor_coverage_check(
             "ok": True,
             "reason": "accepted anchor coverage is required only for succeeded results",
         }
-    target_frames = _expected_target_frames(args)
-    ok = len(data["frames"]) == target_frames
+    ok = len(data["frames"]) == TARGET_FRAMES
     return {
         "ok": ok,
-        "expected_frame_count": target_frames,
+        "expected_frame_count": TARGET_FRAMES,
         "actual_frame_count": len(data["frames"]),
         "reason": (
             "succeeded result has one selected frame per expected anchor"
@@ -636,10 +632,6 @@ def _store_result_artifacts(result: PreviewResult, output_dir: Path) -> PreviewA
             mime_type=result.artifact.sheet.mime_type,
         )
     return PreviewArtifact(frames=frames, sheet=sheet)
-
-
-def _expected_target_frames(args: argparse.Namespace) -> int:
-    return args.target_frames
 
 
 def _fixture_mode(torrent_path: Path, torrent_dir: Path) -> str:

@@ -5,9 +5,9 @@ from mymediavault_vm_worker.preview.core.models import (
     AnchorRetryAttemptDiagnostics,
     AnchorRetryDiagnostics,
     ExtractedFrame,
+    FrameSelectionDiagnostics,
     GeneratedFrame,
     GeneratedSheet,
-    LLMSelectionDiagnostics,
     PREVIEW_ARTIFACT_VERSION,
     PreviewArtifact,
     PreviewDiagnostics,
@@ -16,6 +16,7 @@ from mymediavault_vm_worker.preview.core.models import (
     PreviewRequest,
     PreviewResult,
     SelectedFile,
+    TARGET_FRAMES,
 )
 from mymediavault_vm_worker.preview.harness import (
     PreviewHarnessConfig,
@@ -29,9 +30,9 @@ __all__ = [
     "AnchorRetryAttemptDiagnostics",
     "AnchorRetryDiagnostics",
     "ExtractedFrame",
+    "FrameSelectionDiagnostics",
     "GeneratedFrame",
     "GeneratedSheet",
-    "LLMSelectionDiagnostics",
     "PREVIEW_ARTIFACT_VERSION",
     "PreviewArtifact",
     "PreviewContext",
@@ -45,5 +46,6 @@ __all__ = [
     "PreviewResult",
     "PreviewWorkerHarness",
     "SelectedFile",
+    "TARGET_FRAMES",
     "configure_default_logging",
 ]

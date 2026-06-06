@@ -54,7 +54,6 @@ preview-engine release:
 ```bash
 uv run python tests/preview/scripts/run_test_torrents.py \
   --torrent-dir ../../tmp/test-torrents \
-  --target-frames 9 \
   --clear-cache
 ```
 

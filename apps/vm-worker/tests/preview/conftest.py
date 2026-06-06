@@ -11,12 +11,13 @@ from mymediavault_vm_worker.preview.decoding.base import FrameDecoder
 from mymediavault_vm_worker.preview.core.exceptions import FrameDecodeError
 from mymediavault_vm_worker.preview.core.models import (
     ExtractedFrame,
-    LLMSelectionDiagnostics,
+    FrameSelectionDiagnostics,
     PreviewContext,
     PreviewDiagnostics,
     PreviewEngineConfig,
+    TARGET_FRAMES,
 )
-from mymediavault_vm_worker.preview.ranking.base import FrameRankingResult
+from mymediavault_vm_worker.preview.frame_selection.base import FrameSelectionResult
 from mymediavault_vm_worker.preview.planning.base import TimelineAnchor
 from mymediavault_vm_worker.preview.torrent.client import (
     PreviewRangeDownload,
@@ -102,8 +103,9 @@ class FakeTorrentClient(TorrentClient):
         output_dir: Path,
         config: PreviewEngineConfig,
         timeout_seconds: float,
+        min_complete_piece_count: int | None = None,
     ) -> PreviewRangeDownload:
-        _ = torrent_bytes, metadata, config
+        _ = torrent_bytes, metadata, config, min_complete_piece_count
         self.timeout_seconds.append(timeout_seconds)
         self.download_calls += 1
         self.active_downloads += 1
@@ -133,9 +135,8 @@ class FakeTorrentClient(TorrentClient):
 
 
 class FakeDecoder(FrameDecoder):
-    def __init__(self, frame_count: int, *, accepted_by_llm: bool = True) -> None:
+    def __init__(self, frame_count: int) -> None:
         self.frame_count = frame_count
-        self.accepted_by_llm = accepted_by_llm
         self.timeout_seconds: list[float] = []
         self.anchors: list[tuple[float, ...]] = []
 
@@ -166,9 +167,13 @@ class FakeDecoder(FrameDecoder):
         frames: list[ExtractedFrame] = []
         for index in range(self.frame_count):
             frame_path = output_dir / f"frame-{index}.jpg"
-            image = np.full((360, 640), 48 + (index * 40), dtype=np.uint8)
-            image[:, index * 80 : (index * 80) + 160] = 180
-            image[index * 40 : (index * 40) + 120, :] = 24 + (index * 30)
+            base_luma = min(240, 48 + (index * 20))
+            image = np.full((360, 640), base_luma, dtype=np.uint8)
+            x = (index * 57) % 480
+            image[:, x : x + 160] = 180
+            stripe_luma = min(240, 24 + (index * 20))
+            y = (index * 37) % 240
+            image[y : y + 120, :] = stripe_luma
             cv2.putText(
                 image,
                 str(index),
@@ -206,7 +211,6 @@ class FakeDecoder(FrameDecoder):
                     anchor_index=anchor_index,
                     anchor_ratio=anchor_ratio,
                     decode_method="fake-anchor" if anchor_index is not None else "fake",
-                    accepted_by_llm=self.accepted_by_llm,
                 )
             )
         return frames
@@ -242,44 +246,40 @@ class FlakyDecoder(FakeDecoder):
         )
 
 
-class AcceptAllRanker:
-    async def rank(
+class AcceptAllSelector:
+    async def select(
         self,
         frames: list[ExtractedFrame],
         *,
-        target_frames: int,
         context: PreviewContext,
-        eligible_anchor_indexes: list[int] | None = None,
-    ) -> FrameRankingResult:
+    ) -> FrameSelectionResult:
         del context
-        eligible = (
-            set(range(target_frames))
-            if eligible_anchor_indexes is None
-            else set(eligible_anchor_indexes)
-        )
         accepted = [
             frame
             for frame in frames
             if frame.anchor_index is not None
-            and frame.anchor_index < target_frames
-            and frame.anchor_index in eligible
+            and frame.anchor_index < TARGET_FRAMES
         ]
-        selected = [
-            frame if frame.accepted_by_llm else _accepted(frame) for frame in accepted
-        ]
-        return FrameRankingResult(
-            frames=selected,
-            llm=LLMSelectionDiagnostics(
-                model="test-ranker",
+        return FrameSelectionResult(
+            frames=accepted,
+            diagnostics=FrameSelectionDiagnostics(
+                selection_method="openai"
+                if len({frame.anchor_index for frame in accepted}) == TARGET_FRAMES
+                else "local_partial",
+                model="test-selector",
                 candidate_frame_count=len(frames),
-                selected_frame_count=len(selected),
-                target_frame_count=target_frames,
-                reason="test ranker accepted all anchor frames",
+                selected_frame_count=len(accepted),
+                target_frame_count=TARGET_FRAMES,
+                reason="test selector accepted all anchor frames",
+                eligible_anchor_indexes=[
+                    frame.anchor_index
+                    for frame in accepted
+                    if frame.anchor_index is not None
+                ],
+                selected_anchor_indexes=[
+                    frame.anchor_index
+                    for frame in accepted
+                    if frame.anchor_index is not None
+                ],
             ),
         )
-
-
-def _accepted(frame: ExtractedFrame) -> ExtractedFrame:
-    from dataclasses import replace
-
-    return replace(frame, accepted_by_llm=True)

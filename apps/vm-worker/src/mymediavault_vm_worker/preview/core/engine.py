@@ -27,9 +27,9 @@ from mymediavault_vm_worker.preview.core.models import (
     AnchorRetryDiagnostics,
     BYTES_PER_MB,
     ExtractedFrame,
+    FrameSelectionDiagnostics,
     GeneratedFrame,
     GeneratedSheet,
-    LLMSelectionDiagnostics,
     PREVIEW_ARTIFACT_VERSION,
     PreviewArtifact,
     PreviewContext,
@@ -39,14 +39,18 @@ from mymediavault_vm_worker.preview.core.models import (
     PreviewResult,
     PreviewStatus,
     SelectedFile,
+    TARGET_FRAMES,
 )
 from mymediavault_vm_worker.preview.llm.observability import configure_logfire
 from mymediavault_vm_worker.preview.llm.providers import OPENAI_API_KEY_ENV
 from mymediavault_vm_worker.preview.planning.base import DownloadLayout, TimelineAnchor
 from mymediavault_vm_worker.preview.planning.layout import PreviewLayoutBuilder
-from mymediavault_vm_worker.preview.ranking.base import FrameRanker, FrameRankingResult
-from mymediavault_vm_worker.preview.ranking.pydantic_ai import (
-    PydanticAIFrameRanker,
+from mymediavault_vm_worker.preview.frame_selection.base import (
+    FrameSelectionResult,
+    FrameSelector,
+)
+from mymediavault_vm_worker.preview.frame_selection.pydantic_ai import (
+    PydanticAIFrameSelector,
 )
 from mymediavault_vm_worker.preview.scoring.base import FrameScorer
 from mymediavault_vm_worker.preview.scoring.quality import QualityFrameScorer
@@ -98,7 +102,7 @@ class PreviewEngine:
         torrent_client: TorrentClient | None = None,
         decoder: FrameDecoder | None = None,
         scorer: FrameScorer | None = None,
-        _frame_ranker: FrameRanker | None = None,
+        _frame_selector: FrameSelector | None = None,
         workspace_root: Path | None = None,
         sheet_renderer: ThumbnailSheetRenderer | None = None,
     ) -> None:
@@ -106,7 +110,7 @@ class PreviewEngine:
         self._torrent_session = TorrentSession(torrent_client)
         self._decoder = decoder or FFmpegFrameDecoder()
         self._scorer = scorer or QualityFrameScorer()
-        self._frame_ranker = _frame_ranker or self._build_frame_ranker()
+        self._frame_selector = _frame_selector or self._build_frame_selector()
         self._layout_builder = PreviewLayoutBuilder()
         self._sheet_renderer = sheet_renderer or ThumbnailSheetRenderer()
         self._workspace_root = workspace_root
@@ -211,7 +215,7 @@ class PreviewEngine:
                 selected_file_size=selected_file.length,
                 torrent_file_count=len(metadata.files),
                 torrent_total_size=metadata.total_size,
-                target_frames=self.config.target_frames,
+                target_frames=TARGET_FRAMES,
                 max_time_seconds=self.config.max_time_seconds,
                 max_download_time_seconds=self.config.max_download_time_seconds,
                 max_decode_time_seconds=self.config.max_decode_time_seconds,
@@ -235,7 +239,7 @@ class PreviewEngine:
                     selected_file_size=selected_file.length,
                     torrent_file_count=len(metadata.files),
                     torrent_total_size=metadata.total_size,
-                    target_frames=self.config.target_frames,
+                    target_frames=TARGET_FRAMES,
                     anchor_range_mb=self.config.anchor_range_mb,
                     edge_range_mb=self.config.edge_range_mb,
                     max_time_seconds=self.config.max_time_seconds,
@@ -252,7 +256,7 @@ class PreviewEngine:
                     selected_file.length,
                     self.config.anchor_range_bytes,
                     self.config.edge_range_bytes,
-                    self.config.target_frames,
+                    TARGET_FRAMES,
                 )
                 if layout is None:
                     return _finish_preview_span(
@@ -287,6 +291,7 @@ class PreviewEngine:
                         timeout_seconds=self._download_timeout(
                             self._remaining_seconds(started_at)
                         ),
+                        min_complete_piece_count=request.min_complete_piece_count,
                     )
                     initial_download_elapsed = time.monotonic() - download_started_at
                 except Exception as exc:
@@ -309,6 +314,26 @@ class PreviewEngine:
                     )
                 downloaded_bytes = partial.downloaded_bytes
                 diagnostics = partial.diagnostics
+                if not partial.decode_ready:
+                    warnings.append("Preview download is waiting for new completed pieces")
+                    diagnostics = _result_diagnostics(
+                        diagnostics,
+                        warnings=warnings,
+                        selected_file=selected_file,
+                        downloaded_bytes=downloaded_bytes,
+                        elapsed_seconds=time.monotonic() - started_at,
+                    )
+                    return _finish_preview_span(
+                        PreviewResult(
+                            info_hash=metadata.info_hash,
+                            status="partial",
+                            status_reason="Waiting for new completed pieces before decoding",
+                            artifact=PreviewArtifact(frames=[], sheet=None),
+                            diagnostics=diagnostics,
+                        ),
+                        span,
+                        span_context,
+                    )
                 anchors = _indexed_anchors(layout.anchors)
                 decode_budget_remaining = self.config.max_decode_time_seconds
                 download_budget_remaining = max(
@@ -365,15 +390,12 @@ class PreviewEngine:
                         target_frames=len(layout.anchors),
                         min_candidates_per_anchor=self.config.min_selector_candidates_per_anchor,
                     )
-                    eligible_anchor_indexes = list(diagnostics.eligible_anchor_indexes)
-                    ranking = await self._rank(
+                    selection = await self._select_frames(
                         scored_frames,
-                        target_frames=len(layout.anchors),
-                        eligible_anchor_indexes=eligible_anchor_indexes,
                         context=context,
                     )
                 except Exception as exc:
-                    warnings.append(f"Preview decode/ranking failed: {exc}")
+                    warnings.append(f"Preview decode/selection failed: {exc}")
                     return _finish_preview_span(
                         self._failed_result(
                             info_hash=metadata.info_hash,
@@ -389,13 +411,13 @@ class PreviewEngine:
                     )
                 result = await self._result(
                     context=context,
-                    source_frames=ranking.frames,
+                    source_frames=selection.frames,
                     info_hash=metadata.info_hash,
                     downloaded_bytes=downloaded_bytes,
                     elapsed=time.monotonic() - started_at,
                     warnings=warnings,
                     diagnostics=diagnostics,
-                    llm=ranking.llm,
+                    frame_selection=selection.diagnostics,
                     anchor_retry=retry_diagnostics.anchor_retry,
                     target_frames=len(layout.anchors),
                 )
@@ -413,6 +435,7 @@ class PreviewEngine:
         layout: DownloadLayout,
         output_dir: Path,
         timeout_seconds: float,
+        min_complete_piece_count: int | None = None,
     ) -> PreviewRangeDownload:
         async with self._download_limiter:
             return await self._torrent_session.client.download(
@@ -423,6 +446,7 @@ class PreviewEngine:
                 output_dir,
                 self.config,
                 timeout_seconds,
+                min_complete_piece_count,
             )
 
     async def _decode(
@@ -453,27 +477,23 @@ class PreviewEngine:
         ).debug("Decoded and scored frames")
         return _DecodePassResult(frames=scored, elapsed_seconds=elapsed_seconds)
 
-    async def _rank(
+    async def _select_frames(
         self,
         frames: list[ExtractedFrame],
         *,
-        target_frames: int,
         context: PreviewContext,
-        eligible_anchor_indexes: list[int],
-    ) -> FrameRankingResult:
-        ranking = await self._frame_ranker.rank(
+    ) -> FrameSelectionResult:
+        selection = await self._frame_selector.select(
             frames,
-            target_frames=target_frames,
-            eligible_anchor_indexes=eligible_anchor_indexes,
             context=context,
         )
-        selected = ranking.frames
+        selected = selection.frames
         bind_log(
             candidate_frame_count=len(frames),
             selected_frame_count=len(selected),
-            frame_ranker="pydantic-ai",
+            frame_selector=selection.diagnostics.selection_method,
         ).debug("Selected frames")
-        return ranking
+        return selection
 
     async def _retry_missing_anchors(
         self,
@@ -493,7 +513,7 @@ class PreviewEngine:
         download_budget_remaining: float,
     ) -> "_AnchorRetryResult":
         target_frames = len(all_anchors)
-        missing = _missing_llm_visible_anchor_indexes(
+        missing = _missing_selector_visible_anchor_indexes(
             scored_frames,
             target_frames=target_frames,
             candidates_per_anchor=self.config.max_selector_candidates_per_anchor,
@@ -514,6 +534,7 @@ class PreviewEngine:
         current_downloaded_bytes = downloaded_bytes
         planned_complete = diagnostics.planned_pieces_complete
         anchors_by_index = {anchor.index: anchor for anchor in all_anchors}
+        previous_retry_anchor_indexes: tuple[int, ...] | None = None
 
         for attempt_index, range_mb in enumerate(
             self.config.anchor_retry_range_mb, start=1
@@ -531,6 +552,7 @@ class PreviewEngine:
                 )
                 break
             retry_anchors = tuple(anchors_by_index[index] for index in missing)
+            retry_anchor_indexes = tuple(anchor.index for anchor in retry_anchors)
             retry_layout = self._layout_builder.build_anchor_layout(
                 selected_file.length,
                 max(1, int(range_mb * BYTES_PER_MB)),
@@ -553,6 +575,10 @@ class PreviewEngine:
                 warnings.append(f"Anchor retry download failed: {exc}")
                 break
             download_budget_remaining -= time.monotonic() - download_started_at
+            previous_downloaded_bytes = current_downloaded_bytes
+            previous_complete_piece_count = (
+                current_diagnostics.last_complete_piece_count or 0
+            )
             current_downloaded_bytes = partial.downloaded_bytes
             planned_complete = _combined_planned_pieces_complete(
                 planned_complete,
@@ -562,6 +588,40 @@ class PreviewEngine:
                 partial.diagnostics,
                 planned_pieces_complete=planned_complete,
             )
+            retry_made_progress = (
+                current_downloaded_bytes > previous_downloaded_bytes
+                or (partial.diagnostics.last_complete_piece_count or 0)
+                > previous_complete_piece_count
+            )
+            if (
+                not retry_made_progress
+                and retry_anchor_indexes == previous_retry_anchor_indexes
+            ):
+                clean_counts = _clean_candidate_counts_by_anchor(
+                    current_frames,
+                    target_frames=target_frames,
+                    candidates_per_anchor=self.config.max_selector_candidates_per_anchor,
+                )
+                attempts.append(
+                    AnchorRetryAttemptDiagnostics(
+                        range_mb=range_mb,
+                        target_anchor_indexes=[
+                            anchor.index for anchor in retry_anchors
+                        ],
+                        decoded_candidate_counts_by_anchor={},
+                        clean_candidate_counts_by_anchor={
+                            index: clean_counts.get(index, 0)
+                            for index in [anchor.index for anchor in retry_anchors]
+                        },
+                        remaining_missing_anchor_indexes=list(missing),
+                        downloaded_bytes=current_downloaded_bytes,
+                        planned_pieces_complete=(
+                            partial.diagnostics.planned_pieces_complete
+                        ),
+                    )
+                )
+                previous_retry_anchor_indexes = retry_anchor_indexes
+                continue
 
             remaining = self._remaining_seconds(started_at)
             if remaining <= 0 or decode_budget_remaining <= 0:
@@ -590,7 +650,7 @@ class PreviewEngine:
             attempts.append(
                 AnchorRetryAttemptDiagnostics(
                     range_mb=range_mb,
-                    target_anchor_indexes=[anchor.index for anchor in retry_anchors],
+                    target_anchor_indexes=list(retry_anchor_indexes),
                     decoded_candidate_counts_by_anchor=_candidate_counts_by_anchor(
                         retry_decode.frames,
                         target_frames=target_frames,
@@ -604,6 +664,7 @@ class PreviewEngine:
                     planned_pieces_complete=partial.diagnostics.planned_pieces_complete,
                 )
             )
+            previous_retry_anchor_indexes = retry_anchor_indexes
 
         return _AnchorRetryResult(
             frames=current_frames,
@@ -617,14 +678,15 @@ class PreviewEngine:
             ),
         )
 
-    def _build_frame_ranker(self) -> FrameRanker:
+    def _build_frame_selector(self) -> FrameSelector:
         if not os.getenv(OPENAI_API_KEY_ENV):
             msg = f"{OPENAI_API_KEY_ENV} must be set for preview generation"
             raise ValueError(msg)
-        return PydanticAIFrameRanker(
+        return PydanticAIFrameSelector(
             model=self.config.llm_model,
             timeout_seconds=self.config.llm_timeout_seconds,
             candidates_per_anchor=self.config.max_selector_candidates_per_anchor,
+            min_candidates_per_anchor=self.config.min_selector_candidates_per_anchor,
         )
 
     async def _render_sheet(
@@ -657,7 +719,7 @@ class PreviewEngine:
         elapsed: float,
         warnings: list[str],
         diagnostics: PreviewDiagnostics,
-        llm: LLMSelectionDiagnostics,
+        frame_selection: FrameSelectionDiagnostics,
         anchor_retry: AnchorRetryDiagnostics | None,
         target_frames: int,
     ) -> PreviewResult:
@@ -668,7 +730,7 @@ class PreviewEngine:
             selected_file=context.selected_file,
             downloaded_bytes=downloaded_bytes,
             elapsed_seconds=elapsed,
-            llm=llm,
+            frame_selection=frame_selection,
             anchor_retry=anchor_retry,
         )
         if status == "failed":
@@ -784,8 +846,7 @@ def _preview_status(
         frame.anchor_index
         for frame in frames
         if (
-            frame.accepted_by_llm
-            and frame.anchor_index is not None
+            frame.anchor_index is not None
             and 0 <= frame.anchor_index < target_frames
         )
     }
@@ -808,7 +869,7 @@ def _indexed_anchors(anchors: tuple[float, ...]) -> tuple[TimelineAnchor, ...]:
     )
 
 
-def _missing_llm_visible_anchor_indexes(
+def _missing_selector_visible_anchor_indexes(
     frames: list[ExtractedFrame],
     *,
     target_frames: int,
@@ -934,7 +995,7 @@ def _result_diagnostics(
     selected_file: SelectedFile | None,
     downloaded_bytes: int,
     elapsed_seconds: float,
-    llm: LLMSelectionDiagnostics | None = None,
+    frame_selection: FrameSelectionDiagnostics | None = None,
     anchor_retry: AnchorRetryDiagnostics | None = None,
 ) -> PreviewDiagnostics:
     return PreviewDiagnostics(
@@ -957,7 +1018,11 @@ def _result_diagnostics(
         tracker_count=diagnostics.tracker_count,
         tracker_alerts=list(diagnostics.tracker_alerts),
         dht_alerts=list(diagnostics.dht_alerts),
-        llm=llm if llm is not None else diagnostics.llm,
+        frame_selection=(
+            frame_selection
+            if frame_selection is not None
+            else diagnostics.frame_selection
+        ),
         anchor_retry=anchor_retry
         if anchor_retry is not None
         else diagnostics.anchor_retry,

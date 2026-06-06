@@ -20,12 +20,11 @@ adding an adaptive actor-evidence search over the media file.
 
 OpenAI frame selection is a chooser, not a gate. The preview engine extracts
 clean local candidates around deterministic timeline anchors, filters them with
-local image sanity scoring, and asks OpenAI to choose exactly one candidate per
-eligible anchor group. Structured output uses an ordered list with runtime
-`min_length` and `max_length` equal to the number of anchor groups in that
-selection call. The ranker still validates selected IDs against the runtime
-candidate pool and repairs an invalid per-anchor choice to that anchor's top
-local-scored candidate.
+local image sanity scoring, and asks OpenAI to choose exactly one candidate for
+each target anchor only after all 9 anchors have enough clean candidates.
+Structured output uses exactly 9 `{anchor_index, candidate_id}` choices. The
+selector validates selected IDs against the runtime candidate pool; invalid
+semantic choices fail selection instead of being repaired locally.
 
 Preview extraction uses three separate knobs:
 

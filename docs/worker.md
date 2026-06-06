@@ -12,22 +12,24 @@ The `torrents` collection is the durable queue. There is no separate job
 collection and no durable preview retry ladder. Each active torrent owns one of
 `MMV_PREVIEW_WORKER_MAX_CONCURRENCY` slots. An active session resolves metadata
 when needed, downloads useful ranges, decodes clean per-anchor candidates, asks
-the OpenAI-backed ranker to choose one frame per eligible anchor, and continues
-downloading when the result is not yet good enough. OpenAI is a chooser rather
-than a gate: local download, FFmpeg, and image checks decide which anchors are
-eligible; OpenAI chooses the best frame for each eligible anchor. If the selected
-media file is fully downloaded but the engine still cannot produce all target
-frames, the session becomes `exhausted` with the current artifact preserved.
+the OpenAI-backed selector to choose one frame per target anchor once all 9
+anchors are eligible, and continues downloading when the result is not yet good
+enough. OpenAI is a chooser rather than a gate: local download, FFmpeg, and
+image checks decide when all anchors are eligible; OpenAI chooses the best frame
+for each target anchor. Under-target preview generation remains retryable while
+the torrent can keep downloading and no queue pressure requires the slot.
 
-With no queue pressure, a sparse swarm may retain its slot indefinitely and retry
-preview generation with the same libtorrent handle after each checkpoint.
-No-progress continuation logs are throttled, while the retained handle can
-continue downloading. Under queue pressure, an incomplete session that made no
-useful byte or piece progress yields at the next engine checkpoint, stores
-libtorrent resume data, releases its handle, and rejoins the FIFO tail. HTTP,
-DHT, or external service failures use one fixed cooldown timestamp to avoid hot
-loops. Bounded metadata, permanent media, or bounded external service failures
-become `exhausted`.
+With no queue pressure, a sparse swarm may retain its slot and retry preview
+generation with the same libtorrent handle while requested pieces continue to
+complete. After the targeted anchor retry ladder is exhausted, the retained
+session escalates to requesting the full selected media file. The engine skips
+FFmpeg and OpenAI when no new completed pieces are available since the previous
+decode checkpoint. Under queue pressure, an incomplete session that reaches the
+fairness limit yields at the next engine checkpoint, stores libtorrent resume
+data, releases its handle, and rejoins the FIFO tail. HTTP, DHT, or external
+service failures use one fixed cooldown timestamp to avoid hot loops. Bounded
+metadata, permanent media, or bounded external service failures become
+`exhausted`.
 
 ## Worker Workflow
 
@@ -93,13 +95,13 @@ Configuration impact:
 
 | Ref | Stage | Configuration | Default | Effect |
 | --- | --- | --- | --- | --- |
-| C1 | Build anchors | `MMV_PREVIEW_TARGET_FRAMES` | `9` | Sets how many timeline anchors must produce selected frames before the preview is `complete`. |
+| C1 | Build anchors | `TARGET_FRAMES` | `9` | Fixed production invariant for how many timeline anchors must produce selected frames before the preview is `complete`. |
 | C2 | Plan ranges and retry widening | `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB` | `[64,128,256,384,512,768]` | Controls the retry ladder. Each retry widens byte ranges only for anchors that still lack enough clean candidates. Retry remains available only while the ladder has another range value and the current preview attempt still has download, decode, and overall time remaining. |
 | C3 | Download checkpoint | `MMV_PREVIEW_DOWNLOAD_PROGRESS_TIMEOUT_SECONDS`, engine `max_download_time_seconds` | `300s`, `1800s` | The worker ends the current download attempt and tries decode when requested pieces complete, selected-file byte progress stalls for the progress timeout, or the attempt's download-time budget expires. The checkpoint is not a terminal failure; FFmpeg clean extraction decides which anchors have enough available bytes. |
 | C4 | FFmpeg JPEG decode | engine `max_decode_time_seconds`, `MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR` | `90s`, `7` | Bounds decode time and sets how many JPEG candidates to attempt around each anchor. |
 | C5 | Enough candidates | `MMV_PREVIEW_MIN_SELECTOR_CANDIDATES_PER_ANCHOR` | `2` | An anchor becomes eligible for OpenAI only after it has at least this many clean local candidates. |
-| C6 | OpenAI chooser | `MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR`, engine `llm_timeout_seconds` | `4`, `8s` | Caps how many clean candidates per eligible anchor are sent to OpenAI and bounds the chooser request duration. |
-| C7 | Yield decision | `MMV_PREVIEW_SESSION_FAIRNESS_SECONDS` | `7200s` | Under queue pressure, a sparse session yields after this lifetime or after a no-progress checkpoint. Without queue pressure, it keeps retrying in the same session. |
+| C6 | OpenAI chooser | `MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR`, engine `llm_timeout_seconds` | `4`, `30s` | Caps how many clean candidates per eligible anchor are sent to OpenAI and bounds the chooser request duration. |
+| C7 | Yield/retain decision | `MMV_PREVIEW_SESSION_FAIRNESS_SECONDS` | `7200s` | Under queue pressure, a sparse session yields after this lifetime. Without queue pressure, it keeps the libtorrent handle active, escalates to the full selected file after anchor retries are exhausted, and skips duplicate decode until new requested pieces complete. |
 | C8 | Cooldown or exhausted | `MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS`, `MMV_PREVIEW_FAILURE_LIMIT` | `300s`, `3` | External failures cool down before retrying. Once the failure limit is reached, the torrent becomes `exhausted`. |
 
 In the workflow, `Retry available?` means the current preview attempt can still
@@ -133,8 +135,9 @@ after reserving decode time. Retry downloads share the remaining download-time
 budget after earlier range downloads have already spent time.
 
 The worker yields a retryable torrent only when queue pressure exists and the
-active session reached the fairness limit or made no useful byte/piece progress.
-Otherwise it keeps the libtorrent handle active and retries in the same session.
+active session reached the fairness limit. Without queue pressure, the worker
+keeps the libtorrent handle active. Raw byte trickle without completed pieces is
+not useful progress and does not trigger another FFmpeg/OpenAI pass.
 
 ## Preview Retry
 
@@ -155,24 +158,36 @@ For each configured value in `MMV_PREVIEW_ANCHOR_RETRY_RANGE_MB`, the engine:
 6. Recomputes missing anchors and stops early once every target anchor is
    eligible or the retry ladder/budgets are exhausted.
 
-The selector may see fewer than the target anchor count when some anchors never
-produce enough clean candidates. In that case OpenAI still chooses exactly one
-candidate for each eligible anchor, and the preview result is partial or failed
-depending on whether any selected frames exist.
+If a widened retry produces no additional selected-file bytes or completed
+pieces, and the same anchor set is still missing, the engine records the retry
+attempt and skips the repeated FFmpeg decode pass. The torrent session remains
+active; after the bounded anchor ladder is exhausted, subsequent retained
+attempts request the full selected media file and decode only after new
+completed pieces are available.
+
+OpenAI is called only after every target anchor has enough clean candidates. If
+some anchors remain ineligible after retry, the engine skips OpenAI and persists
+a deterministic local partial preview using the best scored candidate for each
+eligible anchor. If no anchors are eligible, the preview result is failed and no
+artifact is persisted.
 
 ## OpenAI Selection
 
-OpenAI selection receives local candidates only. The engine caps candidates per
-eligible anchor with `MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR`. The
-structured output model is built at runtime for the eligible anchor count, so
-the response must contain exactly one selected candidate ID for each eligible
-anchor. Pydantic validates the response shape before the worker accepts it.
+OpenAI selection receives local candidates only after all 9 target anchors are
+eligible. The engine sends up to
+`MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR` clean candidates per anchor.
+The static structured output model requires exactly 9 `{anchor_index,
+candidate_id}` choices. Pydantic validates response shape; local validation then
+checks exact anchor coverage, known candidate IDs, correct candidate membership,
+and duplicate choices.
 
-Selector timeouts are retried once immediately with the same candidate set. If
-the retry also fails, or if another selector service failure occurs, the worker
-preserves the current artifact, increments the failure counter, applies
-`MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS`, and retries later until
-`MMV_PREVIEW_FAILURE_LIMIT` is reached.
+OpenAI transport/provider transient failures use Pydantic AI HTTP retry
+transport with conservative hardcoded retries for timeouts, connection/read
+errors, rate limits, and temporary server errors. Structured output or semantic
+selection failures are not repaired locally. If selector failure escapes the
+selector, the worker preserves the current artifact, increments the failure
+counter, applies `MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS`, and retries
+later until `MMV_PREVIEW_FAILURE_LIMIT` is reached.
 
 ## Artifact Persistence
 
@@ -185,7 +200,9 @@ artifact while the torrent remains retryable or later becomes `exhausted`.
 
 Replacing preview artifacts resets actor analysis to `pending`, clears the actor
 analysis lease/error fields, and preserves visible actor assignments until the
-new analysis completes.
+new analysis completes. Failed preview attempts clear existing preview artifacts
+before storing their new diagnostics so stale frames are not paired with a
+no-selection result.
 
 ## Torrent States
 
@@ -195,7 +212,7 @@ new analysis completes.
 | `running` | Owns a worker slot. `processingPhase` identifies the current stage. |
 | `partial` | Has usable frames and remains queued for improvement. |
 | `complete` | Has one selected frame for every target anchor. |
-| `exhausted` | Needs admin attention after a permanent failure, bounded external failure, or fully downloaded media that cannot produce all target frames. |
+| `exhausted` | Needs admin attention after a permanent metadata/media failure or bounded external failure. |
 | `cancelled` | Removed from scheduling by an admin. |
 
 Admins can `Queue again` or `Cancel` torrent processing. Queueing again clears
@@ -241,7 +258,6 @@ Important variables:
 | `MMV_PREVIEW_EXTERNAL_FAILURE_COOLDOWN_SECONDS` | Fixed resolver/service cooldown. Defaults to `300`. |
 | `MMV_PREVIEW_CACHE_DIR` | Persistent libtorrent cache path. |
 | `MMV_PREVIEW_CACHE_MAX_MB` | Bounded cache budget. Defaults to `32768`. |
-| `MMV_PREVIEW_TARGET_FRAMES` | Required selected frame count. Defaults to `9`. |
 | `MMV_PREVIEW_EXTRACT_FRAMES_PER_ANCHOR` | Decode attempts per anchor. Defaults to `7`. |
 | `MMV_PREVIEW_MIN_SELECTOR_CANDIDATES_PER_ANCHOR` | Minimum clean candidates required before an anchor can be selected. Defaults to `2`. |
 | `MMV_PREVIEW_MAX_SELECTOR_CANDIDATES_PER_ANCHOR` | Maximum clean candidates per anchor sent to OpenAI. Defaults to `4`. |

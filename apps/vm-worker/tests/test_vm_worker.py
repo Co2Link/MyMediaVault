@@ -22,8 +22,8 @@ from mymediavault_vm_worker import (
     _fake_torrent_payload,
     _is_external_preview_failure,
     _is_permanent_preview_failure,
-    _is_terminal_under_target_preview,
     _made_useful_progress,
+    _should_replace_preview_artifacts,
     _success_update,
     parse_torrent,
 )
@@ -95,7 +95,6 @@ def test_settings_expose_single_scheduler_tuning() -> None:
 def test_settings_preview_defaults_match_engine_defaults() -> None:
     settings = _settings()
     config = PreviewEngineConfig()
-    assert settings.preview_target_frames == config.target_frames
     assert settings.preview_extract_frames_per_anchor == config.extract_frames_per_anchor
     assert (
         settings.preview_min_selector_candidates_per_anchor
@@ -191,6 +190,9 @@ def test_scheduler_claims_available_fifo_work(monkeypatch: pytest.MonkeyPatch) -
     assert collection.query is not None
     assert collection.query["processingState"] == {"$in": ["queued", "partial"]}
     assert {"processingAvailableAt": {"$exists": False}} in collection.query["$or"]  # type: ignore[operator]
+    values = collection.update["$set"]  # type: ignore[index]
+    assert values["processingLastOutcome"] == "running"
+    assert values["processingLastError"] is None
 
 
 def test_scheduler_requeues_external_failure_with_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -235,46 +237,22 @@ def test_scheduler_requeues_metadata_failure_with_metadata_outcome(monkeypatch: 
 def test_failure_classification_keeps_sparse_downloads_eligible() -> None:
     assert not _is_external_preview_failure(_result(status="failed", reason="No media bytes were downloaded"))
     assert _is_external_preview_failure(
-        _result(status="failed", reason="quota", warnings=["Preview decode/ranking failed: quota"])
+        _result(status="failed", reason="quota", warnings=["Preview decode/selection failed: quota"])
     )
     assert _is_permanent_preview_failure(_result(status="failed", reason="No video file was found"))
 
 
-def test_useful_progress_tracks_bytes_and_completed_pieces() -> None:
+def test_useful_progress_requires_completed_pieces() -> None:
     no_progress = _result(status="failed", reason="No media bytes were downloaded")
     assert not _made_useful_progress(no_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
 
     byte_progress = _result(status="failed", reason="No accepted frames")
     object.__setattr__(byte_progress.diagnostics, "downloaded_bytes", 1)
-    assert _made_useful_progress(byte_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
+    assert not _made_useful_progress(byte_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
 
     piece_progress = _result(status="failed", reason="No accepted frames")
     object.__setattr__(piece_progress.diagnostics, "last_complete_piece_count", 1)
     assert _made_useful_progress(piece_progress, last_downloaded_bytes=0, last_complete_piece_count=0)
-
-
-def test_under_target_preview_is_terminal_once_selected_file_is_fully_downloaded() -> None:
-    selected_file = SelectedFile(index=0, path="movie.mkv", length=123)
-    result = PreviewResult(
-        info_hash="abc",
-        status="partial",
-        status_reason="Only 1 frame",
-        artifact=PreviewArtifact(
-            frames=[GeneratedFrame(path=Path("frame.jpg"), width=10, height=10, timestamp_seconds=1)],
-            sheet=GeneratedSheet(path=Path("sheet.jpg"), width=10, height=10),
-        ),
-        diagnostics=_diagnostics(selected_file=selected_file, downloaded_bytes=123),
-    )
-    assert _is_terminal_under_target_preview(result)
-    assert not _is_terminal_under_target_preview(
-        PreviewResult(
-            info_hash="abc",
-            status="partial",
-            status_reason="Only 1 frame",
-            artifact=result.artifact,
-            diagnostics=_diagnostics(selected_file=selected_file, downloaded_bytes=122),
-        )
-    )
 
 
 def test_success_update_preserves_partial_artifacts_for_scheduler() -> None:
@@ -297,6 +275,71 @@ def test_success_update_preserves_partial_artifacts_for_scheduler() -> None:
     )["$set"]
     assert update["processingState"] == "running"
     assert update["previewFrames"][0]["key"] == "previews/abc/frame_001.jpg"
+    assert update["actorAnalysisStatus"] == "pending"
+
+
+def test_partial_preview_replaces_artifacts_only_when_it_improves() -> None:
+    existing = Torrent.model_construct(
+        id="torrent-1",
+        infoHash="abc",
+        previewFrames=[
+            {"key": "old-1.jpg", "width": 10, "height": 10, "timestampSeconds": 1.0},
+            {"key": "old-2.jpg", "width": 10, "height": 10, "timestampSeconds": 2.0},
+        ],
+        previewDiagnostics={
+            "details": {
+                "frame_selection": {
+                    "selected_anchor_indexes": [1, 8],
+                }
+            }
+        },
+    )
+    worse = PreviewResult(
+        info_hash="abc",
+        status="partial",
+        status_reason="Only 1 frame",
+        artifact=PreviewArtifact(
+            frames=[GeneratedFrame(path=Path("frame.jpg"), width=10, height=10, timestamp_seconds=1)],
+            sheet=GeneratedSheet(path=Path("sheet.jpg"), width=10, height=10),
+        ),
+        diagnostics=_diagnostics(selected_file=SelectedFile(index=0, path="movie.mkv", length=123)),
+    )
+    better = PreviewResult(
+        info_hash="abc",
+        status="partial",
+        status_reason="Only 3 frames",
+        artifact=PreviewArtifact(
+            frames=[
+                GeneratedFrame(path=Path("frame-1.jpg"), width=10, height=10, timestamp_seconds=1),
+                GeneratedFrame(path=Path("frame-2.jpg"), width=10, height=10, timestamp_seconds=2),
+                GeneratedFrame(path=Path("frame-3.jpg"), width=10, height=10, timestamp_seconds=3),
+            ],
+            sheet=GeneratedSheet(path=Path("sheet.jpg"), width=10, height=10),
+        ),
+        diagnostics=_diagnostics(selected_file=SelectedFile(index=0, path="movie.mkv", length=123)),
+    )
+    assert not _should_replace_preview_artifacts(existing, worse)
+    assert _should_replace_preview_artifacts(existing, better)
+
+
+def test_success_update_clears_artifacts_for_failed_preview() -> None:
+    result = PreviewResult(
+        info_hash="abc",
+        status="failed",
+        status_reason="No target anchors produced selected frames",
+        artifact=PreviewArtifact(frames=[], sheet=None),
+        diagnostics=_diagnostics(selected_file=SelectedFile(index=0, path="movie.mkv", length=123)),
+    )
+    update = _success_update(
+        result,
+        stored_frames=[],
+        stored_sheet=None,
+        artifact_version="preview-v9",
+        artifact_fingerprint="sha256:test",
+    )["$set"]
+    assert update["processingState"] == "running"
+    assert update["previewFrames"] == []
+    assert update["previewSheet"] is None
     assert update["actorAnalysisStatus"] == "pending"
 
 

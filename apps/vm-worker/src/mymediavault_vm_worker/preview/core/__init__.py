@@ -14,9 +14,9 @@ from mymediavault_vm_worker.preview.core.models import (
     BYTES_PER_MB,
     DEFAULT_TRACKER_LIST_URL,
     ExtractedFrame,
+    FrameSelectionDiagnostics,
     GeneratedFrame,
     GeneratedSheet,
-    LLMSelectionDiagnostics,
     PREVIEW_ARTIFACT_VERSION,
     PREVIEW_FINGERPRINT_SCHEMA_VERSION,
     PreviewArtifact,
@@ -27,6 +27,7 @@ from mymediavault_vm_worker.preview.core.models import (
     PreviewResult,
     PreviewStatus,
     SelectedFile,
+    TARGET_FRAMES,
 )
 
 __all__ = [
@@ -36,9 +37,9 @@ __all__ = [
     "DEFAULT_TRACKER_LIST_URL",
     "ExtractedFrame",
     "FrameDecodeError",
+    "FrameSelectionDiagnostics",
     "GeneratedFrame",
     "GeneratedSheet",
-    "LLMSelectionDiagnostics",
     "NoVideoFileError",
     "PREVIEW_ARTIFACT_VERSION",
     "PREVIEW_FINGERPRINT_SCHEMA_VERSION",
@@ -52,6 +53,7 @@ __all__ = [
     "PreviewResult",
     "PreviewStatus",
     "SelectedFile",
+    "TARGET_FRAMES",
     "TorrentDownloadError",
     "TorrentMetadataError",
 ]

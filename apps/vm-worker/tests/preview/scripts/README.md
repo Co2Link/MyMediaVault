@@ -29,8 +29,7 @@ same `PreviewEngine`; `results.json` is still written in sorted torrent-path
 order. Per-torrent `RESULT` lines print as each torrent finishes only when
 `--debug` is enabled.
 
-Use `--target-frames` to select the frame count. Supported values are `3`, `9`,
-and `16`; the engine derives evenly spaced anchors from that count.
+The production preview target is fixed at 9 evenly spaced anchors.
 `--anchor-window-seconds` controls how wide each verified decode window may be.
 `--extract-frames-per-anchor` controls how many timestamp-spaced frames the
 decoder may attempt inside each anchor window. `--min-selector-candidates-per-anchor`

@@ -24,7 +24,7 @@ from mymediavault_vm_worker.preview.core.models import (
     PreviewEngineConfig,
     SelectedFile,
 )
-from mymediavault_vm_worker.preview.planning.base import DownloadLayout
+from mymediavault_vm_worker.preview.planning.base import ByteRange, DownloadLayout
 from mymediavault_vm_worker.preview.torrent.metadata import TorrentMetadata
 
 _METADATA_BOOTSTRAP_PIECES_PER_EDGE = 16
@@ -57,6 +57,7 @@ class PreviewRangeDownload:
     selected_file_complete: bool
     planned_pieces_complete: bool
     diagnostics: PreviewDiagnostics
+    decode_ready: bool = True
 
 
 @dataclass
@@ -107,6 +108,7 @@ class TorrentClient(ABC):
         output_dir: Path,
         config: PreviewEngineConfig,
         timeout_seconds: float,
+        min_complete_piece_count: int | None = None,
     ) -> PreviewRangeDownload:
         """Download planned preview ranges for the selected torrent file."""
 
@@ -155,6 +157,7 @@ class LibtorrentTorrentClient(TorrentClient):
         output_dir: Path,
         config: PreviewEngineConfig,
         timeout_seconds: float,
+        min_complete_piece_count: int | None = None,
     ) -> PreviewRangeDownload:
         if self._session is None or self._lt is None:
             await self.start()
@@ -172,6 +175,7 @@ class LibtorrentTorrentClient(TorrentClient):
             output_dir,
             config,
             timeout_seconds,
+            min_complete_piece_count,
         )
 
     def _download_sync(
@@ -183,6 +187,7 @@ class LibtorrentTorrentClient(TorrentClient):
         output_dir: Path,
         config: PreviewEngineConfig,
         timeout_seconds: float,
+        min_complete_piece_count: int | None,
     ) -> PreviewRangeDownload:
         lt = self._lt
         session = self._session
@@ -212,6 +217,11 @@ class LibtorrentTorrentClient(TorrentClient):
                 complete_piece_count=active.complete_piece_count,
                 active_session_count=self._active_torrent_count(),
             ).debug("Reused active torrent session")
+        if active is not None and min_complete_piece_count is not None:
+            layout = DownloadLayout(
+                ranges=[ByteRange(start=0, end=selected_file.length)],
+                anchors=layout.anchors,
+            )
         _register_active_cache_entry(output_dir)
         _request_dht_peers(lt, session, metadata.info_hash)
         start_time = time.monotonic()
@@ -301,7 +311,12 @@ class LibtorrentTorrentClient(TorrentClient):
                     ).debug("Torrent download progress")
                     last_logged_downloaded = downloaded
                     last_logged_complete_count = complete_piece_count
-                if pieces_complete:
+                reached_decode_checkpoint = (
+                    min_complete_piece_count is None
+                    or complete_piece_count > min_complete_piece_count
+                    or downloaded >= selected_file.length
+                )
+                if pieces_complete and reached_decode_checkpoint:
                     if not media_path.exists():
                         msg = (
                             f"Planned pieces completed for {selected_file.path}, "
@@ -323,6 +338,8 @@ class LibtorrentTorrentClient(TorrentClient):
                         planned_pieces_complete=pieces_complete,
                         diagnostics=last_diagnostics,
                     )
+                if pieces_complete and not reached_decode_checkpoint:
+                    last_progress_time = now
                 if (
                     downloaded >= selected_file.length
                     and not selected_file_complete_logged
@@ -370,6 +387,11 @@ class LibtorrentTorrentClient(TorrentClient):
             if downloaded < 1:
                 msg = f"No media bytes were downloaded for {selected_file.path}"
                 raise TorrentDownloadError(msg, diagnostics=last_diagnostics)
+            decode_ready = (
+                min_complete_piece_count is None
+                or complete_piece_count > min_complete_piece_count
+                or downloaded >= selected_file.length
+            )
             if not pieces_complete:
                 download_logger.bind(
                     downloaded_bytes=downloaded,
@@ -396,6 +418,7 @@ class LibtorrentTorrentClient(TorrentClient):
                 media_path=str(media_path),
                 complete=downloaded >= selected_file.length,
                 pieces_complete=pieces_complete,
+                decode_ready=decode_ready,
             ).debug("Finished planned preview range download")
             return PreviewRangeDownload(
                 media_path=media_path,
@@ -403,6 +426,7 @@ class LibtorrentTorrentClient(TorrentClient):
                 selected_file_complete=downloaded >= selected_file.length,
                 planned_pieces_complete=pieces_complete,
                 diagnostics=last_diagnostics,
+                decode_ready=decode_ready,
             )
         finally:
             _save_resume_data(lt, session, handle, output_dir, config)
