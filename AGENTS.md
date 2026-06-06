@@ -7,7 +7,6 @@
 - Production uses Azure Cosmos DB for MongoDB vCore.
 - You are in a devcontainer environment, ask user to rebuild the container if you update devcontainer configuration or Dockerfile.
 - Do not hardcode any secrets, ID, or credentials in the codebase.
-- When you update any AGENTS.md, it should be general guidelines and not specific to this repo.
 
 <!-- BEGIN:nextjs-agent-rules -->
  

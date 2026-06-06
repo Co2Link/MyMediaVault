@@ -9,7 +9,6 @@ network_access = true
 [features]
 memories=true
 goals=true
-undo=true
 
 [tui]
 status_line = ["model-with-reasoning", "current-dir", "git-branch", "context-remaining", "five-hour-limit", "weekly-limit","context-window-size", "used-tokens"]

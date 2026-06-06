@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "building-pydantic-ai-agents": {
+      "source": "pydantic/skills",
+      "sourceType": "github",
+      "skillPath": "skills/building-pydantic-ai-agents/SKILL.md",
+      "computedHash": "cffccf681257fc581dbbcfd243a814832f6e476100abf1914b19989724ffb6ce"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
@@ -18,6 +24,12 @@
       "sourceType": "github",
       "skillPath": "skills/karpathy-guidelines/SKILL.md",
       "computedHash": "41e8ca055bbde13d240776a14a076a59614057200340c243130a76ba4e64cac8"
+    },
+    "logfire-instrumentation": {
+      "source": "pydantic/skills",
+      "sourceType": "github",
+      "skillPath": "skills/logfire-instrumentation/SKILL.md",
+      "computedHash": "9ecbba5e2daf75a5325ea05fa7dc6d1796ec1777ab5a6ecf44368e2c97c05cf0"
     },
     "next-best-practices": {
       "source": "vercel-labs/next-skills",
